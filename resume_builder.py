@@ -367,6 +367,20 @@ def _categorize_skills(skills: list) -> dict:
     return {k: v for k, v in categories.items() if v}
 
 
+def convert_to_pdf(doc_path: str) -> str:
+    """Convert .docx file to .pdf using docx2pdf."""
+    pdf_path = str(Path(doc_path).with_suffix(".pdf"))
+    try:
+        from docx2pdf import convert
+        convert(doc_path, pdf_path)
+        if Path(pdf_path).exists():
+            print(f"[PDF] Converted: {pdf_path}")
+            return pdf_path
+    except Exception as e:
+        print(f"[PDF] docx2pdf note: {e}")
+    return pdf_path
+
+
 if __name__ == "__main__":
     """Quick test of the Word builder."""
     import sys

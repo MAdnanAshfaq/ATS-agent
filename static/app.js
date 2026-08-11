@@ -451,8 +451,12 @@ async function loadHistory() {
           <a href="/api/download/${app.relative_file_path}" class="btn btn-emerald btn-sm" download>
             <i class="fa-solid fa-download"></i> Download .docx
           </a>
+          ${app.relative_file_path ? `<a href="/api/download/${app.relative_file_path.replace('.docx', '.pdf')}" class="btn btn-cyan btn-sm" download><i class="fa-solid fa-file-pdf"></i> .pdf</a>` : ''}
           <button class="btn btn-secondary btn-sm" onclick="openSpecificFolder('${escapeHtml(app.output_file)}')">
             <i class="fa-solid fa-folder-open"></i> Folder
+          </button>
+          <button class="btn btn-danger-sm" onclick="deleteHistoryItem('${escapeHtml(app.log_file_name)}')">
+            <i class="fa-solid fa-trash"></i> Delete
           </button>
         </div>`;
       grid.appendChild(card);
@@ -515,14 +519,185 @@ async function loadSettings() {
   });
 }
 
+let currentMasterResumeData = null;
+
 async function loadMasterResume() {
   const textarea = document.getElementById("resume-json-editor");
   try {
     const res = await fetch("/api/resume");
     const data = await res.json();
+    currentMasterResumeData = data;
     textarea.value = JSON.stringify(data, null, 2);
+    renderVisualResume(data);
   } catch (err) {
     textarea.value = "// Error loading base_resume.json";
+  }
+}
+
+function renderVisualResume(data) {
+  const card = document.getElementById("visual-resume-card");
+  if (!card || !data) return;
+
+  const contact = data.contact || {};
+  const name = contact.name || data.name || "Candidate Name";
+  const email = contact.email || "";
+  const phone = contact.phone || "";
+  const linkedin = contact.linkedin || "";
+  const github = contact.github || "";
+
+  const summary = data.summary || "";
+  const skills = data.skills || [];
+  const experience = data.experience || [];
+  const projects = data.projects || [];
+  const education = data.education || [];
+
+  let html = `
+    <div class="resume-header-block">
+      <h1>${escapeHtml(name)}</h1>
+      <div class="contact-badges">
+        ${email ? `<span><i class="fa-solid fa-envelope text-cyan"></i> ${escapeHtml(email)}</span>` : ''}
+        ${phone ? `<span><i class="fa-solid fa-phone text-cyan"></i> ${escapeHtml(phone)}</span>` : ''}
+        ${linkedin ? `<span><i class="fa-brands fa-linkedin text-cyan"></i> <a href="https://${escapeHtml(linkedin)}" target="_blank">${escapeHtml(linkedin)}</a></span>` : ''}
+        ${github ? `<span><i class="fa-brands fa-github text-cyan"></i> <a href="https://${escapeHtml(github)}" target="_blank">${escapeHtml(github)}</a></span>` : ''}
+      </div>
+    </div>
+  `;
+
+  if (summary) {
+    html += `
+      <div>
+        <div class="resume-section-title"><i class="fa-solid fa-user"></i> Professional Summary</div>
+        <div class="resume-summary-text">${escapeHtml(summary)}</div>
+      </div>
+    `;
+  }
+
+  if (skills.length > 0) {
+    html += `
+      <div>
+        <div class="resume-section-title"><i class="fa-solid fa-bolt"></i> Technical Skills (${skills.length})</div>
+        <div class="skills-pill-group">
+          ${skills.map(s => `<span class="chip-cyan">${escapeHtml(s)}</span>`).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  if (experience.length > 0) {
+    html += `<div><div class="resume-section-title"><i class="fa-solid fa-briefcase"></i> Work Experience</div>`;
+    experience.forEach(exp => {
+      html += `
+        <div class="experience-card">
+          <div class="exp-title-row">
+            <div>
+              <div class="exp-role">${escapeHtml(exp.title || '')}</div>
+              <div class="exp-company">${escapeHtml(exp.company || '')}</div>
+            </div>
+            <div class="exp-dates">${escapeHtml(exp.dates || '')} ${exp.location ? '| ' + escapeHtml(exp.location) : ''}</div>
+          </div>
+          <ul class="exp-bullets">
+            ${(exp.bullets || []).map(b => `<li>${escapeHtml(b)}</li>`).join('')}
+          </ul>
+        </div>
+      `;
+    });
+    html += `</div>`;
+  }
+
+  if (projects.length > 0) {
+    html += `<div><div class="resume-section-title"><i class="fa-solid fa-laptop-code"></i> Key Projects</div>`;
+    projects.forEach(proj => {
+      html += `
+        <div class="project-card">
+          <div class="exp-title-row">
+            <div class="exp-role">${escapeHtml(proj.name || '')}</div>
+            ${proj.url ? `<a href="${escapeHtml(proj.url)}" target="_blank" class="text-cyan text-sm">${escapeHtml(proj.url)}</a>` : ''}
+          </div>
+          <p class="text-dim text-sm margin-bottom-xs">${escapeHtml(proj.description || '')}</p>
+          ${proj.tech_stack ? `<div class="skills-pill-group margin-top-xs">${(proj.tech_stack || []).map(t => `<span class="chip-cyan" style="font-size:12px; padding:4px 10px;">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+        </div>
+      `;
+    });
+    html += `</div>`;
+  }
+
+  if (education.length > 0) {
+    html += `<div><div class="resume-section-title"><i class="fa-solid fa-graduation-cap"></i> Education</div>`;
+    education.forEach(edu => {
+      html += `
+        <div class="experience-card">
+          <div class="exp-title-row">
+            <div class="exp-role">${escapeHtml(edu.degree || '')} ${edu.field ? '- ' + escapeHtml(edu.field) : ''}</div>
+            <div class="exp-dates">${escapeHtml(edu.dates || '')}</div>
+          </div>
+          <div class="exp-company">${escapeHtml(edu.institution || '')}</div>
+        </div>
+      `;
+    });
+    html += `</div>`;
+  }
+
+  card.innerHTML = html;
+}
+
+function toggleResumeViewMode() {
+  const visualCard = document.getElementById("visual-resume-card");
+  const jsonCard = document.getElementById("json-editor-card");
+  const toggleBtn = document.getElementById("toggle-json-view-btn");
+
+  if (jsonCard.classList.contains("hidden")) {
+    jsonCard.classList.remove("hidden");
+    visualCard.classList.add("hidden");
+    toggleBtn.innerHTML = `<i class="fa-solid fa-eye"></i> Visual Resume Mode`;
+  } else {
+    jsonCard.classList.add("hidden");
+    visualCard.classList.remove("hidden");
+    toggleBtn.innerHTML = `<i class="fa-solid fa-code"></i> Raw JSON Mode`;
+  }
+}
+
+async function uploadMasterResumeFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const formData = new FormData();
+  formData.append("resume_file", file);
+
+  showToast(`Uploading and parsing ${file.name}...`, "info");
+
+  try {
+    const res = await fetch("/api/upload_resume", {
+      method: "POST",
+      body: formData
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message || "Resume updated cleanly!", "success");
+      loadMasterResume();
+    } else {
+      showToast(`Upload failed: ${data.error}`, "error");
+    }
+  } catch (err) {
+    showToast(`Error uploading file: ${err.message}`, "error");
+  }
+}
+
+async function deleteHistoryItem(filename) {
+  if (!confirm("Are you sure you want to delete this test application from your history and computer?")) return;
+
+  try {
+    const res = await fetch(`/api/history/${encodeURIComponent(filename)}`, {
+      method: "DELETE"
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast("History entry deleted cleanly!", "success");
+      loadHistory();
+    } else {
+      showToast(`Delete failed: ${data.error}`, "error");
+    }
+  } catch (err) {
+    showToast(`Error deleting history entry: ${err.message}`, "error");
   }
 }
 
@@ -538,6 +713,7 @@ async function saveMasterResume() {
     const data = await res.json();
     if (data.success) {
       showToast("Master resume updated successfully!", "success");
+      loadMasterResume();
     } else {
       showToast(`Save failed: ${data.error}`, "error");
     }

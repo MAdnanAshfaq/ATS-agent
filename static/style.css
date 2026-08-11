@@ -1059,3 +1059,126 @@ input:checked + .slider:before { transform: translateX(20px); }
   gap: 10px;
   max-width: 380px;
 }
+
+/* Visual Resume Preview Card */
+.visual-resume-card {
+  padding: 32px;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.resume-header-block {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 20px;
+}
+.resume-header-block h1 {
+  font-size: 28px;
+  font-weight: 800;
+  color: #ffffff;
+  margin-bottom: 10px;
+}
+.contact-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 14px;
+  color: #94a3b8;
+}
+.contact-badges a {
+  color: var(--cyan);
+  text-decoration: none;
+}
+.contact-badges a:hover { text-decoration: underline; }
+
+.resume-section-title {
+  font-size: 15px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--cyan);
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.resume-summary-text {
+  font-size: 15px;
+  line-height: 1.6;
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 16px 20px;
+  border-left: 3px solid var(--cyan);
+  border-radius: 4px;
+}
+
+.skills-pill-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.experience-card, .project-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-md);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.exp-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+
+.exp-role {
+  font-size: 17px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.exp-company {
+  font-size: 14px;
+  color: var(--cyan);
+  font-weight: 600;
+}
+
+.exp-dates {
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.exp-bullets {
+  padding-left: 20px;
+  color: #cbd5e1;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.exp-bullets li { margin-bottom: 6px; }
+
+.action-btn-group {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.btn-danger-sm {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #f87171;
+  padding: 6px 14px;
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-danger-sm:hover {
+  background: rgba(239, 68, 68, 0.3);
+  color: #ffffff;
+}

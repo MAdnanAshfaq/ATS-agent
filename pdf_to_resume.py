@@ -8,30 +8,27 @@ import os
 import sys
 
 def parse_resume_pdf(pdf_path: str) -> dict:
-    """Parse a PDF resume into structured JSON using pdfplumber."""
+    """Parse a PDF resume into structured JSON using pdfplumber or pypdf."""
+    print(f"[PDF Parser] Reading: {pdf_path}")
+    full_text = ""
     try:
         import pdfplumber
-    except ImportError:
-        print("ERROR: pdfplumber not installed. Run: pip install pdfplumber")
-        sys.exit(1)
+        with pdfplumber.open(pdf_path) as pdf:
+            for page in pdf.pages:
+                text = page.extract_text()
+                if text:
+                    full_text += text + "\n"
+    except Exception:
+        try:
+            import pypdf
+            reader = pypdf.PdfReader(pdf_path)
+            for page in reader.pages:
+                full_text += (page.extract_text() or "") + "\n"
+        except Exception as e:
+            raise RuntimeError(f"Could not read PDF: {e}")
 
-    print(f"[PDF Parser] Reading: {pdf_path}")
-    
-    full_text = ""
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            text = page.extract_text()
-            if text:
-                full_text += text + "\n"
-    
     print(f"[PDF Parser] Extracted {len(full_text)} characters")
-    print("--- RAW TEXT PREVIEW (first 3000 chars) ---")
-    print(full_text[:3000])
-    print("--- END PREVIEW ---")
-    
-    # Parse into structured resume
-    resume = parse_text_to_json(full_text)
-    return resume
+    return parse_text_to_json(full_text)
 
 
 def parse_text_to_json(text: str) -> dict:

@@ -507,15 +507,34 @@
     <section class="tab-content" id="tab-resume">
       <div class="section-header-row">
         <div>
-          <h2>Master Resume Editor</h2>
-          <p>This is your ground-truth master resume (<code>base_resume.json</code>). Gemini reframes this data without fabricating experience.</p>
+          <h2>Master Resume Profile</h2>
+          <p>Ground-truth master profile (<code>base_resume.json</code>). Upload any PDF/DOCX resume or edit visually below.</p>
         </div>
-        <button class="btn btn-primary" onclick="saveMasterResume()">
-          <i class="fa-solid fa-floppy-disk"></i> Save Master Resume
-        </button>
+        <div class="action-btn-group">
+          <input type="file" id="master-resume-file-input" accept=".pdf,.docx,.json" style="display:none" onchange="uploadMasterResumeFile(event)">
+          <button class="btn btn-outline" onclick="document.getElementById('master-resume-file-input').click()">
+            <i class="fa-solid fa-file-arrow-up text-cyan"></i> Upload Resume (PDF / DOCX)
+          </button>
+          <button class="btn btn-outline" id="toggle-json-view-btn" onclick="toggleResumeViewMode()">
+            <i class="fa-solid fa-code"></i> Raw JSON Mode
+          </button>
+          <button class="btn btn-primary" onclick="saveMasterResume()">
+            <i class="fa-solid fa-floppy-disk"></i> Save Resume
+          </button>
+        </div>
       </div>
 
-      <div class="glass-card editor-card">
+      <!-- Human-Readable Formatted Visual Resume Card -->
+      <div class="glass-card visual-resume-card" id="visual-resume-card">
+        <!-- Rendered dynamically by static/app.js -->
+        <div class="empty-state">
+          <i class="fa-solid fa-spinner fa-spin empty-icon"></i>
+          <p>Loading master resume profile...</p>
+        </div>
+      </div>
+
+      <!-- Raw JSON Editor (Hidden by default) -->
+      <div class="glass-card editor-card hidden" id="json-editor-card">
         <textarea id="resume-json-editor" class="code-textarea" spellcheck="false"></textarea>
       </div>
     </section>

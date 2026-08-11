@@ -167,6 +167,38 @@ def manage_resume():
     return jsonify(data)
 
 
+@app.route("/api/upload_resume", methods=["POST"])
+def upload_resume():
+    """Upload a new Master Resume (PDF / DOCX / JSON)."""
+    if "resume_file" not in request.files:
+        return jsonify({"success": False, "error": "No file attached"}), 400
+
+    file = request.files["resume_file"]
+    if not file.filename:
+        return jsonify({"success": False, "error": "Empty filename"}), 400
+
+    filename = file.filename.lower()
+    save_path = BASE_DIR / file.filename
+    file.save(save_path)
+
+    try:
+        if filename.endswith(".json"):
+            with open(save_path, "r", encoding="utf-8") as f:
+                parsed_json = json.load(f)
+        elif filename.endswith(".pdf"):
+            from pdf_to_resume import parse_resume_pdf
+            parsed_json = parse_resume_pdf(str(save_path))
+        else:
+            return jsonify({"success": False, "error": "Unsupported file format. Please upload PDF or JSON."}), 400
+
+        with open(RESUME_PATH, "w", encoding="utf-8") as f:
+            json.dump(parsed_json, f, indent=2, ensure_ascii=False)
+
+        return jsonify({"success": True, "message": "Master resume uploaded and parsed successfully!", "resume": parsed_json})
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Failed to parse resume: {e}"}), 500
+
+
 @app.route("/api/history")
 def history():
     """List all previously generated resume applications."""
@@ -190,6 +222,33 @@ def history():
                 continue
 
     return jsonify({"applications": applications, "count": len(applications)})
+
+
+@app.route("/api/history/<filename>", methods=["DELETE"])
+def delete_history_item(filename):
+    """Delete a history run entry and its associated generated files."""
+    try:
+        logs_dir = OUTPUT_DIR / "logs"
+        log_file = logs_dir / filename
+        if not log_file.exists():
+            return jsonify({"success": False, "error": "Log file not found"}), 404
+        
+        with open(log_file, "r", encoding="utf-8") as f:
+            log_data = json.load(f)
+            output_file = log_data.get("output_file", "")
+            if output_file and os.path.exists(output_file):
+                try:
+                    os.remove(output_file)
+                    pdf_file = str(Path(output_file).with_suffix(".pdf"))
+                    if os.path.exists(pdf_file):
+                        os.remove(pdf_file)
+                except Exception as file_err:
+                    print(f"[History Delete] Error deleting files: {file_err}")
+
+        os.remove(log_file)
+        return jsonify({"success": True, "message": "History item deleted cleanly"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route("/api/download/<path:filepath>")
