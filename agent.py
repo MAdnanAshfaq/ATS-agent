@@ -102,34 +102,26 @@ def load_base_resume() -> dict:
 
 def extract_keywords_from_jd(jd_text: str, base_resume: dict) -> list:
     """
-    Fallback keyword extraction using keyword_matcher engine.
-    Finds technical keywords in the JD that aren't already in the resume.
+    Intelligent LLM-based keyword extraction using Gemini.
+    Extracts high-value technical skills & job titles in the JD that are missing from base resume.
     """
+    try:
+        from llm_matcher import extract_keywords_with_gemini
+        from rewriter import verify_dynamic_keywords
+        all_jd_keywords = extract_keywords_with_gemini(jd_text)
+        if all_jd_keywords:
+            embedded, missing = verify_dynamic_keywords(base_resume, all_jd_keywords)
+            print(f"[Agent] LLM extracted {len(all_jd_keywords)} JD keywords ({len(missing)} missing from base resume)")
+            return missing
+    except Exception as e:
+        print(f"[Agent] LLM keyword extraction note: {e}")
+
     try:
         from keyword_matcher import calculate_match_score
         res = calculate_match_score(base_resume, jd_text)
         return res.get("missing_keywords", [])
     except Exception:
-        tech_pattern = re.compile(
-            r"\b(React|Vue|Angular|Next\.?js|Nuxt|Svelte|Node\.?js|Express|FastAPI|"
-            r"Django|Flask|Spring|Rails|GraphQL|REST|gRPC|WebSocket|"
-            r"TypeScript|JavaScript|Python|Go|Golang|Rust|Java|Kotlin|Swift|Ruby|PHP|Scala|"
-            r"PostgreSQL|MySQL|MongoDB|Redis|Elasticsearch|DynamoDB|Cassandra|SQLite|"
-            r"AWS|GCP|Azure|Docker|Kubernetes|Terraform|Ansible|CI/CD|GitHub Actions|Jenkins|"
-            r"Playwright|Selenium|Jest|Pytest|Cypress|Mocha|"
-            r"Kafka|RabbitMQ|Celery|"
-            r"Microservices|Serverless|Lambda|API Gateway|"
-            r"Machine Learning|Deep Learning|LLM|RAG|Vector Database|"
-            r"Git|Linux|Bash|Shell|Nginx|Apache|"
-            r"Agile|Scrum|Kanban|JIRA|Confluence|"
-            r"OAuth|JWT|SAML|SSO|RBAC|"
-            r"Figma|Storybook|Webpack|Vite|Rollup|"
-            r"Tailwind|Bootstrap|Material UI|Ant Design)\b",
-            re.IGNORECASE,
-        )
-        jd_keywords = set(m.group() for m in tech_pattern.finditer(jd_text))
-        resume_text = json.dumps(base_resume).lower()
-        return list(set([kw for kw in jd_keywords if kw.lower() not in resume_text]))
+        return []
 
 
 def _format_keyword_coverage_report(

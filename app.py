@@ -316,17 +316,15 @@ def analyze_job():
 
         loop.close()
 
-        # Fallback to local JD NLP keyword extraction if Simplify returned empty
+        # Fallback to Gemini LLM keyword extraction if Simplify returned empty
         if not missing_keywords and not matching_keywords:
-            missing_keywords = extract_keywords_from_jd(jd_text, base_resume)
-            from rewriter import _build_resume_text
-            res_text = _build_resume_text(base_resume)
-            all_jd_words = re.findall(r'\b[A-Za-z0-9+#.-]{2,25}\b', jd_text)
-            possible_matches = list(set([w for w in all_jd_words if w.lower() in res_text and len(w) > 3]))
-            matching_keywords = possible_matches[:12]
-            
-            total_kws = len(missing_keywords) + len(matching_keywords)
-            score = int((len(matching_keywords) / max(total_kws, 1)) * 100) if total_kws > 0 else 70
+            from llm_matcher import extract_keywords_with_gemini
+            from rewriter import verify_dynamic_keywords
+            all_jd_kws = extract_keywords_with_gemini(jd_text)
+            if all_jd_kws:
+                matching_keywords, missing_keywords = verify_dynamic_keywords(base_resume, all_jd_kws)
+                total_kws = len(matching_keywords) + len(missing_keywords)
+                score = int((len(matching_keywords) / max(total_kws, 1)) * 100) if total_kws > 0 else 70
 
         return jsonify({
             "success": True,
