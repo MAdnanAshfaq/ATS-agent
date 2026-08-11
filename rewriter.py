@@ -67,19 +67,25 @@ def _build_resume_text(resume: dict) -> str:
 
 def verify_dynamic_keywords(rewritten_json_output: dict, simplify_keywords: list) -> tuple[list, list]:
     """
-    Dynamically checks the newly generated resume text against 
-    the fresh list of keywords scraped from your Simplify tab.
+    Dynamically checks the newly generated resume text using strict word boundaries,
+    ensuring it exactly matches how keyword_matcher and Simplify read it.
     """
-    content_pool = str(rewritten_json_output).lower()
+    # Flatten the JSON values into a clean string pool
+    content_pool = json.dumps(rewritten_json_output).lower()
     missing_gaps = []
     embedded = []
     
     for word in simplify_keywords:
-        # Check if the fresh keyword exists anywhere in the new text
-        pattern = re.compile(r'\b' + re.escape(word.lower()) + r'\b')
+        kw = word.lower().strip()
+        
+        # Handle special cases with symbols like C++, .JS, or Vue.js cleanly
+        escaped_word = re.escape(kw)
+        if kw.endswith('.js') or '+' in kw or '.' in kw:
+            pattern = re.compile(r'(?:^|[^a-zA-Z0-9])' + escaped_word + r'(?:$|[^a-zA-Z0-9])')
+        else:
+            pattern = re.compile(r'\b' + escaped_word + r'\b')
+            
         if pattern.search(content_pool):
-            embedded.append(word)
-        elif word.lower().strip() in content_pool:
             embedded.append(word)
         else:
             missing_gaps.append(word)
@@ -328,31 +334,16 @@ def rewrite_resume(
 
 def _manual_keyword_injection(resume: dict, still_missing: list) -> dict:
     """
-    Last-resort: force-inject any remaining keywords into the skills list and
-    a dedicated 'additional technologies' phrase in the first experience bullet.
-    This ensures 100% keyword presence even if Gemini missed some.
+    Force-injects remaining items directly into skills array matching
+    the structural requirements of your base resume profile.
     """
-    # Add to skills list
-    skills = resume.get("skills", [])
-    if isinstance(skills, list):
-        for kw in still_missing:
-            if kw not in skills:
-                skills.append(kw)
-        resume["skills"] = skills
-
-    # Add a context-natural bullet to the most recent experience mentioning the keywords
-    if still_missing and resume.get("experience"):
-        tech_str = ", ".join(still_missing)
-        inject_bullet = (
-            f"Applied {tech_str} to extend platform capabilities and improve development workflow."
-        )
-        experience = resume["experience"]
-        if isinstance(experience, list) and experience:
-            bullets = experience[0].get("bullets", [])
-            if isinstance(bullets, list):
-                bullets.append(inject_bullet)
-                experience[0]["bullets"] = bullets
-
+    if "skills" not in resume or not isinstance(resume["skills"], list):
+        resume["skills"] = []
+        
+    for kw in still_missing:
+        if kw not in resume["skills"]:
+            resume["skills"].append(kw)
+            
     return resume
 
 
