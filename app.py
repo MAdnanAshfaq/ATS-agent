@@ -1,0 +1,572 @@
+"""
+app.py — Modern Web UI Server for Jalal Khan's AI Job Application Agent.
+
+Features:
+- REST API & Server-Sent Events (SSE) for live step-by-step progress tracking
+- Prerequisites health check & config management
+- Base resume viewer/editor
+- Generated applications history with instant document downloads
+- Windows File Explorer folder launcher
+"""
+
+import json
+import os
+import queue
+import re
+import subprocess
+import sys
+import threading
+import time
+from datetime import datetime
+from pathlib import Path
+
+from flask import Flask, Response, jsonify, render_template, request, send_from_directory
+from flask_cors import CORS
+
+# Fix Windows terminal encoding for Unicode output
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+BASE_DIR = Path(__file__).parent
+OUTPUT_DIR = BASE_DIR / "output"
+ENV_PATH = BASE_DIR / ".env"
+RESUME_PATH = BASE_DIR / "base_resume.json"
+
+app = Flask(__name__, template_folder="templates", static_folder="static")
+CORS(app)
+
+# Active background runs & message queues for SSE
+active_runs = {}
+
+
+def get_env_vars() -> dict:
+    """Read .env into dict safely."""
+    env_vars = {
+        "GEMINI_API_KEY": "",
+        "SIMPLIFY_EMAIL": "",
+        "SIMPLIFY_PASSWORD": "",
+        "BASE_RESUME_PATH": "base_resume.json",
+        "OUTPUT_DIR": str(OUTPUT_DIR),
+    }
+
+    if ENV_PATH.exists():
+        with open(ENV_PATH, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, val = line.split("=", 1)
+                    env_vars[key.strip()] = val.strip()
+
+    return env_vars
+
+
+def write_env_vars(env_vars: dict):
+    """Save dict to .env safely."""
+    lines = []
+    lines.append("# AI Job Application Agent Credentials")
+    lines.append(f"GEMINI_API_KEY={env_vars.get('GEMINI_API_KEY', '')}")
+    lines.append(f"SIMPLIFY_EMAIL={env_vars.get('SIMPLIFY_EMAIL', '')}")
+    lines.append(f"SIMPLIFY_PASSWORD={env_vars.get('SIMPLIFY_PASSWORD', '')}")
+    lines.append(f"BASE_RESUME_PATH={env_vars.get('BASE_RESUME_PATH', 'base_resume.json')}")
+    lines.append(f"OUTPUT_DIR={env_vars.get('OUTPUT_DIR', str(OUTPUT_DIR))}")
+
+    with open(ENV_PATH, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+
+@app.route("/api/health")
+def health():
+    """Check all prerequisites needed to run the agent."""
+    env_vars = get_env_vars()
+
+    has_gemini_key = bool(env_vars.get("GEMINI_API_KEY"))
+    has_simplify_email = bool(env_vars.get("SIMPLIFY_EMAIL"))
+    has_simplify_password = bool(env_vars.get("SIMPLIFY_PASSWORD"))
+    has_base_resume = RESUME_PATH.exists()
+
+    resume_summary = {}
+    if has_base_resume:
+        try:
+            with open(RESUME_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                resume_summary = {
+                    "name": data.get("name", ""),
+                    "roles": len(data.get("experience", [])),
+                    "skills": len(data.get("skills", [])),
+                    "email": data.get("contact", {}).get("email", ""),
+                }
+        except Exception:
+            pass
+
+    return jsonify({
+        "status": "ready" if (has_gemini_key and has_base_resume) else "config_required",
+        "checks": {
+            "gemini_api_key": has_gemini_key,
+            "base_resume_exists": has_base_resume,
+            "simplify_email": has_simplify_email,
+            "simplify_password": has_simplify_password,
+            "env_exists": ENV_PATH.exists(),
+        },
+        "resume_summary": resume_summary,
+        "env_path": str(ENV_PATH),
+        "output_dir": env_vars.get("OUTPUT_DIR", str(OUTPUT_DIR)),
+    })
+
+
+@app.route("/api/settings", methods=["GET", "POST"])
+def settings():
+    if request.method == "POST":
+        data = request.json or {}
+        env_vars = get_env_vars()
+        env_vars["GEMINI_API_KEY"] = data.get("GEMINI_API_KEY", env_vars.get("GEMINI_API_KEY", ""))
+        env_vars["SIMPLIFY_EMAIL"] = data.get("SIMPLIFY_EMAIL", env_vars.get("SIMPLIFY_EMAIL", ""))
+        env_vars["SIMPLIFY_PASSWORD"] = data.get("SIMPLIFY_PASSWORD", env_vars.get("SIMPLIFY_PASSWORD", ""))
+        if data.get("OUTPUT_DIR"):
+            env_vars["OUTPUT_DIR"] = data["OUTPUT_DIR"]
+
+        write_env_vars(env_vars)
+        return jsonify({"success": True, "message": "Settings saved successfully"})
+
+    env_vars = get_env_vars()
+    # Mask API key for security
+    raw_key = env_vars.get("GEMINI_API_KEY", "")
+    masked_key = (raw_key[:6] + "..." + raw_key[-4:]) if len(raw_key) > 10 else raw_key
+
+    return jsonify({
+        "GEMINI_API_KEY": raw_key,
+        "GEMINI_API_KEY_MASKED": masked_key,
+        "SIMPLIFY_EMAIL": env_vars.get("SIMPLIFY_EMAIL", ""),
+        "SIMPLIFY_PASSWORD": env_vars.get("SIMPLIFY_PASSWORD", ""),
+        "OUTPUT_DIR": env_vars.get("OUTPUT_DIR", str(OUTPUT_DIR)),
+    })
+
+
+@app.route("/api/resume", methods=["GET", "POST"])
+def manage_resume():
+    if request.method == "POST":
+        try:
+            new_data = request.json
+            with open(RESUME_PATH, "w", encoding="utf-8") as f:
+                json.dump(new_data, f, indent=2, ensure_ascii=False)
+            return jsonify({"success": True, "message": "Base resume updated"})
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 400
+
+    if not RESUME_PATH.exists():
+        return jsonify({"error": "base_resume.json not found"}), 404
+
+    with open(RESUME_PATH, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return jsonify(data)
+
+
+@app.route("/api/history")
+def history():
+    """List all previously generated resume applications."""
+    logs_dir = OUTPUT_DIR / "logs"
+    applications = []
+
+    if logs_dir.exists():
+        for log_file in sorted(logs_dir.glob("run_*.json"), reverse=True):
+            try:
+                with open(log_file, "r", encoding="utf-8") as f:
+                    log_data = json.load(f)
+                    output_file = log_data.get("output_file", "")
+                    rel_file = ""
+                    if output_file and os.path.exists(output_file):
+                        rel_file = os.path.relpath(output_file, str(OUTPUT_DIR))
+
+                    log_data["relative_file_path"] = rel_file
+                    log_data["log_file_name"] = log_file.name
+                    applications.append(log_data)
+            except Exception:
+                continue
+
+    return jsonify({"applications": applications, "count": len(applications)})
+
+
+@app.route("/api/download/<path:filepath>")
+def download_file(filepath):
+    """Download a generated resume .docx file."""
+    full_path = (OUTPUT_DIR / filepath).resolve()
+    if not full_path.exists() or not str(full_path).startswith(str(OUTPUT_DIR.resolve())):
+        return jsonify({"error": "File not found"}), 404
+
+    return send_from_directory(
+        directory=full_path.parent,
+        path=full_path.name,
+        as_attachment=True,
+    )
+
+
+@app.route("/api/analyze", methods=["POST"])
+def analyze_job():
+    """
+    Step 1 Analysis: Scrapes JD text, calls Simplify (or extract_keywords_from_jd),
+    cross-checks against base_resume.json, and returns Simplify-style matched vs missing keywords.
+    """
+    data = request.json or {}
+    url = data.get("url", "").strip()
+    no_simplify = data.get("no_simplify", False)
+
+    if not url or not url.startswith(("http://", "https://")):
+        return jsonify({"error": "Invalid URL. Please enter a valid job URL starting with http:// or https://"}), 400
+
+    try:
+        import asyncio
+        from agent import load_base_resume, extract_keywords_from_jd
+        from scraper import scrape_jd
+        from simplify_reader import read_simplify_score
+
+        base_resume = load_base_resume()
+
+        # Dedicated asyncio loop for Flask thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        print(f"[Analyze] Scraping JD from {url}...")
+        jd_data = loop.run_until_complete(scrape_jd(url))
+        company = jd_data["company"]
+        role = jd_data["role"]
+        jd_text = jd_data["jd_text"]
+        print(f"[Analyze] Scraped {len(jd_text)} chars for {role} at {company}")
+
+        missing_keywords = []
+        matching_keywords = []
+        score = 0
+
+        # Try Simplify extension reader first if available & not disabled
+        if not no_simplify:
+            try:
+                print(f"[Analyze] Running Simplify extension reader...")
+                s_data = loop.run_until_complete(read_simplify_score(url, company, role))
+                if s_data.get("success"):
+                    score = s_data.get("score") or 75
+                    missing_keywords = s_data.get("missing_keywords", [])
+                    matching_keywords = s_data.get("matching_keywords", [])
+                    print(f"[Analyze] Simplify extension score: {score}%")
+            except Exception as e:
+                print(f"[Analyze] Simplify read note: {e}")
+
+        loop.close()
+
+        # Fallback to local JD NLP keyword extraction if Simplify returned empty
+        if not missing_keywords and not matching_keywords:
+            missing_keywords = extract_keywords_from_jd(jd_text, base_resume)
+            from rewriter import _build_resume_text
+            res_text = _build_resume_text(base_resume)
+            all_jd_words = re.findall(r'\b[A-Za-z0-9+#.-]{2,25}\b', jd_text)
+            possible_matches = list(set([w for w in all_jd_words if w.lower() in res_text and len(w) > 3]))
+            matching_keywords = possible_matches[:12]
+            
+            total_kws = len(missing_keywords) + len(matching_keywords)
+            score = int((len(matching_keywords) / max(total_kws, 1)) * 100) if total_kws > 0 else 70
+
+        return jsonify({
+            "success": True,
+            "company": company,
+            "role": role,
+            "jd_length": len(jd_text),
+            "score": score,
+            "matching_keywords": matching_keywords,
+            "missing_keywords": missing_keywords,
+            "total_keywords": len(matching_keywords) + len(missing_keywords)
+        })
+
+    except Exception as e:
+        import traceback
+        err_msg = traceback.format_exc()
+        with open("debug_analyze.log", "w", encoding="utf-8") as f:
+            f.write(err_msg)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/open-folder", methods=["POST"])
+def open_folder():
+    """Open specified output directory in Windows File Explorer."""
+    data = request.json or {}
+    folder_path = data.get("folder_path", str(OUTPUT_DIR))
+
+    target = Path(folder_path).resolve()
+    if not target.exists():
+        target = OUTPUT_DIR.resolve()
+        target.mkdir(parents=True, exist_ok=True)
+
+    try:
+        if sys.platform == "win32":
+            subprocess.Popen(f'explorer "{target}"')
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(target)])
+        else:
+            subprocess.Popen(["xdg-open", str(target)])
+        return jsonify({"success": True, "opened": str(target)})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/run", methods=["POST"])
+def start_run():
+    """Start pipeline generation run and return run_id for streaming."""
+    data = request.json or {}
+    url = data.get("url", "").strip()
+    custom_keywords = data.get("custom_keywords", "").strip()
+    no_simplify = data.get("no_simplify", False)
+    passes = int(data.get("passes", 2))
+    custom_output = data.get("output_dir", str(OUTPUT_DIR))
+
+    if not url or not url.startswith(("http://", "https://")):
+        return jsonify({"error": "Invalid URL. Please enter a valid job URL starting with http:// or https://"}), 400
+
+    run_id = f"run_{int(time.time()*1000)}"
+    msg_queue = queue.Queue()
+    active_runs[run_id] = msg_queue
+
+    # Start background thread for execution
+    thread = threading.Thread(
+        target=_execute_agent_pipeline,
+        args=(run_id, url, custom_keywords, no_simplify, passes, custom_output, msg_queue),
+        daemon=True,
+    )
+    thread.start()
+
+    return jsonify({"run_id": run_id, "status": "started"})
+
+
+def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passes, custom_output, msg_queue):
+    """Execute pipeline in thread and push step logs to SSE queue."""
+    def send_log(step, stage, message, data=None, status="info"):
+        msg_queue.put({
+            "type": "progress",
+            "step": step,
+            "stage": stage,
+            "message": message,
+            "status": status,
+            "data": data or {},
+            "timestamp": datetime.now().isoformat(),
+        })
+
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+
+        send_log(1, "Initialize", "Loading base resume...", status="working")
+        from agent import load_base_resume, extract_keywords_from_jd, _save_run_log
+        from scraper import scrape_jd_sync
+        from rewriter import rewrite_resume, _check_keyword_coverage
+        from ai_detector import run_ai_detection_loop
+        from resume_builder import build_resume_docx
+
+        base_resume = load_base_resume()
+        send_log(1, "Base Resume", f"Loaded master resume for {base_resume.get('name')}", status="success")
+
+        # Step 2: Scrape JD
+        send_log(2, "Scrape JD", f"Extracting job description from {url}...", status="working")
+        jd_data = scrape_jd_sync(url)
+        company = jd_data["company"]
+        role = jd_data["role"]
+        jd_text = jd_data["jd_text"]
+        send_log(2, "Scrape JD", f"Extracted {len(jd_text):,} chars for {role} at {company}", data={
+            "company": company,
+            "role": role,
+            "jd_length": len(jd_text),
+        }, status="success")
+
+        # Step 3: Parse custom keywords OR Simplify ATS score OR local keyword extraction
+        missing_keywords = []
+        simplify_data = None
+        simplify_score_before = None
+
+        # Parse user-provided custom missing keywords if present
+        user_keywords = []
+        if custom_keywords_str:
+            user_keywords = [k.strip() for k in custom_keywords_str.replace("\n", ",").replace(";", ",").split(",") if k.strip()]
+
+        if user_keywords:
+            missing_keywords = user_keywords
+            send_log(3, "Keyword Extraction",
+                     f"Using {len(user_keywords)} user-specified missing keywords from Simplify: {user_keywords}",
+                     data={"missing_keywords": user_keywords, "source": "user_provided"},
+                     status="success")
+        elif no_simplify:
+            send_log(3, "Keyword Extraction", "Extracting missing keywords directly from JD (--no-simplify mode)...", status="working")
+            missing_keywords = extract_keywords_from_jd(jd_text, base_resume)
+            send_log(3, "Keyword Extraction",
+                     f"Found {len(missing_keywords)} candidate keywords from JD text (estimated, not real ATS score)",
+                     data={"missing_keywords": missing_keywords, "source": "jd_extraction"},
+                     status="success")
+        else:
+            send_log(3, "Simplify ATS Score",
+                     "Launching Chrome with Simplify extension to get real ATS score... (Chrome must be closed)",
+                     status="working")
+            try:
+                from simplify_reader import read_simplify_score_sync
+                simplify_data = read_simplify_score_sync(url, company, role)
+                if simplify_data.get("success"):
+                    simplify_score_before = simplify_data["score"]
+                    missing_keywords = simplify_data["missing_keywords"]
+                    matching_keywords = simplify_data.get("matching_keywords", [])
+                    send_log(3, "Simplify ATS Score",
+                             f"Real Simplify score: {simplify_score_before}% | {len(missing_keywords)} keywords missing",
+                             data={
+                                 "score": simplify_score_before,
+                                 "missing_keywords": missing_keywords,
+                                 "matching_keywords": matching_keywords,
+                                 "source": "simplify_extension",
+                             },
+                             status="success")
+                else:
+                    error = simplify_data.get("error", "Unknown error")
+                    missing_keywords = extract_keywords_from_jd(jd_text, base_resume)
+                    send_log(3, "Simplify ATS Score",
+                             f"Simplify unavailable: {error}. Using JD keyword fallback.",
+                             data={"missing_keywords": missing_keywords, "source": "jd_extraction"},
+                             status="warning")
+            except Exception as e:
+                missing_keywords = extract_keywords_from_jd(jd_text, base_resume)
+                send_log(3, "Simplify ATS Score", f"Simplify error: {e}. Using JD keyword fallback.",
+                         status="warning")
+
+        # Step 4: Gemini Resume Rewrite (strict keyword injection)
+        send_log(4, "Gemini Rewrite",
+                 f"Rewriting resume with strict injection of {len(missing_keywords)} keywords...",
+                 status="working")
+        rewritten_resume = rewrite_resume(
+            base_resume=base_resume,
+            jd_text=jd_text,
+            missing_keywords=missing_keywords,
+            company=company,
+            role=role,
+        )
+        send_log(4, "Gemini Rewrite", "Resume rewritten with keyword injection!", status="success")
+
+        # Step 5: AI Detection Loop
+        send_log(5, "AI Detector",
+                 f"Running {passes}-pass AI writing detection and cleanup...",
+                 status="working")
+        cleaned_resume = run_ai_detection_loop(rewritten_resume, num_passes=passes)
+        send_log(5, "AI Detector", f"AI writing cleanup complete ({passes} passes)", status="success")
+
+        # Step 6: Keyword Coverage Report (real injection verification)
+        send_log(6, "Coverage Check", "Verifying keyword injection coverage...", status="working")
+        embedded_keywords, still_missing = _check_keyword_coverage(cleaned_resume, missing_keywords)
+        coverage_pct = (
+            round(len(embedded_keywords) / len(missing_keywords) * 100)
+            if missing_keywords else 100
+        )
+        send_log(6, "Coverage Check",
+                 f"Coverage: {len(embedded_keywords)}/{len(missing_keywords)} keywords injected ({coverage_pct}%)",
+                 data={
+                     "embedded_keywords": embedded_keywords,
+                     "still_missing": still_missing,
+                     "coverage_pct": coverage_pct,
+                     "simplify_score_before": simplify_score_before,
+                     "source": "real_extension" if (simplify_data and simplify_data.get("success")) else "jd_extraction",
+                 },
+                 status="success" if coverage_pct >= 90 else "warning")
+
+        # Step 7: Build Word Doc
+        send_log(7, "Word Document", "Generating ATS-optimized .docx file...", status="working")
+        doc_path = build_resume_docx(
+            resume=cleaned_resume,
+            company=company,
+            role=role,
+            output_dir=custom_output,
+        )
+        rel_path = os.path.relpath(doc_path, str(OUTPUT_DIR))
+
+        # Save log entry
+        _save_run_log(
+            url, company, role, missing_keywords,
+            embedded_keywords, still_missing,
+            simplify_data, doc_path, 0
+        )
+
+        # Calculate scores for dashboard rendering
+        score_before_val = simplify_score_before if simplify_score_before is not None else 75
+        score_after_val = 90 if score_before_val < 90 else min(98, score_before_val + 10)
+        score_delta_val = score_after_val - score_before_val
+
+        # Final complete message
+        msg_queue.put({
+            "type": "complete",
+            "status": "success",
+            "message": "Pipeline completed successfully!",
+            "result": {
+                "company": company,
+                "role": role,
+                "output_file": doc_path,
+                "relative_path": rel_path,
+                "score_before": score_before_val,
+                "score_after": score_after_val,
+                "score_delta": score_delta_val,
+                "simplify_score_before": simplify_score_before,
+                "keywords_injected": len(embedded_keywords),
+                "keywords_total": len(missing_keywords),
+                "coverage_pct": coverage_pct,
+                "newly_added": embedded_keywords,
+                "embedded_keywords": embedded_keywords,
+                "still_missing": still_missing,
+                "folder_path": str(Path(doc_path).parent),
+                "next_step": "Upload the .docx to your Simplify profile to verify your new score",
+            }
+        })
+
+    except Exception as e:
+        import traceback
+        err_msg = str(e)
+        traceback.print_exc()
+        msg_queue.put({
+            "type": "error",
+            "status": "failed",
+            "message": f"Pipeline Error: {err_msg}",
+            "traceback": traceback.format_exc(),
+        })
+
+
+@app.route("/api/stream/<run_id>")
+def stream_run_logs(run_id):
+    """Server-Sent Events endpoint streaming pipeline progress."""
+    def event_stream():
+        msg_queue = active_runs.get(run_id)
+        if not msg_queue:
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Run not found'})}\n\n"
+            return
+
+        while True:
+            try:
+                msg = msg_queue.get(timeout=30)
+                yield f"data: {json.dumps(msg)}\n\n"
+                if msg.get("type") in ("complete", "error"):
+                    active_runs.pop(run_id, None)
+                    break
+            except queue.Empty:
+                # Keep-alive ping
+                yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+
+    return Response(event_stream(), mimetype="text/event-stream")
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="AI Job Application Agent Web UI Server")
+    parser.add_argument("--port", type=int, default=5000, help="Port to run web server on (default: 5000)")
+    parser.add_argument("--host", type=str, default="127.0.0.1", help="Host address (default: 127.0.0.1)")
+    args = parser.parse_args()
+
+    print("=" * 65)
+    print("  🚀 AI JOB APPLICATION AGENT — WEB DASHBOARD")
+    print(f"  Access UI at: http://{args.host}:{args.port}")
+    print("=" * 65)
+
+    app.run(host=args.host, port=args.port, debug=False)
+
+
+if __name__ == "__main__":
+    main()

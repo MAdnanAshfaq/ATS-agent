@@ -1,0 +1,278 @@
+{
+  "version": "1.0",
+  "source": "Wikipedia Signs of AI Writing",
+  "description": "Complete ruleset of AI writing patterns to detect and eliminate from resume text.",
+  "categories": [
+    {
+      "id": "language_tone",
+      "name": "Language and Tone",
+      "rules": [
+        {
+          "id": "LT001",
+          "name": "Overused AI Power Words",
+          "description": "Words commonly overused by AI to sound impressive but are vague and detectable.",
+          "flags": [
+            "streamlined", "leveraged", "spearheaded", "fostered", "pivotal",
+            "transformative", "groundbreaking", "innovative", "robust", "seamless",
+            "synergize", "synergy", "paradigm", "holistic", "impactful",
+            "actionable", "scalable", "dynamic", "proactive", "collaborative",
+            "cutting-edge", "state-of-the-art", "best-in-class", "world-class",
+            "next-generation", "revolutionary", "disruptive", "game-changing",
+            "best practices", "value-add", "deep dive", "circle back", "bandwidth",
+            "boilerplate", "utilize", "utilize", "facilitate", "orchestrated",
+            "championed", "catalyzed", "ideated", "architected", "evangelized",
+            "passionate about", "driven by", "committed to excellence"
+          ],
+          "action": "Replace with plain, specific, concrete verbs and nouns that describe exactly what was done."
+        },
+        {
+          "id": "LT002",
+          "name": "Vague Analysis Phrases",
+          "description": "Phrases that add fake significance without saying anything specific.",
+          "flags": [
+            "improving convenience", "illustrating lasting influence", "highlighting significance",
+            "demonstrating value", "showcasing impact", "reflecting dedication",
+            "emphasizing importance", "underscoring commitment", "signifying expertise",
+            "proving capability", "establishing credibility"
+          ],
+          "action": "Remove tacked-on meaning phrases. State facts and results directly with numbers where possible."
+        },
+        {
+          "id": "LT003",
+          "name": "Exaggerated Descriptors",
+          "description": "Superlatives and exaggerated praise not backed by specifics.",
+          "flags": [
+            "esteemed", "renowned", "exceptional", "unparalleled", "extraordinary",
+            "outstanding", "remarkable", "incredible", "phenomenal", "stellar",
+            "exemplary", "distinguished", "prestigious", "acclaimed", "celebrated"
+          ],
+          "action": "Replace with specific, verifiable claims. Remove if no factual backing exists."
+        },
+        {
+          "id": "LT004",
+          "name": "Repetitive Summary Phrases",
+          "description": "Closing phrases that AI appends to wrap up sections artificially.",
+          "flags": [
+            "In summary", "Overall", "In conclusion", "To summarize",
+            "Ultimately", "In essence", "At the end of the day", "All in all",
+            "To wrap up", "In closing", "As mentioned above", "As noted earlier"
+          ],
+          "action": "Remove entirely. Resumes do not need section summaries."
+        },
+        {
+          "id": "LT005",
+          "name": "Filler Transition Phrases",
+          "description": "Hollow transitions that pad content without adding meaning.",
+          "flags": [
+            "Furthermore", "Moreover", "Additionally", "It is worth noting that",
+            "It should be noted that", "As a result", "Consequently", "Therefore",
+            "Thus", "Hence", "Evidently", "Clearly", "Obviously", "Needless to say",
+            "Of course", "Indeed", "Certainly", "Undoubtedly", "Without a doubt"
+          ],
+          "action": "Remove or replace with direct causal language if cause-effect is genuinely present."
+        },
+        {
+          "id": "LT006",
+          "name": "Generic Passion Statements",
+          "description": "Vague enthusiasm claims that AI writes but humans find hollow.",
+          "flags": [
+            "passionate about technology", "driven by a desire to", "deeply committed to",
+            "strong passion for", "enthusiastic about", "excited by the opportunity",
+            "dedicated to making a difference", "committed to continuous learning",
+            "eager to contribute", "thriving in fast-paced environments"
+          ],
+          "action": "Replace with specific evidence of interest or passion (e.g., side projects, contributions, specific tech choices)."
+        }
+      ]
+    },
+    {
+      "id": "sentence_structure",
+      "name": "Sentence Structure",
+      "rules": [
+        {
+          "id": "SS001",
+          "name": "Negative Parallelism Pattern",
+          "description": "AI writing often uses 'Not only X but also Y' and similar constructions.",
+          "flags": [
+            "Not only X but also Y",
+            "Not only did I X but I also Y",
+            "It is not just X it is Y",
+            "Not X but X",
+            "Not merely X but Y",
+            "Not simply X but rather Y"
+          ],
+          "pattern_regex": "not only .{1,80} but (also )?",
+          "action": "Rewrite as a direct statement of the most important fact."
+        },
+        {
+          "id": "SS002",
+          "name": "Rule of Threes — Adjective Triplets",
+          "description": "AI frequently groups three adjectives or descriptors together for rhetorical effect.",
+          "examples": [
+            "innovative, transformative, and groundbreaking",
+            "fast, reliable, and scalable",
+            "efficient, effective, and impactful",
+            "creative, collaborative, and results-driven"
+          ],
+          "action": "Keep only the most specific and accurate single descriptor. Remove the other two."
+        },
+        {
+          "id": "SS003",
+          "name": "Overly Uniform Bullet Length",
+          "description": "All bullets being suspiciously similar in length signals template generation.",
+          "detection": "If more than 60% of bullets are within 5 words of each other in length, the lengths are too uniform.",
+          "action": "Vary bullet lengths naturally. Some should be short (8-10 words), some longer (15-20 words). Not all the same."
+        },
+        {
+          "id": "SS004",
+          "name": "Passive Voice Overuse",
+          "description": "AI often defaults to passive constructions that obscure agency.",
+          "flags": [
+            "was responsible for", "was tasked with", "was involved in",
+            "was utilized", "was implemented by", "was developed by",
+            "has been proven", "has been shown to", "has been demonstrated"
+          ],
+          "action": "Rewrite in active voice with the subject performing the action."
+        },
+        {
+          "id": "SS005",
+          "name": "Overly Formal Register",
+          "description": "Unnaturally formal phrasing that real professionals don't use in resumes.",
+          "flags": [
+            "in order to", "with the aim of", "for the purpose of",
+            "with respect to", "with regard to", "pertaining to",
+            "in accordance with", "in alignment with", "in conjunction with",
+            "on behalf of the organization", "across the enterprise"
+          ],
+          "action": "Simplify to direct language. 'to', 'for', 'about', 'with' are almost always better."
+        },
+        {
+          "id": "SS006",
+          "name": "Formulaic Section Opening",
+          "description": "Sections that all begin with the same grammatical pattern.",
+          "examples": [
+            "Led X, resulting in Y",
+            "Managed X, leading to Y",
+            "Developed X, achieving Y",
+            "Implemented X, enabling Y"
+          ],
+          "action": "Vary the opening word and structure. Start some bullets mid-thought, some with context first."
+        }
+      ]
+    },
+    {
+      "id": "formatting_tells",
+      "name": "Formatting Tells",
+      "rules": [
+        {
+          "id": "FT001",
+          "name": "Em Dash Overuse",
+          "description": "AI writing overuses em dashes as a stylistic tic.",
+          "flags": ["—", "–"],
+          "action": "Replace with a comma, period, or colon where appropriate. Remove if the sentence reads fine without it."
+        },
+        {
+          "id": "FT002",
+          "name": "Excessive Boldface Mid-Sentence",
+          "description": "AI often bolds random phrases in the middle of sentences.",
+          "action": "Remove bold from all non-header text. Only section headers should be bold."
+        },
+        {
+          "id": "FT003",
+          "name": "Inconsistent Title Case",
+          "description": "Random Title Case Applied In Bullet Points is an AI formatting artifact.",
+          "action": "Normalize all bullets to sentence case (capitalize only first word and proper nouns)."
+        },
+        {
+          "id": "FT004",
+          "name": "Colon Abuse for Emphasis",
+          "description": "AI uses colons unnecessarily to create a sense of structure and drama.",
+          "examples": [
+            "Result: 40% improvement",
+            "Technologies: React, Node.js",
+            "Outcome: Increased revenue"
+          ],
+          "action": "Integrate the information into the sentence naturally instead of using label: value format in bullets."
+        },
+        {
+          "id": "FT005",
+          "name": "Numbered List Inside Resume Bullets",
+          "description": "AI sometimes nests numbered sub-lists inside resume bullet points.",
+          "action": "Flatten to single-level bullets. Resumes should not have nested numbered lists."
+        }
+      ]
+    },
+    {
+      "id": "leftover_artifacts",
+      "name": "Leftover AI Artifacts",
+      "rules": [
+        {
+          "id": "LA001",
+          "name": "Collaborative Sign-off Phrases",
+          "description": "Phrases AI uses to end responses helpfully but are completely wrong in resumes.",
+          "flags": [
+            "I hope this helps", "Let me know if you need anything",
+            "Feel free to reach out", "Please don't hesitate to contact me",
+            "I look forward to hearing from you", "Thank you for considering",
+            "I would be happy to", "Please let me know if"
+          ],
+          "action": "Remove entirely. These have no place in a resume."
+        },
+        {
+          "id": "LA002",
+          "name": "Contrast-Reframe Statements",
+          "description": "AI loves to reframe something as more than it appears.",
+          "examples": [
+            "It is not a product launch, it is a paradigm shift",
+            "This is not just a role, it is an opportunity",
+            "Not merely a tool, but a solution"
+          ],
+          "pattern_regex": "not (just|merely|simply|only) .{1,50}, (it is|but) (a|an)",
+          "action": "Replace with a direct, factual statement of what it actually is."
+        },
+        {
+          "id": "LA003",
+          "name": "Superficial Attribution",
+          "description": "Vague authority claims AI uses to add credibility without specifics.",
+          "flags": [
+            "some experts argue", "widely regarded as", "many industry leaders believe",
+            "research suggests", "studies show", "according to industry standards",
+            "as widely known", "it is generally accepted", "experts agree"
+          ],
+          "action": "Replace with the specific source, number, or remove if it can't be substantiated."
+        },
+        {
+          "id": "LA004",
+          "name": "First Person Overuse or Absence",
+          "description": "AI either avoids first person entirely (making bullets sound impersonal) or uses it awkwardly.",
+          "detection": "If no bullet starts with an action verb (i.e., all start with 'I' or all avoid subject), the pattern is unnatural.",
+          "action": "Resume bullets should start directly with strong action verbs. No 'I' needed. No passive phrasing."
+        },
+        {
+          "id": "LA005",
+          "name": "Temporal Vagueness",
+          "description": "AI uses vague time references instead of specific ones.",
+          "flags": [
+            "over the years", "throughout my career", "in recent times",
+            "historically", "in the past", "going forward", "moving forward",
+            "in the future", "long-term", "short-term"
+          ],
+          "action": "Replace with specific timeframes (e.g., 'in Q3 2023', 'over 18 months', 'by end of 2024')."
+        },
+        {
+          "id": "LA006",
+          "name": "Quantification Without Context",
+          "description": "Numbers without context that AI inserts to appear data-driven.",
+          "examples": [
+            "increased efficiency by 40%",
+            "reduced costs by 25%",
+            "improved performance by 3x"
+          ],
+          "detection": "Metrics that appear without indicating: baseline, timeframe, or method of measurement.",
+          "action": "Keep metrics but add context: what was the baseline, how long did it take, how was it measured."
+        }
+      ]
+    }
+  ],
+  "gemini_system_instruction": "You are an AI writing detector trained on the Wikipedia Signs of AI Writing checklist. Your job is to review every sentence and bullet point of the provided resume JSON against the rules above. For each piece of text, check if it matches any flag, pattern, or example in the rules. If it matches, rewrite that specific sentence or bullet to sound natural, specific, and human — written by a senior engineer describing their own work, not by an AI template. Do NOT change factual content (company names, dates, technologies, metrics). Only change phrasing, word choice, and structure. Return the full cleaned resume as valid JSON in exactly the same structure you received."
+}

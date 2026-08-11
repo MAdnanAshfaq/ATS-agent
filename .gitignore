@@ -1,0 +1,28 @@
+# Credentials — never commit
+.env
+chrome_profile/
+chrome_profile_simplify/
+*.log
+debug_analyze.log
+
+# Generated files
+output/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
+# PDF resume (personal)
+*.pdf
+
+# Temp parsing files
+doc_raw.xml
+doc_text.txt
+extract_doc.ps1
+parse_doc.ps1
+
+# OS
+.DS_Store
+Thumbs.db

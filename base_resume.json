@@ -1,0 +1,132 @@
+{
+  "name": "Jalal Khan",
+  "contact": {
+    "email": "jalal.dev.work@gmail.com",
+    "phone": "+16177064986",
+    "linkedin": "linkedin.com/in/mjalalkhan23",
+    "github": "github.com/jalaldev1122",
+    "portfolio": "",
+    "location": "Warwick, Rhode Island, US"
+  },
+  "summary": "Senior Full Stack Engineer with 8+ years of experience designing and delivering scalable SaaS platforms across EdTech, home energy, and logistics sectors. Expert in Next.js, React, Angular, TypeScript, Node.js, Go, and Python, backed by deep AWS cloud-native infrastructure experience including Lambda, ECS/EKS, Bedrock, and SQS. Proven track record leading engineering teams, architecting microservice systems, and integrating AI/LLM features including RAG pipelines, conversational chatbots, and NL2SQL engines that drive measurable business outcomes. Experienced across the full delivery lifecycle from system design and API architecture to CI/CD, containerization, and production observability.",
+  "skills": [
+    "JavaScript",
+    "TypeScript",
+    "React.js",
+    "Next.js",
+    "Angular",
+    "Vue.js",
+    "HTML5",
+    "CSS3",
+    "Redux Toolkit",
+    "Zustand",
+    "NgRx",
+    "Recoil",
+    "MobX",
+    "Node.js",
+    "NestJS",
+    "Python",
+    "Django",
+    "Flask",
+    "Golang",
+    "RESTful APIs",
+    "GraphQL",
+    "PostgreSQL",
+    "MongoDB",
+    "MySQL",
+    "Redis",
+    "AWS Lambda",
+    "AWS ECS",
+    "AWS EKS",
+    "AWS S3",
+    "AWS EC2",
+    "AWS SQS",
+    "AWS Cognito",
+    "AWS Bedrock",
+    "API Gateway",
+    "CloudWatch",
+    "Terraform",
+    "Docker",
+    "Kubernetes",
+    "Amazon SQS",
+    "Kafka",
+    "RabbitMQ",
+    "GitHub Actions",
+    "GitLab CI",
+    "Jenkins",
+    "LangChain",
+    "RAG pipelines",
+    "NL2SQL",
+    "Agentic workflows",
+    "Vector databases",
+    "Mistral",
+    "JWT",
+    "OAuth 2.0",
+    "AWS Cognito"
+  ],
+  "experience": [
+    {
+      "title": "Senior Full-Stack Developer",
+      "company": "Website Movers",
+      "dates": "June 2021 - Present",
+      "location": "",
+      "bullets": [
+        "Led a cross-functional team of 4 engineers (2 frontend, 2 backend) delivering SaaS platforms for the home energy and EdTech sectors, driving code reviews, sprint planning, and architectural decisions",
+        "Architected Go and Next.js microservices for a home energy SaaS platform, enabling modular, independently deployable services with clean REST and GraphQL API boundaries",
+        "Built a customer-facing AI chatbot using Mistral 3B and LangChain serving 30,000+ students, reducing HelpScout support tickets by ~70% through conversational self-service",
+        "Implemented a natural language-to-SQL engine enabling non-technical users to query structured databases conversationally, eliminating dependency on manual reporting",
+        "Implemented document summarization pipelines using AWS Bedrock Knowledge Bases and RAG architecture, automating instructor evaluation review at scale",
+        "Integrated event-driven messaging with Amazon SQS to enable asynchronous, decoupled communication across microservices",
+        "Built serverless infrastructure with AWS Lambda, API Gateway, and Cognito for high availability and zero-downtime deployments across multi-tenant applications serving 30K+ concurrent users",
+        "Implemented secure authentication using JWT, OAuth 2.0, and AWS Cognito with role-based access control across SaaS products",
+        "Automated CI/CD pipelines using Jenkins, GitHub Actions, and GitLab CI, streamlining build, test, and deployment workflows",
+        "Optimized React frontend performance using memoization patterns and enforced WCAG accessibility and responsive UI standards"
+      ]
+    },
+    {
+      "title": "Full Stack Developer",
+      "company": "App Neta",
+      "dates": "Nov 2018 - May 2021",
+      "location": "",
+      "bullets": [
+        "Designed and delivered full-stack features for logistics and home services platforms (HVAC, insulation, solar) using Angular, NgRx, and TypeScript, building responsive, component-driven enterprise UIs",
+        "Built scalable backend services with Node.js (NestJS) and PostgreSQL, focusing on modularity and long-term maintainability across multi-service architectures",
+        "Developed Python-based AWS Lambda functions to automate XLSX report generation, contract creation, and email delivery, eliminating manual back-office workflows",
+        "Integrated Amazon SQS for asynchronous job processing across service workflows, improving fault tolerance and decoupling service dependencies",
+        "Designed and optimized MongoDB and PostgreSQL schemas for high-throughput services, implementing Redis caching strategies to reduce database load on frequently accessed endpoints",
+        "Dockerized microservices and deployed to AWS ECS/EKS, improving environment consistency across development, staging, and production",
+        "Implemented CI/CD pipelines with GitLab CI, streamlining release cycles and reducing manual deployment overhead",
+        "Contributed to AWS infrastructure (Lambda, EC2, S3) and established monitoring and alerting using CloudWatch and Sentry",
+        "Collaborated with cross-functional teams to define technical specs and ensure delivery aligned with business goals"
+      ]
+    },
+    {
+      "title": "Frontend Developer",
+      "company": "Spatial Front, Inc",
+      "dates": "August 2016 - October 2018",
+      "location": "",
+      "bullets": [
+        "Designed and maintained responsive, accessible UIs for applications using React and TypeScript with a component-based architecture",
+        "Integrated REST APIs with Redux for efficient state management and supported debugging, unit testing, and UI validation across critical modules",
+        "Optimized component rendering and virtual DOM updates, improving page load times and overall application responsiveness",
+        "Implemented dynamic forms, tables, and interactive dashboards, handling complex state and user input with Redux Toolkit and context APIs",
+        "Refactored legacy JavaScript code into modern React functional components with hooks, improving maintainability and code readability",
+        "Collaborated on state management architecture for large applications, balancing Redux, Recoil, and context-based solutions",
+        "Ensured cross-browser compatibility, mobile responsiveness, and WCAG accessibility compliance for stable, client-ready experiences",
+        "Participated in Agile sprints, peer code reviews, and delivery processes using Webpack, Git, and Jira"
+      ]
+    }
+  ],
+  "education": [
+    {
+      "institution": "National University of Science and Technology (NUST)",
+      "degree": "Bachelor of Science in Computer Science",
+      "field": "Computer Science",
+      "graduation_date": "",
+      "gpa": ""
+    }
+  ],
+  "projects": [],
+  "certifications": [],
+  "_raw_text": "JALAL KHAN SENIOR FULL STACK ENGINEER\njalal.dev.work@gmail.com +16177064986 Warwick, Rhode Island, US\nProfile Summary\nSenior Full Stack Engineer with 8+ years of experience designing and delivering scalable SaaS platforms\nacross EdTech, home energy, and logistics sectors. Expert in Next.js, React, Angular, TypeScript, Node.js,\nGo, and Python, backed by deep AWS cloud-native infrastructure experience including Lambda, ECS/EKS,\nBedrock, and SQS. Proven track record leading engineering teams, architecting microservice systems, and\nintegrating AI/LLM features including RAG pipelines, conversational chatbots, and NL2SQL engines\nthat drive measurable business outcomes. Experienced across the full delivery lifecycle from system\ndesign and API architecture to CI/CD, containerization, and production observability.\nSkill-Set\nFrontend: JavaScript, TypeScript, React.js, Next.js, Angular, Vue.js, HTML5, CSS3\nState Management: Redux Toolkit, Zustand, NgRx, Recoil, MobX\nBackend: Node.js, NestJS, Python (Django, Flask), Golang, RESTful APIs, GraphQL\nDatabases: PostgreSQL, MongoDB (Atlas), MySQL, Redis\nCloud & Infrastructure: AWS (Lambda, ECS, EKS, S3, EC2, SQS, Cognito, Bedrock, API Gateway, CloudWatch), Terraform, Docker, Kubernetes\nMessaging & Streaming: Amazon SQS, Kafka, RabbitMQ\nCI/CD & DevOps: GitHub Actions, GitLab CI, Jenkins\nAI/LLM: LangChain, RAG pipelines, NL2SQL, Agentic workflows, Vector databases, Mistral, AWS Bedrock\nAuth & Security: JWT, OAuth 2.0, AWS Cognito\nWork Experience\nSenior Full-Stack Developer | Website Movers\nJune 2021 - Present\nLed a cross-functional team of 4 engineers (2 frontend, 2 backend) delivering SaaS platforms for the home energy and EdTech sectors\nArchitected Go and Next.js microservices for a home energy SaaS platform, enabling modular, independently deployable services\nBuilt a customer-facing AI chatbot using Mistral 3B and LangChain serving 30,000+ students, reducing HelpScout support tickets by ~70%\nImplemented a natural language-to-SQL engine enabling non-technical users to query structured databases conversationally\nImplemented document summarization pipelines using AWS Bedrock Knowledge Bases and RAG architecture\nIntegrated event-driven messaging with Amazon SQS to enable asynchronous, decoupled communication across microservices\nBuilt serverless infrastructure with AWS Lambda, API Gateway, and Cognito for high availability and zero-downtime deployments\nImplemented secure authentication using JWT, OAuth 2.0, and AWS Cognito with role-based access control\nAutomated CI/CD pipelines using Jenkins, GitHub Actions, and GitLab CI\nOptimized React frontend performance using memoization patterns and enforced WCAG accessibility standards\nNov 2018 - May 2021\nFull Stack Developer | App Neta\nDesigned and delivered full-stack features for logistics and home services platforms using Angular, NgRx, and TypeScript\nBuilt scalable backend services with Node.js (NestJS) and PostgreSQL\nDeveloped Python-based AWS Lambda functions to automate XLSX report generation\nIntegrated Amazon SQS for asynchronous job processing\nDesigned and optimized MongoDB and PostgreSQL schemas, implementing Redis caching strategies\nDockerized microservices and deployed to AWS ECS/EKS\nImplemented CI/CD pipelines with GitLab CI\nContributed to AWS infrastructure (Lambda, EC2, S3) with CloudWatch and Sentry monitoring\nFrontend Developer | Spatial Front, Inc\nAugust 2016 - October 2018\nDesigned and maintained responsive, accessible UIs using React and TypeScript\nIntegrated REST APIs with Redux for efficient state management\nOptimized component rendering and virtual DOM updates\nImplemented dynamic forms, tables, and interactive dashboards with Redux Toolkit\nRefactored legacy JavaScript code into modern React functional components with hooks\nParticipated in Agile sprints, peer code reviews using Webpack, Git, and Jira\nEducation\nBachelor of Science in Computer Science\nNational University of Science and Technology (NUST)\n"
+}

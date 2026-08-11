@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Job Application Agent | Jalal Khan</title>
+  
+  <!-- Google Fonts: Outfit & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome 6 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <!-- Custom Glassmorphism Styles -->
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+  <!-- Top Ambient Glow Elements -->
+  <div class="ambient-glow glow-purple"></div>
+  <div class="ambient-glow glow-cyan"></div>
+  <div class="ambient-glow glow-blue"></div>
+
+  <!-- Header Navigation -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand-logo">
+        <div class="logo-icon"><i class="fa-solid fa-robot"></i></div>
+        <div class="brand-text">
+          <span class="brand-name">AI Job Agent <span class="badge-v2">V2.0</span></span>
+          <span class="brand-sub">Jalal Khan  ·  Zero Paid Tools</span>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="nav-tabs">
+        <button class="nav-tab active" data-tab="new-app">
+          <i class="fa-solid fa-wand-magic-sparkles"></i> New Application
+        </button>
+        <button class="nav-tab" data-tab="history">
+          <i class="fa-solid fa-folder-closed"></i> History <span class="tab-badge" id="history-count">0</span>
+        </button>
+        <button class="nav-tab" data-tab="setup">
+          <i class="fa-solid fa-sliders"></i> Prerequisites & Setup
+        </button>
+        <button class="nav-tab" data-tab="resume">
+          <i class="fa-solid fa-file-user"></i> Master Resume
+        </button>
+      </nav>
+
+      <!-- System Readiness Indicator -->
+      <div class="system-status-pill" id="system-status-indicator">
+        <span class="status-dot dot-checking"></span>
+        <span class="status-text">Checking System...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="main-container">
+
+    <!-- ── TAB 1: NEW APPLICATION ────────────────────────────────────────── -->
+    <section class="tab-content active" id="tab-new-app">
+      
+      <!-- Readiness Alert Banner (if setup required) -->
+      <div class="alert-card alert-warning hidden" id="config-warning-banner">
+        <div class="alert-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+        <div class="alert-content">
+          <h4>Action Required Before First Run</h4>
+          <p id="config-warning-text">You need to configure your <strong>GEMINI_API_KEY</strong> in the setup tab before generating resumes.</p>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="switchTab('setup')">Fix Setup Now</button>
+      </div>
+
+      <!-- Hero Header -->
+      <div class="hero-section">
+        <h1 class="hero-title">Paste Job URL. <span class="gradient-text">Get Tailored Resume.</span></h1>
+        <p class="hero-subtitle">
+          Scrapes full JD, analyzes keyword match score, rewrites experience with Gemini 2.5 Flash, 
+          runs 2-pass Wikipedia AI-detection cleanup, and outputs clean ATS Word document.
+        </p>
+      </div>
+
+      <!-- Input Form Card -->
+      <div class="glass-card form-card">
+        <form id="agent-form">
+          
+          <div class="form-group">
+            <label for="jd-url" class="form-label">
+              <span>Job Posting URL</span>
+              <span class="platform-badge hidden" id="detected-platform-badge">
+                <i class="fa-solid fa-globe"></i> <span id="platform-name">Generic</span>
+              </span>
+            </label>
+            <div class="url-input-wrapper">
+              <i class="fa-solid fa-link input-icon"></i>
+              <input 
+                type="text" 
+                id="jd-url" 
+                placeholder="https://jobs.lever.co/company/role or Greenhouse, LinkedIn, Workday..." 
+                required 
+                autocomplete="off"
+              >
+              <button type="button" class="btn btn-secondary btn-lg" id="analyze-btn" onclick="analyzeJobKeywords()">
+                <i class="fa-solid fa-magnifying-glass"></i> Analyze & Cross-Check
+              </button>
+              <button type="button" class="btn btn-primary btn-lg" id="start-btn" onclick="startGeneration()">
+                <i class="fa-solid fa-bolt"></i> Auto Generate
+              </button>
+            </div>
+            <div class="form-hint">
+              Supported ATS: LinkedIn, Lever, Greenhouse, Workday, Wellfound, Ashby, SmartRecruiters, iCIMS, + Generic
+            </div>
+          </div>
+
+          <!-- Simplify / Custom Missing Keywords Input -->
+          <div class="form-group margin-top-md">
+            <label for="custom-keywords-input" class="form-label">
+              <span><i class="fa-solid fa-key text-cyan"></i> Simplify Missing Keywords <span class="text-muted">(Optional)</span></span>
+            </label>
+            <div class="keywords-input-wrapper">
+              <input 
+                type="text" 
+                id="custom-keywords-input" 
+                class="form-input"
+                placeholder="Paste missing keywords from Simplify (e.g. end-to-end, product features, FastAPI, Docker)..."
+                autocomplete="off"
+              >
+            </div>
+            <div class="form-hint">
+              Paste the exact missing keywords shown in your Simplify popup to guarantee 100% injection into your tailored resume.
+            </div>
+          </div>
+
+          <!-- Advanced Options Collapse -->
+          <div class="options-toggle-row">
+            <button type="button" class="btn-link" id="toggle-options-btn">
+              <i class="fa-solid fa-gear"></i> Pipeline Options <i class="fa-solid fa-chevron-down arrow-icon"></i>
+            </button>
+          </div>
+
+          <div class="advanced-options-panel hidden" id="options-panel">
+            <div class="options-grid">
+              
+              <div class="option-item">
+                <label class="toggle-switch">
+                  <input type="checkbox" id="no-simplify-toggle">
+                  <span class="slider"></span>
+                </label>
+                <div class="option-label">
+                  <strong>Fallback Mode (Skip Simplify Extension)</strong>
+                  <span>Extracts missing keywords directly from JD text without launching Simplify Chrome extension</span>
+                </div>
+              </div>
+
+              <div class="option-item">
+                <label for="ai-passes-select" class="option-title-label">AI Detection Passes</label>
+                <select id="ai-passes-select" class="form-select">
+                  <option value="2" selected>2 Passes (Standard Blueprint)</option>
+                  <option value="1">1 Pass (Fastest)</option>
+                  <option value="3">3 Passes (Ultra Strict)</option>
+                </select>
+                <span class="option-hint">Checks every sentence against 30+ Wikipedia AI writing rules</span>
+              </div>
+
+              <div class="option-item full-width">
+                <label for="custom-output-dir" class="option-title-label">Custom Output Folder</label>
+                <div class="input-with-button">
+                  <input type="text" id="custom-output-dir" class="form-input" placeholder="c:\Users\Dell\Desktop\xd\Agent\job-agent\output">
+                  <button type="button" class="btn btn-secondary" onclick="openOutputFolder()">
+                    <i class="fa-solid fa-folder-open"></i> Open Folder
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+        </form>
+      </div>
+
+      <!-- Simplify-Style Interactive Keyword Analysis Card -->
+      <div class="glass-card simplify-score-card hidden" id="simplify-card">
+        <div class="simplify-header">
+          <div class="simplify-title-row">
+            <div class="simplify-menu-icon"><i class="fa-solid fa-bars-staggered"></i></div>
+            <h3 class="simplify-card-title">Resume Score & Keyword Cross-Check</h3>
+          </div>
+          <div class="simplify-score-badge-row">
+            <div class="score-circle-container">
+              <svg class="score-circle-svg" viewBox="0 0 100 100">
+                <circle class="circle-bg" cx="50" cy="50" r="42"></circle>
+                <circle class="circle-fill" id="score-circle-path" cx="50" cy="50" r="42" stroke-dasharray="264" stroke-dashoffset="40"></circle>
+              </svg>
+              <span class="score-number" id="simplify-score-num">85</span>
+            </div>
+            <div class="simplify-score-text">
+              <h4 class="score-verdict" id="simplify-score-verdict">Strong Resume Match</h4>
+              <p class="score-subtext" id="simplify-score-subtext">Only Matches <strong id="matched-count">11</strong> out of <strong id="total-count">13</strong> keywords.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="simplify-keywords-section">
+          <!-- Matched Keywords (Cyan Pills) -->
+          <div class="keywords-group">
+            <label class="group-label"><i class="fa-solid fa-circle-check text-cyan"></i> Found in Resume (Matching Keywords)</label>
+            <div class="chips-grid" id="matched-chips-container">
+              <!-- Dynamically rendered cyan pills -->
+            </div>
+          </div>
+
+          <!-- Missing Keywords (Interactive White Pills) -->
+          <div class="keywords-group margin-top-md">
+            <label class="group-label"><i class="fa-solid fa-circle-plus text-warning"></i> Missing from Resume (Click to Select / Deselect for AI Injection)</label>
+            <div class="chips-grid" id="missing-chips-container">
+              <!-- Dynamically rendered white pills with checkboxes -->
+            </div>
+            <div class="add-keyword-row margin-top-sm">
+              <input type="text" id="manual-add-kw-input" class="form-input form-input-sm" placeholder="Add extra missing keyword...">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="addManualChip()">+ Add Keyword</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Row -->
+        <div class="simplify-action-row margin-top-lg">
+          <button type="button" class="btn btn-cyan btn-block btn-lg" onclick="generateWithSelectedKeywords()">
+            <i class="fa-solid fa-wand-magic-sparkles"></i> Inject Selected Keywords & Generate Resume
+          </button>
+        </div>
+      </div>
+
+      <!-- Live Execution Visualizer (Visible during execution & results) -->
+      <div class="pipeline-execution-container hidden" id="execution-container">
+        
+        <!-- Execution Progress Header -->
+        <div class="execution-header glass-card">
+          <div class="exec-title-row">
+            <div class="exec-status-badge" id="exec-status-badge">
+              <i class="fa-solid fa-spinner fa-spin"></i> Running Pipeline...
+            </div>
+            <div class="exec-timer" id="exec-timer">0.0s</div>
+          </div>
+          <div class="progress-bar-container">
+            <div class="progress-bar-fill" id="pipeline-progress-bar" style="width: 5%;"></div>
+          </div>
+        </div>
+
+        <!-- 7-Step Visual Pipeline Cards -->
+        <div class="pipeline-steps-grid">
+          
+          <div class="step-card" data-step="1">
+            <div class="step-icon"><i class="fa-solid fa-file-user"></i></div>
+            <div class="step-info">
+              <span class="step-num">Step 1</span>
+              <span class="step-title">Master Resume</span>
+            </div>
+            <div class="step-status"><i class="fa-solid fa-circle-notch fa-spin"></i></div>
+          </div>
+
+          <div class="step-card" data-step="2">
+            <div class="step-icon"><i class="fa-solid fa-cloud-arrow-down"></i></div>
+            <div class="step-info">
+              <span class="step-num">Step 2</span>
+              <span class="step-title">JD Scraper</span>
+            </div>
+            <div class="step-status"><i class="fa-regular fa-circle"></i></div>
+          </div>
+
+          <div class="step-card" data-step="3">
+            <div class="step-icon"><i class="fa-solid fa-chart-simple"></i></div>
+            <div class="step-info">
+              <span class="step-num">Step 3</span>
+              <span class="step-title">Keyword Reader</span>
+            </div>
+            <div class="step-status"><i class="fa-regular fa-circle"></i></div>
+          </div>
+
+          <div class="step-card" data-step="4">
+            <div class="step-icon"><i class="fa-solid fa-microchip"></i></div>
+            <div class="step-info">
+              <span class="step-num">Step 4</span>
+              <span class="step-title">Gemini Rewrite</span>
+            </div>
+            <div class="step-status"><i class="fa-regular fa-circle"></i></div>
+          </div>
+
+          <div class="step-card" data-step="5">
+            <div class="step-icon"><i class="fa-solid fa-shield-halved"></i></div>
+            <div class="step-info">
+              <span class="step-num">Step 5 & 6</span>
+              <span class="step-title">AI Detector</span>
+            </div>
+            <div class="step-status"><i class="fa-regular fa-circle"></i></div>
+          </div>
+
+          <div class="step-card" data-step="6">
+            <div class="step-icon"><i class="fa-solid fa-bullseye"></i></div>
+            <div class="step-info">
+              <span class="step-num">Step 6</span>
+              <span class="step-title">Score Analysis</span>
+            </div>
+            <div class="step-status"><i class="fa-regular fa-circle"></i></div>
+          </div>
+
+          <div class="step-card" data-step="7">
+            <div class="step-icon"><i class="fa-solid fa-file-word"></i></div>
+            <div class="step-info">
+              <span class="step-num">Step 7 & 8</span>
+              <span class="step-title">Word Doc Builder</span>
+            </div>
+            <div class="step-status"><i class="fa-regular fa-circle"></i></div>
+          </div>
+
+        </div>
+
+        <!-- Terminal Output Stream Log -->
+        <div class="terminal-card glass-card">
+          <div class="terminal-header">
+            <span><i class="fa-solid fa-terminal"></i> Live Execution Stream</span>
+            <button type="button" class="btn-icon" onclick="clearTerminal()"><i class="fa-solid fa-trash-can"></i></button>
+          </div>
+          <div class="terminal-body" id="terminal-output">
+            <div class="log-line info">[System] Pipeline ready. Waiting for run...</div>
+          </div>
+        </div>
+
+        <!-- Final Results Dashboard (shown when complete) -->
+        <div class="results-dashboard glass-card hidden" id="results-dashboard">
+          
+          <div class="results-header">
+            <div class="role-badge-row">
+              <span class="company-tag" id="res-company">Company</span>
+              <span class="role-tag" id="res-role">Role Title</span>
+            </div>
+            <h2>Tailored Resume Ready!</h2>
+          </div>
+
+          <!-- Score Metrics Row -->
+          <div class="metrics-row">
+            
+            <div class="metric-card">
+              <span class="metric-label">Before Match Score</span>
+              <div class="metric-value text-muted" id="score-before">0%</div>
+              <span class="metric-sub">Base Resume Score</span>
+            </div>
+
+            <div class="metric-card highlight-card">
+              <span class="metric-label">After Match Score</span>
+              <div class="metric-value gradient-text" id="score-after">0%</div>
+              <span class="metric-sub" id="score-delta-badge">+0% Improvement</span>
+            </div>
+
+            <div class="metric-card">
+              <span class="metric-label">Keywords Injected</span>
+              <div class="metric-value text-emerald" id="keywords-added-count">0</div>
+              <span class="metric-sub">Newly embedded tech skills</span>
+            </div>
+
+          </div>
+
+          <!-- Newly Added Keywords Pills -->
+          <div class="keywords-summary-section">
+            <div class="keywords-block">
+              <h4><i class="fa-solid fa-circle-check text-emerald"></i> Newly Injected Keywords:</h4>
+              <div class="keyword-pills-wrap" id="newly-added-pills">
+                <span class="pill pill-success">React</span>
+              </div>
+            </div>
+
+            <div class="keywords-block" id="still-missing-block">
+              <h4><i class="fa-solid fa-circle-exclamation text-amber"></i> Keywords Still Absent:</h4>
+              <div class="keyword-pills-wrap" id="still-missing-pills">
+                <span class="pill pill-warn">None</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Download Action Buttons -->
+          <div class="action-buttons-row">
+            <a id="download-doc-btn" href="#" class="btn btn-emerald btn-xl" download>
+              <i class="fa-solid fa-file-arrow-down"></i> Download Resume (.docx)
+            </a>
+            <button class="btn btn-secondary btn-xl" onclick="openOutputFolder()">
+              <i class="fa-solid fa-folder-open"></i> Open Output Folder
+            </button>
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- ── TAB 2: APPLICATIONS HISTORY ──────────────────────────────────── -->
+    <section class="tab-content" id="tab-history">
+      <div class="section-header">
+        <h2>Generated Application Resumes</h2>
+        <p>All previously generated ATS Word documents and match score logs.</p>
+      </div>
+
+      <div class="history-grid" id="history-grid">
+        <!-- Dynamically filled by JS -->
+        <div class="empty-state glass-card">
+          <i class="fa-solid fa-folder-open empty-icon"></i>
+          <h3>No applications generated yet</h3>
+          <p>Run your first application from the New Application tab!</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── TAB 3: PREREQUISITES & SETUP ──────────────────────────────────── -->
+    <section class="tab-content" id="tab-setup">
+      <div class="section-header">
+        <h2>Prerequisites & Credentials Setup</h2>
+        <p>Configure your Gemini API key, Simplify account login, and system parameters.</p>
+      </div>
+
+      <div class="setup-cards-grid">
+        
+        <!-- API Credentials Card -->
+        <div class="glass-card setup-card">
+          <div class="card-header-icon">
+            <i class="fa-solid fa-key text-purple"></i>
+            <div>
+              <h3>Gemini API Key</h3>
+              <p>Free API key from Google AI Studio (1,500 requests/day, $0 cost)</p>
+            </div>
+          </div>
+          <form id="settings-form">
+            <div class="form-group">
+              <label for="gemini-key-input">Gemini 2.5 Flash API Key</label>
+              <input type="password" id="gemini-key-input" class="form-input" placeholder="AIzaSy..." required>
+              <span class="input-help">Get your key for free at <a href="https://aistudio.google.com/" target="_blank">aistudio.google.com</a></span>
+            </div>
+
+            <div class="form-group">
+              <label for="simplify-email-input">Simplify Email (Optional)</label>
+              <input type="email" id="simplify-email-input" class="form-input" placeholder="jalal.dev.work@gmail.com">
+            </div>
+
+            <div class="form-group">
+              <label for="simplify-pass-input">Simplify Password (Optional)</label>
+              <input type="password" id="simplify-pass-input" class="form-input" placeholder="••••••••">
+            </div>
+
+            <button type="submit" class="btn btn-primary">
+              <i class="fa-solid fa-floppy-disk"></i> Save Settings
+            </button>
+          </form>
+        </div>
+
+        <!-- Checklist Readiness Status Card -->
+        <div class="glass-card setup-card">
+          <div class="card-header-icon">
+            <i class="fa-solid fa-list-check text-cyan"></i>
+            <div>
+              <h3>System Readiness Checklist</h3>
+              <p>All dependencies and runtime requirements</p>
+            </div>
+          </div>
+
+          <div class="checklist-items">
+            
+            <div class="check-item" id="check-gemini">
+              <i class="fa-solid fa-circle-xmark item-icon text-red"></i>
+              <div class="item-text">
+                <strong>Gemini API Key (.env)</strong>
+                <span>Required for AI resume rewriting & Wikipedia AI detection loop</span>
+              </div>
+            </div>
+
+            <div class="check-item" id="check-resume">
+              <i class="fa-solid fa-circle-check item-icon text-emerald"></i>
+              <div class="item-text">
+                <strong>Master Resume (base_resume.json)</strong>
+                <span>Jalal Khan master resume with 3 roles and 53 skills</span>
+              </div>
+            </div>
+
+            <div class="check-item" id="check-playwright">
+              <i class="fa-solid fa-circle-check item-icon text-emerald"></i>
+              <div class="item-text">
+                <strong>Playwright Chromium Browser</strong>
+                <span>Headless browser for web scraping</span>
+              </div>
+            </div>
+
+            <div class="check-item" id="check-docx">
+              <i class="fa-solid fa-circle-check item-icon text-emerald"></i>
+              <div class="item-text">
+                <strong>python-docx Word Builder</strong>
+                <span>ATS Word document generator backend</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ── TAB 4: MASTER RESUME EDITOR ──────────────────────────────────── -->
+    <section class="tab-content" id="tab-resume">
+      <div class="section-header-row">
+        <div>
+          <h2>Master Resume Editor</h2>
+          <p>This is your ground-truth master resume (<code>base_resume.json</code>). Gemini reframes this data without fabricating experience.</p>
+        </div>
+        <button class="btn btn-primary" onclick="saveMasterResume()">
+          <i class="fa-solid fa-floppy-disk"></i> Save Master Resume
+        </button>
+      </div>
+
+      <div class="glass-card editor-card">
+        <textarea id="resume-json-editor" class="code-textarea" spellcheck="false"></textarea>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Notification Toast -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- JavaScript Application Bundle -->
+  <script src="/static/app.js"></script>
+</body>
+</html>

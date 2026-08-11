@@ -1,0 +1,8 @@
+google-genai
+playwright
+beautifulsoup4
+python-docx
+python-dotenv
+lxml
+httpx
+pdfplumber
