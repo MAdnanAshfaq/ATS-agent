@@ -397,9 +397,20 @@
 
     <!-- ── TAB 2: APPLICATIONS HISTORY ──────────────────────────────────── -->
     <section class="tab-content" id="tab-history">
-      <div class="section-header">
-        <h2>Generated Application Resumes</h2>
-        <p>All previously generated ATS Word documents and match score logs.</p>
+      <div class="section-header-row">
+        <div>
+          <h2>Generated Application Resumes</h2>
+          <p>All previously generated ATS Word documents, PDFs, and match score logs.</p>
+        </div>
+        <div class="history-toolbar-actions hidden" id="history-toolbar">
+          <label class="checkbox-label flex-align-center margin-right-sm">
+            <input type="checkbox" id="select-all-history-cb" onchange="toggleSelectAllHistory(this.checked)">
+            <span><strong>Select All</strong></span>
+          </label>
+          <button class="btn btn-danger-sm" id="bulk-delete-btn" onclick="deleteSelectedHistoryBatch()" disabled>
+            <i class="fa-solid fa-trash"></i> Delete Selected (<span id="selected-history-count">0</span>)
+          </button>
+        </div>
       </div>
 
       <div class="history-grid" id="history-grid">

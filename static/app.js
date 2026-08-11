@@ -380,45 +380,32 @@ function displayResults(res) {
   window.lastResult = res;
 }
 
-async function openOutputFolder() {
-  const folder = window.lastResult ? window.lastResult.folder_path : undefined;
-  try {
-    const res = await fetch("/api/open-folder", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ folder_path: folder }),
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast(`Opened folder: ${data.opened}`, "info");
-    } else {
-      showToast(`Could not open folder: ${data.error}`, "error");
-    }
-  } catch (err) {
-    showToast(`Error opening folder: ${err.message}`, "error");
-  }
-}
+const selectedHistoryFiles = new Set();
 
-/* ── History Tab Loader ─────────────────────────────────────────────────── */
 async function loadHistory() {
   const grid = document.getElementById("history-grid");
-  const countBadge = document.getElementById("history-count");
+  const toolbar = document.getElementById("history-toolbar");
+  const selectAllCb = document.getElementById("select-all-history-cb");
+  if (selectAllCb) selectAllCb.checked = false;
+  selectedHistoryFiles.clear();
+  updateHistoryToolbarUI();
 
   try {
     const res = await fetch("/api/history");
     const data = await res.json();
 
-    countBadge.textContent = data.count;
-
-    if (data.count === 0) {
+    if (data.applications.length === 0) {
       grid.innerHTML = `
         <div class="empty-state glass-card">
           <i class="fa-solid fa-folder-open empty-icon"></i>
           <h3>No applications generated yet</h3>
           <p>Run your first application from the New Application tab!</p>
         </div>`;
+      if (toolbar) toolbar.classList.add("hidden");
       return;
     }
+
+    if (toolbar) toolbar.classList.remove("hidden");
 
     grid.innerHTML = "";
     data.applications.forEach(app => {
@@ -427,9 +414,12 @@ async function loadHistory() {
       card.className = "history-card";
       card.innerHTML = `
         <div class="history-card-header">
-          <div>
-            <div class="history-company">${escapeHtml(app.company)}</div>
-            <div class="history-role">${escapeHtml(app.role)}</div>
+          <div class="flex-align-center gap-sm">
+            <input type="checkbox" class="history-item-cb" data-filename="${escapeHtml(app.log_file_name)}" onchange="toggleHistoryItemSelection('${escapeHtml(app.log_file_name)}', this.checked)">
+            <div>
+              <div class="history-company">${escapeHtml(app.company)}</div>
+              <div class="history-role">${escapeHtml(app.role)}</div>
+            </div>
           </div>
           <div class="history-date">${dateStr}</div>
         </div>
@@ -464,6 +454,63 @@ async function loadHistory() {
 
   } catch (err) {
     grid.innerHTML = `<div class="empty-state">Failed to load history: ${err.message}</div>`;
+  }
+}
+
+function toggleHistoryItemSelection(filename, isChecked) {
+  if (isChecked) {
+    selectedHistoryFiles.add(filename);
+  } else {
+    selectedHistoryFiles.delete(filename);
+    const selectAllCb = document.getElementById("select-all-history-cb");
+    if (selectAllCb) selectAllCb.checked = false;
+  }
+  updateHistoryToolbarUI();
+}
+
+function toggleSelectAllHistory(isChecked) {
+  selectedHistoryFiles.clear();
+  document.querySelectorAll(".history-item-cb").forEach(cb => {
+    cb.checked = isChecked;
+    if (isChecked) {
+      selectedHistoryFiles.add(cb.dataset.filename);
+    }
+  });
+  updateHistoryToolbarUI();
+}
+
+function updateHistoryToolbarUI() {
+  const count = selectedHistoryFiles.size;
+  const countElem = document.getElementById("selected-history-count");
+  if (countElem) countElem.textContent = count;
+  const btn = document.getElementById("bulk-delete-btn");
+  if (btn) btn.disabled = (count === 0);
+}
+
+async function deleteSelectedHistoryBatch() {
+  const count = selectedHistoryFiles.size;
+  if (count === 0) return;
+  if (!confirm(`Are you sure you want to delete ${count} selected test applications and their output folders from your computer?`)) return;
+
+  const filenames = Array.from(selectedHistoryFiles);
+  showToast(`Deleting ${count} history entries & folders...`, "info");
+
+  try {
+    const res = await fetch("/api/history/delete_batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filenames })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message || `Deleted ${data.deleted_count} items cleanly!`, "success");
+      selectedHistoryFiles.clear();
+      loadHistory();
+    } else {
+      showToast(`Bulk delete failed: ${data.error}`, "error");
+    }
+  } catch (err) {
+    showToast(`Error performing bulk delete: ${err.message}`, "error");
   }
 }
 

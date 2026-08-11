@@ -224,31 +224,72 @@ def history():
     return jsonify({"applications": applications, "count": len(applications)})
 
 
-@app.route("/api/history/<filename>", methods=["DELETE"])
-def delete_history_item(filename):
-    """Delete a history run entry and its associated generated files."""
+def _delete_single_history_log(filename: str) -> bool:
+    """Helper: Delete log file, .docx, .pdf, and application folder."""
+    import shutil
+    logs_dir = OUTPUT_DIR / "logs"
+    log_file = logs_dir / filename
+    if not log_file.exists():
+        return False
+
     try:
-        logs_dir = OUTPUT_DIR / "logs"
-        log_file = logs_dir / filename
-        if not log_file.exists():
-            return jsonify({"success": False, "error": "Log file not found"}), 404
-        
         with open(log_file, "r", encoding="utf-8") as f:
             log_data = json.load(f)
             output_file = log_data.get("output_file", "")
-            if output_file and os.path.exists(output_file):
-                try:
-                    os.remove(output_file)
-                    pdf_file = str(Path(output_file).with_suffix(".pdf"))
-                    if os.path.exists(pdf_file):
+            if output_file:
+                out_path = Path(output_file)
+                parent_dir = out_path.parent
+                if out_path.exists():
+                    try:
+                        os.remove(out_path)
+                    except Exception:
+                        pass
+                pdf_file = out_path.with_suffix(".pdf")
+                if pdf_file.exists():
+                    try:
                         os.remove(pdf_file)
-                except Exception as file_err:
-                    print(f"[History Delete] Error deleting files: {file_err}")
+                    except Exception:
+                        pass
+                # Remove output subfolder if it exists
+                if parent_dir.exists() and parent_dir != OUTPUT_DIR and str(parent_dir).startswith(str(OUTPUT_DIR)):
+                    try:
+                        shutil.rmtree(parent_dir, ignore_errors=True)
+                    except Exception as folder_err:
+                        print(f"[Delete Folder Error] {folder_err}")
 
         os.remove(log_file)
-        return jsonify({"success": True, "message": "History item deleted cleanly"})
+        return True
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        print(f"[History Delete Error] {filename}: {e}")
+        return False
+
+
+@app.route("/api/history/<filename>", methods=["DELETE"])
+def delete_history_item(filename):
+    """Delete a history run entry and its output folder."""
+    if _delete_single_history_log(filename):
+        return jsonify({"success": True, "message": "History entry and output folder deleted cleanly"})
+    return jsonify({"success": False, "error": "Failed to delete history item or file not found"}), 404
+
+
+@app.route("/api/history/delete_batch", methods=["POST"])
+def delete_history_batch():
+    """Bulk delete multiple history run entries and their output folders."""
+    data = request.json or {}
+    filenames = data.get("filenames", [])
+    if not filenames or not isinstance(filenames, list):
+        return jsonify({"success": False, "error": "No filenames provided for bulk deletion"}), 400
+
+    deleted_count = 0
+    for fname in filenames:
+        if _delete_single_history_log(fname):
+            deleted_count += 1
+
+    return jsonify({
+        "success": True,
+        "message": f"Successfully deleted {deleted_count} history entries and output folders.",
+        "deleted_count": deleted_count
+    })
 
 
 @app.route("/api/download/<path:filepath>")
