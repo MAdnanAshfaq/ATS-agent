@@ -31,6 +31,21 @@ GENERIC_FILLER_WORDS = {
     "scalable", "robust", "innovative", "transformative", "groundbreaking", "seamless"
 }
 
+def _flatten_resume_text(resume: dict) -> str:
+    """Flatten entire resume JSON into a single lowercase searchable string."""
+    text_chunks = []
+    def _extract(val):
+        if isinstance(val, str):
+            text_chunks.append(val)
+        elif isinstance(val, list):
+            for item in val:
+                _extract(item)
+        elif isinstance(val, dict):
+            for v in val.values():
+                _extract(v)
+    _extract(resume)
+    return " ".join(text_chunks).lower()
+
 
 def analyze_jd_and_resume_with_gemini(jd_text: str, base_resume: dict) -> dict:
     """
@@ -105,20 +120,36 @@ Return ONLY a valid JSON object matching this schema:
             cleaned_text = raw_text.replace("```json", "").replace("```", "").strip()
         data = json.loads(cleaned_text)
 
-        if isinstance(data, dict) and "missing_keywords" in data:
-            missing = [str(k).strip() for k in data.get("missing_keywords", []) if str(k).strip()]
-            matching = [str(k).strip() for k in data.get("matching_keywords", []) if str(k).strip()]
+        if isinstance(data, dict):
+            raw_missing = [str(k).strip() for k in data.get("missing_keywords", []) if str(k).strip()]
+            raw_matching = [str(k).strip() for k in data.get("matching_keywords", []) if str(k).strip()]
 
-            # Purge generic filler words
-            missing = [k for k in missing if k.lower().strip() not in GENERIC_FILLER_WORDS]
-            matching = [k for k in matching if k.lower().strip() not in GENERIC_FILLER_WORDS]
+            # Combine all keywords extracted from JD
+            all_extracted = set(raw_missing + raw_matching)
+            all_extracted = {k for k in all_extracted if k.lower().strip() not in GENERIC_FILLER_WORDS}
 
-            print(f"[LLM Matcher] Gemini ATS Comparison — Score: {data.get('score', 70)}%, Matching ({len(matching)}), Missing ({len(missing)})")
+            # Deterministically verify every single keyword against candidate's master resume
+            resume_full_text = _flatten_resume_text(base_resume)
+            verified_matching = []
+            verified_missing = []
+
+            for kw in sorted(all_extracted):
+                kw_lower = kw.lower().strip()
+                pattern = r'\b' + re.escape(kw_lower) + r'\b'
+                if re.search(pattern, resume_full_text) or kw_lower in resume_full_text:
+                    verified_matching.append(kw)
+                else:
+                    verified_missing.append(kw)
+
+            total = len(verified_matching) + len(verified_missing)
+            calc_score = round((len(verified_matching) / total) * 100) if total > 0 else data.get("score", 70)
+
+            print(f"[LLM Matcher] Deterministic Verification — Score: {calc_score}%, Matching ({len(verified_matching)}), Missing ({len(verified_missing)})")
             return {
-                "score": data.get("score", 70),
-                "matching_keywords": matching,
-                "missing_keywords": missing,
-                "total_keywords": len(matching) + len(missing)
+                "score": calc_score,
+                "matching_keywords": verified_matching,
+                "missing_keywords": verified_missing,
+                "total_keywords": total
             }
 
     except Exception as e:
