@@ -1,10 +1,11 @@
 """
-llm_matcher.py — Gemini LLM-based Keyword Extraction Engine.
+llm_matcher.py — Gemini LLM-based Keyword & Resume Analysis Engine.
 
-Replaces rigid static regex patterns with Gemini LLM intelligence:
-- Extracts high-value hard technical skills (languages, frameworks, tools, platforms)
-- Extracts exact job titles (e.g., Senior Full Stack Engineer, Product Engineer)
-- Filters out generic action verbs, soft skills, and filler words.
+Pushes BOTH the parsed Job Description AND the candidate's Master Resume to Gemini in Step 1.
+Gemini semantically compares them and returns:
+- Missing hard technical skills & job titles
+- Already matching hard technical skills & job titles
+- Accurate ATS match score (0-100%)
 """
 
 import json
@@ -31,41 +32,51 @@ GENERIC_FILLER_WORDS = {
 }
 
 
-def extract_keywords_with_gemini(jd_text: str) -> list[str]:
+def analyze_jd_and_resume_with_gemini(jd_text: str, base_resume: dict) -> dict:
     """
-    Uses Gemini to analyze the Job Description and extract only
-    real, high-value hard technical skills and job titles.
+    Passes BOTH the scraped Job Description AND the candidate's Base Resume to Gemini.
+    Gemini compares them semantically and returns high-value missing keywords,
+    already matching keywords, and an accurate ATS match score.
     """
     from dotenv import load_dotenv
     load_dotenv()
 
     api_key = os.getenv("GEMINI_API_KEY", "")
     if not api_key:
-        print("[LLM Matcher] Warning: GEMINI_API_KEY missing — fallback to regex matcher")
-        from keyword_matcher import extract_keywords_from_text
-        return list(extract_keywords_from_text(jd_text))
+        print("[LLM Matcher] Warning: GEMINI_API_KEY missing — fallback to local matcher")
+        from keyword_matcher import calculate_match_score
+        return calculate_match_score(base_resume, jd_text)
 
     try:
         client = genai.Client(api_key=api_key)
 
-        prompt = f"""You are an expert ATS (Applicant Tracking System) parser. Analyze the following Job Description.
+        prompt = f"""You are an expert ATS (Applicant Tracking System) recruiter and parser. Analyze the following Job Description against the Candidate's Master Resume.
 
 YOUR TASK:
-Extract a clean list of ONLY high-value keywords that a tech recruiter would search for.
+1. Extract ALL high-value hard technical skills, tools, frameworks, and job titles required by the Job Description.
+2. Cross-check each keyword against the candidate's Master Resume.
+3. Categorize them into "matching_keywords" (present in resume) and "missing_keywords" (missing from resume).
+4. Calculate an accurate ATS Match Score (0-100%).
 
 CRITICAL FILTERS:
-1. Extract HARD SKILLS ONLY (e.g., Python, React, AWS, Docker, PostgreSQL, CI/CD, GraphQL, Redis, Microservices).
-2. Extract EXACT JOB TITLES (e.g., Senior Product Engineer, Full Stack Developer, Backend Lead).
-3. STRICTLY IGNORE generic action verbs, soft skills, and filler words (e.g., responsiveness, knowledge, leading, work, code, ensure, optimize, integrating, current, design, dynamic, using, team player, communication).
+- HARD SKILLS & TITLES ONLY (e.g. Python, React, AWS, Docker, PostgreSQL, CI/CD, GraphQL, Redis, Senior Engineer).
+- STRICTLY IGNORE generic action verbs, soft skills, and filler words (e.g. responsiveness, knowledge, leading, work, code, ensure, optimize, integrating, current, design, dynamic, using, team player, communication).
 
 JOB DESCRIPTION:
 {jd_text[:6000]}
 
-OUTPUT FORMAT:
-Return ONLY a raw JSON list of strings. Do not include markdown formatting or backticks.
-Example: ["Python", "React", "AWS Lambda", "Senior Product Engineer"]"""
+CANDIDATE MASTER RESUME:
+{json.dumps(base_resume, indent=2, ensure_ascii=False)[:6000]}
 
-        models = ["gemini-2.5-flash-lite", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash"]
+OUTPUT FORMAT:
+Return ONLY a raw JSON object with this exact structure:
+{{
+  "score": 68,
+  "matching_keywords": ["React", "TypeScript", "Node.js"],
+  "missing_keywords": ["GraphQL", "Docker", "AWS Lambda"]
+}}"""
+
+        models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
         response = None
         for m in models:
             try:
@@ -88,33 +99,35 @@ Example: ["Python", "React", "AWS Lambda", "Senior Product Engineer"]"""
 
         raw_text = response.text or ""
         cleaned_text = raw_text.replace("```json", "").replace("```", "").strip()
-        keywords = json.loads(cleaned_text)
+        data = json.loads(cleaned_text)
 
-        if isinstance(keywords, list):
-            clean_list = []
-            for kw in keywords:
-                s_kw = str(kw).strip()
-                words_in_kw = [w.lower() for w in re.findall(r'\b[a-zA-Z0-9+#.-]+\b', s_kw)]
-                if not words_in_kw:
-                    continue
-                # If all words in kw are generic filler words, skip
-                if all(w in GENERIC_FILLER_WORDS for w in words_in_kw):
-                    print(f"[LLM Matcher] Purged generic filler keyword: '{s_kw}'")
-                    continue
-                clean_list.append(s_kw)
+        if isinstance(data, dict) and "missing_keywords" in data:
+            missing = [str(k).strip() for k in data.get("missing_keywords", []) if str(k).strip()]
+            matching = [str(k).strip() for k in data.get("matching_keywords", []) if str(k).strip()]
 
-            print(f"[LLM Matcher] Gemini extracted {len(clean_list)} high-value keywords: {clean_list[:8]}")
-            return clean_list
+            # Purge generic filler words
+            missing = [k for k in missing if k.lower().strip() not in GENERIC_FILLER_WORDS]
+            matching = [k for k in matching if k.lower().strip() not in GENERIC_FILLER_WORDS]
+
+            print(f"[LLM Matcher] Gemini ATS Comparison — Score: {data.get('score', 70)}%, Matching ({len(matching)}), Missing ({len(missing)})")
+            return {
+                "score": data.get("score", 70),
+                "matching_keywords": matching,
+                "missing_keywords": missing,
+                "total_keywords": len(matching) + len(missing)
+            }
 
     except Exception as e:
-        print(f"[LLM Matcher] Error calling Gemini: {e}. Falling back to regex matcher.")
+        print(f"[LLM Matcher] Error calling Gemini: {e}. Falling back to local matcher.")
 
-    # Fallback to local regex matcher if LLM fails
-    try:
-        from keyword_matcher import extract_keywords_from_text
-        return list(extract_keywords_from_text(jd_text))
-    except Exception:
-        return []
+    from keyword_matcher import calculate_match_score
+    return calculate_match_score(base_resume, jd_text)
+
+
+def extract_keywords_with_gemini(jd_text: str) -> list[str]:
+    """Compatibility wrapper for extract_keywords_with_gemini."""
+    res = analyze_jd_and_resume_with_gemini(jd_text, {})
+    return res.get("missing_keywords", [])
 
 
 if __name__ == "__main__":
@@ -123,6 +136,10 @@ if __name__ == "__main__":
     Building web application infrastructure with React, Next.js, TypeScript, Node.js, GraphQL, PostgreSQL, Docker, AWS Lambda.
     Requires strong knowledge of system design, microservices, CI/CD automation tools, and Zapier integrations.
     """
-    kws = extract_keywords_with_gemini(sample_jd)
-    print("\n--- EXTRACTED LLM KEYWORDS ---")
-    print(json.dumps(kws, indent=2))
+    base_resume = {
+        "summary": "Full Stack Engineer with React, Node.js, TypeScript, PostgreSQL",
+        "skills": ["React", "TypeScript", "Node.js", "PostgreSQL", "Git", "REST APIs"]
+    }
+    analysis = analyze_jd_and_resume_with_gemini(sample_jd, base_resume)
+    print("\n--- GEMINI JD VS RESUME ANALYSIS ---")
+    print(json.dumps(analysis, indent=2))

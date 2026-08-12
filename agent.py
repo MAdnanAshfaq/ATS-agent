@@ -103,15 +103,14 @@ def load_base_resume() -> dict:
 def extract_keywords_from_jd(jd_text: str, base_resume: dict) -> list:
     """
     Intelligent LLM-based keyword extraction using Gemini.
-    Extracts high-value technical skills & job titles in the JD that are missing from base resume.
+    Passes BOTH Job Description AND Master Resume to Gemini for semantic ATS comparison.
     """
     try:
-        from llm_matcher import extract_keywords_with_gemini
-        from rewriter import verify_dynamic_keywords
-        all_jd_keywords = extract_keywords_with_gemini(jd_text)
-        if all_jd_keywords:
-            embedded, missing = verify_dynamic_keywords(base_resume, all_jd_keywords)
-            print(f"[Agent] LLM extracted {len(all_jd_keywords)} JD keywords ({len(missing)} missing from base resume)")
+        from llm_matcher import analyze_jd_and_resume_with_gemini
+        llm_res = analyze_jd_and_resume_with_gemini(jd_text, base_resume)
+        missing = llm_res.get("missing_keywords", [])
+        if missing:
+            print(f"[Agent] Gemini LLM identified {len(missing)} missing hard skills/titles")
             return missing
     except Exception as e:
         print(f"[Agent] LLM keyword extraction note: {e}")
