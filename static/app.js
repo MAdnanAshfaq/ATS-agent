@@ -896,7 +896,12 @@ function renderSimplifyCard(data) {
   let verdict = "Strong Resume Match";
   if (score < 60) verdict = "Low Resume Match — Keyword Injection Recommended";
   else if (score >= 85) verdict = "Excellent Resume Match!";
-  document.getElementById("simplify-score-verdict").innerText = verdict;
+
+  const sourceBadge = data.source === "simplify_extension"
+    ? `<span class="badge badge-success"><i class="fa-solid fa-bolt text-cyan"></i> Real Simplify Extension Keywords</span>`
+    : `<span class="badge badge-warning"><i class="fa-solid fa-robot"></i> Estimated LLM Keywords (Simplify overlay unavailable on this page)</span>`;
+
+  document.getElementById("simplify-score-verdict").innerHTML = `${verdict} ${sourceBadge}`;
 
   // Render Matched (Cyan) Chips
   const matchedContainer = document.getElementById("matched-chips-container");

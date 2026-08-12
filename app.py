@@ -378,15 +378,14 @@ def analyze_job():
             except Exception as e:
                 print(f"[Analyze] Simplify read note: {e}")
 
-        loop.close()
-
-        # Fallback to Gemini LLM JD vs Resume analysis if Simplify returned empty
-        if not missing_keywords and not matching_keywords:
+        source = "simplify_extension"
+        if not s_data.get("success") or (not missing_keywords and not matching_keywords):
             from llm_matcher import analyze_jd_and_resume_with_gemini
             llm_res = analyze_jd_and_resume_with_gemini(jd_text, base_resume)
             matching_keywords = llm_res.get("matching_keywords", [])
             missing_keywords = llm_res.get("missing_keywords", [])
             score = llm_res.get("score", 70)
+            source = "llm_fallback"
 
         return jsonify({
             "success": True,
@@ -396,7 +395,8 @@ def analyze_job():
             "score": score,
             "matching_keywords": matching_keywords,
             "missing_keywords": missing_keywords,
-            "total_keywords": len(matching_keywords) + len(missing_keywords)
+            "total_keywords": len(matching_keywords) + len(missing_keywords),
+            "source": source
         })
 
     except Exception as e:
