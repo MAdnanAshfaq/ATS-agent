@@ -39,6 +39,27 @@ TEMP_PROFILE_DIR = str(BASE_DIR / "chrome_profile_simplify")
 
 # ─── Temp Profile Builder ───────────────────────────────────────────────────
 
+def _safe_copytree(src: Path, dst: Path):
+    """Safely copy directory tree ignoring locked files like LOCK."""
+    dst.mkdir(parents=True, exist_ok=True)
+    for item in src.rglob("*"):
+        rel = item.relative_to(src)
+        target = dst / rel
+        if item.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+        elif item.is_file():
+            if item.name.upper() == "LOCK":
+                continue
+            try:
+                shutil.copy2(item, target)
+            except Exception:
+                try:
+                    with open(item, "rb") as f_in, open(target, "wb") as f_out:
+                        f_out.write(f_in.read())
+                except Exception:
+                    pass
+
+
 def _create_temp_profile() -> str:
     """
     Create a clean temp Chrome profile directory for Playwright.
@@ -50,14 +71,14 @@ def _create_temp_profile() -> str:
     dst_default = dst_root / "Default"
     dst_default.mkdir(parents=True, exist_ok=True)
 
-    # Copy Simplify extension local storage
+    # Copy Simplify extension local storage safely
     ext_storage_src = src / "Local Extension Settings" / SIMPLIFY_EXT_ID
     ext_storage_dst = dst_default / "Local Extension Settings" / SIMPLIFY_EXT_ID
     if ext_storage_src.exists():
         try:
             if ext_storage_dst.exists():
                 shutil.rmtree(ext_storage_dst, ignore_errors=True)
-            shutil.copytree(ext_storage_src, ext_storage_dst)
+            _safe_copytree(ext_storage_src, ext_storage_dst)
             size_kb = sum(f.stat().st_size for f in ext_storage_src.rglob("*") if f.is_file()) // 1024
             print(f"  [Simplify] Copied extension storage ({size_kb}KB)")
         except Exception as e:
@@ -200,111 +221,81 @@ async def read_simplify_score(job_url: str, company: str = "", role: str = "") -
             await page.evaluate("""() => {
                 const host = document.querySelector('div.simplify-jobs-shadow-root') || document.querySelector('#simplify-jobs-shadow-root');
                 if (!host || !host.shadowRoot) return;
-                const buttons = Array.from(host.shadowRoot.querySelectorAll('button'));
-                const scoreTab = buttons.find(b => b.textContent.trim() === 'Resume Score');
+                const buttons = Array.from(host.shadowRoot.querySelectorAll('button, a, div'));
+                const scoreTab = buttons.find(b => b.textContent.trim().includes('Resume Score') || b.textContent.trim().includes('Score'));
                 if (scoreTab) scoreTab.click();
             }""")
-            await page.wait_for_timeout(3500)
+            await page.wait_for_timeout(2000)
 
-            # Step 4: Extract score & exact keyword chips directly from Shadow DOM
-            extraction = await page.evaluate("""() => {
-                const host = document.querySelector('div.simplify-jobs-shadow-root') || document.querySelector('#simplify-jobs-shadow-root');
-                if (!host || !host.shadowRoot) return { found: false };
+            # Step 4: Extract score & exact keyword chips directly from Shadow DOM with polling
+            extraction = {"found": False}
+            for attempt in range(6):
+                extraction = await page.evaluate("""() => {
+                    const host = document.querySelector('div.simplify-jobs-shadow-root') || document.querySelector('#simplify-jobs-shadow-root');
+                    if (!host || !host.shadowRoot) return { found: false };
 
-                const fullText = host.shadowRoot.textContent || '';
+                    const fullText = host.shadowRoot.textContent || '';
 
-                let score = null;
-                const scoreMatch = fullText.match(/(\\d{1,3})\\s*(?:Low|Strong|Excellent|\\s*%|\\s*Resume Match)/i) || fullText.match(/(?:Score|Match)[^\\d]*(\\d{1,3})/i);
-                if (scoreMatch) {
-                    const parsed = parseInt(scoreMatch[1]);
-                    if (parsed >= 0 && parsed <= 100) score = parsed;
-                }
-
-                const missingKeywords = [];
-                const matchingKeywords = [];
-
-                // ── Strategy 1: Find elements by CSS class/rounded pills ──
-                const allElements = Array.from(host.shadowRoot.querySelectorAll('span, button, div, a, p, li'));
-
-                for (const el of allElements) {
-                    const cls = (el.className || '').toString();
-
-                    // Only target leaf-like text nodes (no heavy container divs)
-                    if (el.querySelectorAll('div, section, p').length > 0) continue;
-
-                    const txt = el.textContent.replace(/\\s+/g, ' ').trim();
-                    if (!txt || txt.length < 2 || txt.length > 60) continue;
-
-                    const lower = txt.toLowerCase();
-                    if (lower.includes('resume match') || lower.includes('autofill') || lower.includes('apply') ||
-                        lower.includes('submit') || lower.includes('feedback') || lower.includes('report') ||
-                        lower.includes('simplify') || lower.includes('login') || lower.startsWith('http')) {
-                        continue;
+                    let score = null;
+                    const scoreMatch = fullText.match(/(\\d{1,3})\\s*(?:Low|Strong|Excellent|\\s*%|\\s*Resume Match)/i) || fullText.match(/(?:Score|Match)[^\\d]*(\\d{1,3})/i);
+                    if (scoreMatch) {
+                        const parsed = parseInt(scoreMatch[1]);
+                        if (parsed >= 0 && parsed <= 100) score = parsed;
                     }
 
-                    // Check for chip / badge / pill classes in Simplify
-                    const isChip = cls.includes('rounded') || cls.includes('chip') || cls.includes('badge') || cls.includes('pill') || cls.includes('tag');
+                    const missingKeywords = [];
+                    const matchingKeywords = [];
 
-                    if (isChip) {
-                        // Clean out any icon text or extra spaces
-                        const cleanKw = txt.replace(/^[✓✔✕✖×+•\\-\\s]+/, '').replace(/[✓✔✕✖×+•\\-\\s]+$/, '').trim();
-                        if (cleanKw.length >= 2 && cleanKw.length <= 50) {
-                            // Determine matched vs missing by color / background / border or section parent
-                            const parentText = (el.parentElement ? el.parentElement.textContent : '').toLowerCase();
-                            const isMissingSection = parentText.includes('missing') || lower.includes('missing');
-                            const isMatchedSection = parentText.includes('matched') || parentText.includes('matching') || lower.includes('matched');
+                    const allElements = Array.from(host.shadowRoot.querySelectorAll('span, button, div, a, p, li'));
 
-                            if (isMissingSection) {
-                                missingKeywords.push(cleanKw);
-                            } else if (isMatchedSection) {
-                                matchingKeywords.push(cleanKw);
-                            } else if (cls.includes('bg-primary') || cls.includes('border-primary') || cls.includes('text-primary') || cls.includes('green') || cls.includes('emerald') || cls.includes('success')) {
-                                matchingKeywords.push(cleanKw);
-                            } else {
-                                missingKeywords.push(cleanKw);
-                            }
-                        }
-                    }
-                }
+                    for (const el of allElements) {
+                        const cls = (el.className || '').toString();
+                        if (el.querySelectorAll('div, section, p').length > 0) continue;
 
-                // ── Strategy 2: Fallback — parse text sections directly from Shadow DOM ──
-                if (missingKeywords.length === 0 && matchingKeywords.length === 0) {
-                    // Try parsing sections by looking at headers inside shadow root
-                    const headers = Array.from(host.shadowRoot.querySelectorAll('h1, h2, h3, h4, h5, h6, strong, b, div'));
-                    let currentSection = null;
+                        const txt = el.textContent.replace(/\\s+/g, ' ').trim();
+                        if (!txt || txt.length < 2 || txt.length > 60) continue;
 
-                    for (const node of headers) {
-                        const t = node.textContent.trim().toLowerCase();
-                        if (t.includes('missing') && (t.includes('keyword') || t.includes('skill'))) {
-                            currentSection = 'missing';
-                            continue;
-                        }
-                        if ((t.includes('matched') || t.includes('matching')) && (t.includes('keyword') || t.includes('skill'))) {
-                            currentSection = 'matching';
+                        const lower = txt.toLowerCase();
+                        if (lower.includes('resume match') || lower.includes('autofill') || lower.includes('apply') ||
+                            lower.includes('submit') || lower.includes('feedback') || lower.includes('report') ||
+                            lower.includes('simplify') || lower.includes('login') || lower.startsWith('http')) {
                             continue;
                         }
 
-                        if (currentSection) {
-                            const siblings = Array.from(node.querySelectorAll('span, button, div') || []);
-                            for (const sib of siblings) {
-                                const kw = sib.textContent.replace(/^[✓✔✕✖×+•\\-\\s]+/, '').trim();
-                                if (kw.length >= 2 && kw.length <= 40) {
-                                    if (currentSection === 'missing') missingKeywords.push(kw);
-                                    else if (currentSection === 'matching') matchingKeywords.push(kw);
+                        const isChip = cls.includes('rounded') || cls.includes('chip') || cls.includes('badge') || cls.includes('pill') || cls.includes('tag');
+
+                        if (isChip) {
+                            const cleanKw = txt.replace(/^[✓✔✕✖×+•\\-\\s]+/, '').replace(/[✓✔✕✖×+•\\-\\s]+$/, '').trim();
+                            if (cleanKw.length >= 2 && cleanKw.length <= 50) {
+                                const parentText = (el.parentElement ? el.parentElement.textContent : '').toLowerCase();
+                                const isMissingSection = parentText.includes('missing') || lower.includes('missing');
+                                const isMatchedSection = parentText.includes('matched') || parentText.includes('matching') || lower.includes('matched');
+
+                                if (isMissingSection) {
+                                    missingKeywords.push(cleanKw);
+                                } else if (isMatchedSection) {
+                                    matchingKeywords.push(cleanKw);
+                                } else if (cls.includes('bg-primary') || cls.includes('border-primary') || cls.includes('text-primary') || cls.includes('green') || cls.includes('emerald') || cls.includes('success')) {
+                                    matchingKeywords.push(cleanKw);
+                                } else {
+                                    missingKeywords.push(cleanKw);
                                 }
                             }
                         }
                     }
-                }
 
-                return {
-                    found: true,
-                    score,
-                    missingKeywords: [...new Set(missingKeywords)],
-                    matchingKeywords: [...new Set(matchingKeywords)],
-                    fullTextSnippet: fullText.substring(0, 500)
-                };
-            }""")
+                    return {
+                        found: true,
+                        score,
+                        missingKeywords: [...new Set(missingKeywords)],
+                        matchingKeywords: [...new Set(matchingKeywords)],
+                        fullTextSnippet: fullText.substring(0, 500)
+                    };
+                }""")
+
+                if extraction.get("found") and (extraction.get("missingKeywords") or extraction.get("matchingKeywords")):
+                    break
+                await page.wait_for_timeout(1000)
 
             if not extraction.get("found"):
                 print("  [Simplify] Simplify shadow root not found in DOM.")
@@ -322,7 +313,7 @@ async def read_simplify_score(job_url: str, company: str = "", role: str = "") -
 
             # Filter out non-keyword UI text & generic filler words
             skip_terms = {
-                "jalal_khan_resume", "report", "autofill", "resume score", "profile", "feedback", "help",
+                "preview resume", "tailor resume", "jalal_khan_resume", "report", "autofill", "resume score", "profile", "feedback", "help",
                 "responsiveness", "knowledge", "leading", "work", "code", "ensure", "ensuring",
                 "optimize", "optimizing", "integrating", "integration", "current", "design",
                 "dynamic", "using", "use", "building", "build", "developing", "development",
