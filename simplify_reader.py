@@ -212,7 +212,7 @@ async def read_simplify_score(job_url: str, company: str = "", role: str = "") -
                 if (!host || !host.shadowRoot) return { found: false };
 
                 const fullText = host.shadowRoot.textContent || '';
-                
+
                 let score = null;
                 const scoreMatch = fullText.match(/(\\d{1,3})\\s*(?:Low|Strong|Excellent|\\s*%|\\s*Resume Match)/i) || fullText.match(/(?:Score|Match)[^\\d]*(\\d{1,3})/i);
                 if (scoreMatch) {
@@ -223,34 +223,75 @@ async def read_simplify_score(job_url: str, company: str = "", role: str = "") -
                 const missingKeywords = [];
                 const matchingKeywords = [];
 
-                const chipElements = Array.from(host.shadowRoot.querySelectorAll('span.rounded-full, button.rounded-full, div.rounded-full, span[class*="rounded"]'));
-                
-                for (const el of chipElements) {
-                    const txt = el.textContent.trim();
-                    if (!txt || txt.length < 2 || txt.length > 50 || el.children.length > 0) continue;
-                    if (txt.toLowerCase().includes('keyword') || txt.toLowerCase().includes('matches')) continue;
+                // ── Strategy 1: Find elements by CSS class/rounded pills ──
+                const allElements = Array.from(host.shadowRoot.querySelectorAll('span, button, div, a, p, li'));
 
+                for (const el of allElements) {
                     const cls = (el.className || '').toString();
-                    
-                    if (cls.includes('bg-primary-lightest') || cls.includes('border-primary-dark') || cls.includes('text-primary-dark')) {
-                        matchingKeywords.push(txt);
-                    } else if (cls.includes('bg-white') || cls.includes('border-[#eceff5]') || cls.includes('border-[#e2e8f0]')) {
-                        missingKeywords.push(txt);
+
+                    // Only target leaf-like text nodes (no heavy container divs)
+                    if (el.querySelectorAll('div, section, p').length > 0) continue;
+
+                    const txt = el.textContent.replace(/\\s+/g, ' ').trim();
+                    if (!txt || txt.length < 2 || txt.length > 60) continue;
+
+                    const lower = txt.toLowerCase();
+                    if (lower.includes('resume match') || lower.includes('autofill') || lower.includes('apply') ||
+                        lower.includes('submit') || lower.includes('feedback') || lower.includes('report') ||
+                        lower.includes('simplify') || lower.includes('login') || lower.startsWith('http')) {
+                        continue;
+                    }
+
+                    // Check for chip / badge / pill classes in Simplify
+                    const isChip = cls.includes('rounded') || cls.includes('chip') || cls.includes('badge') || cls.includes('pill') || cls.includes('tag');
+
+                    if (isChip) {
+                        // Clean out any icon text or extra spaces
+                        const cleanKw = txt.replace(/^[✓✔✕✖×+•\\-\\s]+/, '').replace(/[✓✔✕✖×+•\\-\\s]+$/, '').trim();
+                        if (cleanKw.length >= 2 && cleanKw.length <= 50) {
+                            // Determine matched vs missing by color / background / border or section parent
+                            const parentText = (el.parentElement ? el.parentElement.textContent : '').toLowerCase();
+                            const isMissingSection = parentText.includes('missing') || lower.includes('missing');
+                            const isMatchedSection = parentText.includes('matched') || parentText.includes('matching') || lower.includes('matched');
+
+                            if (isMissingSection) {
+                                missingKeywords.push(cleanKw);
+                            } else if (isMatchedSection) {
+                                matchingKeywords.push(cleanKw);
+                            } else if (cls.includes('bg-primary') || cls.includes('border-primary') || cls.includes('text-primary') || cls.includes('green') || cls.includes('emerald') || cls.includes('success')) {
+                                matchingKeywords.push(cleanKw);
+                            } else {
+                                missingKeywords.push(cleanKw);
+                            }
+                        }
                     }
                 }
 
-                // Fallback: search all text elements if chip selector returned empty
+                // ── Strategy 2: Fallback — parse text sections directly from Shadow DOM ──
                 if (missingKeywords.length === 0 && matchingKeywords.length === 0) {
-                    const allSpans = Array.from(host.shadowRoot.querySelectorAll('span, button'));
-                    for (const el of allSpans) {
-                        const txt = el.textContent.trim();
-                        if (!txt || txt.length < 2 || txt.length > 50 || el.children.length > 0) continue;
-                        const cls = (el.className || '').toString();
-                        if (cls.includes('rounded')) {
-                            if (cls.includes('bg-primary') || cls.includes('primary')) {
-                                matchingKeywords.push(txt);
-                            } else {
-                                missingKeywords.push(txt);
+                    // Try parsing sections by looking at headers inside shadow root
+                    const headers = Array.from(host.shadowRoot.querySelectorAll('h1, h2, h3, h4, h5, h6, strong, b, div'));
+                    let currentSection = null;
+
+                    for (const node of headers) {
+                        const t = node.textContent.trim().toLowerCase();
+                        if (t.includes('missing') && (t.includes('keyword') || t.includes('skill'))) {
+                            currentSection = 'missing';
+                            continue;
+                        }
+                        if ((t.includes('matched') || t.includes('matching')) && (t.includes('keyword') || t.includes('skill'))) {
+                            currentSection = 'matching';
+                            continue;
+                        }
+
+                        if (currentSection) {
+                            const siblings = Array.from(node.querySelectorAll('span, button, div') || []);
+                            for (const sib of siblings) {
+                                const kw = sib.textContent.replace(/^[✓✔✕✖×+•\\-\\s]+/, '').trim();
+                                if (kw.length >= 2 && kw.length <= 40) {
+                                    if (currentSection === 'missing') missingKeywords.push(kw);
+                                    else if (currentSection === 'matching') matchingKeywords.push(kw);
+                                }
                             }
                         }
                     }
