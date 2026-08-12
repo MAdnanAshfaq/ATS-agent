@@ -313,7 +313,7 @@ def build_resume_docx(
     # ─── Save ─────────────────────────────────────────────────────────────────
     doc.save(str(file_path))
     
-    print(f"[Builder] ✅ Resume saved: {file_path}")
+    print(f"[Builder] [OK] Resume saved: {file_path}")
     print(f"[Builder]    Folder: {folder_path}")
     
     return str(file_path)

@@ -23,6 +23,13 @@ from pathlib import Path
 from flask import Flask, Response, jsonify, render_template, request, send_from_directory
 from flask_cors import CORS
 
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 # Fix Windows terminal encoding for Unicode output
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -627,6 +634,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                     role=role,
                     output_dir=custom_output,
                 )
+        else:
             doc_path = build_resume_docx(
                 resume=cleaned_resume,
                 company=company,
