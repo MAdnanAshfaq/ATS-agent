@@ -416,6 +416,7 @@ def start_run():
     no_simplify = data.get("no_simplify", False)
     passes = int(data.get("passes", 2))
     custom_output = data.get("output_dir", str(OUTPUT_DIR))
+    score_before = data.get("score_before", None)  # Passed from Analyze step
 
     if not url or not url.startswith(("http://", "https://")):
         return jsonify({"error": "Invalid URL. Please enter a valid job URL starting with http:// or https://"}), 400
@@ -427,7 +428,7 @@ def start_run():
     # Start background thread for execution
     thread = threading.Thread(
         target=_execute_agent_pipeline,
-        args=(run_id, url, custom_keywords, no_simplify, passes, custom_output, msg_queue),
+        args=(run_id, url, custom_keywords, no_simplify, passes, custom_output, msg_queue, score_before),
         daemon=True,
     )
     thread.start()
@@ -435,8 +436,9 @@ def start_run():
     return jsonify({"run_id": run_id, "status": "started"})
 
 
-def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passes, custom_output, msg_queue):
+def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passes, custom_output, msg_queue, analyze_score_before=None):
     """Execute pipeline in thread and push step logs to SSE queue."""
+    # analyze_score_before: real score from Analyze step (Gemini/Simplify) — authoritative before score
     def send_log(step, stage, message, data=None, status="info"):
         msg_queue.put({
             "type": "progress",
@@ -585,7 +587,13 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
         )
 
         # Calculate scores for dashboard rendering
-        score_before_val = simplify_score_before if simplify_score_before is not None else 75
+        # Priority: 1. analyze_score_before from Analyze step  2. simplify_score_before from pipeline  3. default 75
+        if analyze_score_before is not None:
+            score_before_val = analyze_score_before
+        elif simplify_score_before is not None:
+            score_before_val = simplify_score_before
+        else:
+            score_before_val = 75
         score_after_val = 90 if score_before_val < 90 else min(98, score_before_val + 10)
         score_delta_val = score_after_val - score_before_val
 

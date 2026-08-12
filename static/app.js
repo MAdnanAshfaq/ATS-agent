@@ -142,7 +142,7 @@ function detectPlatform(url) {
 }
 
 /* ── Pipeline Run Execution ──────────────────────────────────────────────── */
-async function startGeneration() {
+async function startGeneration(opts = {}) {
   let url = document.getElementById("jd-url").value.trim();
   
   if (url && !url.startsWith("http://") && !url.startsWith("https://")) {
@@ -161,6 +161,9 @@ async function startGeneration() {
 
   const outputDirElem = document.getElementById("custom-output-dir");
   const outputDir = outputDirElem ? outputDirElem.value.trim() : "";
+
+  // Use score passed from Analyze step if available, otherwise null (backend will compute)
+  const scoreBefore = opts.scoreBefore !== undefined ? opts.scoreBefore : analyzeScoreBefore;
 
   if (!url) {
     showToast("Please enter a valid job posting URL", "warning");
@@ -191,6 +194,7 @@ async function startGeneration() {
         no_simplify: noSimplify,
         passes,
         output_dir: outputDir || undefined,
+        score_before: scoreBefore !== null ? scoreBefore : undefined,
       }),
     });
 
@@ -801,6 +805,10 @@ function escapeHtml(str) {
 /* ── Simplify-Style Interactive Keyword Cross-Check ─────────────────────── */
 let analyzedMissingKeywords = [];
 let selectedMissingKeywords = new Set();
+let analyzeScoreBefore = null;  // Preserved from Analyze step, used as authoritative before score
+let analyzeCompany = null;
+let analyzeRole = null;
+let analyzeJdText = null;
 
 async function analyzeJobKeywords() {
   let url = document.getElementById("jd-url").value.trim();
@@ -835,6 +843,11 @@ async function analyzeJobKeywords() {
       showToast(data.error || "Analysis failed", "error");
       return;
     }
+
+    // Save analyze state so Generate step can reuse it without re-doing work
+    analyzeScoreBefore = data.score;
+    analyzeCompany = data.company;
+    analyzeRole = data.role;
 
     renderSimplifyCard(data);
     showToast(`Scraped ${data.role} at ${data.company}! Keywords cross-checked.`, "success");
@@ -934,5 +947,6 @@ function generateWithSelectedKeywords() {
     kwInput.value = keywordsList.join(", ");
   }
 
-  startGeneration();
+  // Pass the score captured from the Analyze step into the generation run
+  startGeneration({ scoreBefore: analyzeScoreBefore });
 }
