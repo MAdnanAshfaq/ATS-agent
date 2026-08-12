@@ -13,6 +13,23 @@ import re
 from google import genai
 from google.genai import types
 
+GENERIC_FILLER_WORDS = {
+    "responsiveness", "knowledge", "leading", "work", "code", "ensure", "ensuring",
+    "optimize", "optimizing", "integrating", "integration", "current", "design",
+    "dynamic", "using", "use", "building", "build", "developing", "development",
+    "maintaining", "maintenance", "collaborating", "collaboration", "implementing",
+    "implementation", "understanding", "working", "deliver", "delivering", "create",
+    "creating", "manage", "managing", "management", "provide", "providing",
+    "support", "supporting", "help", "helping", "drive", "driving", "write",
+    "writing", "test", "testing", "solution", "solutions", "platform", "platforms",
+    "system", "systems", "application", "applications", "user", "users", "feature",
+    "features", "requirement", "requirements", "quality", "process", "environment",
+    "architecture", "teams", "player", "communication", "skills", "ability",
+    "strong", "great", "good", "well", "experience", "candidate", "position", "job",
+    "opportunity", "company", "including", "required", "preferred", "bonus", "etc",
+    "scalable", "robust", "innovative", "transformative", "groundbreaking", "seamless"
+}
+
 
 def extract_keywords_with_gemini(jd_text: str) -> list[str]:
     """
@@ -74,7 +91,18 @@ Example: ["Python", "React", "AWS Lambda", "Senior Product Engineer"]"""
         keywords = json.loads(cleaned_text)
 
         if isinstance(keywords, list):
-            clean_list = [str(kw).strip() for kw in keywords if str(kw).strip()]
+            clean_list = []
+            for kw in keywords:
+                s_kw = str(kw).strip()
+                words_in_kw = [w.lower() for w in re.findall(r'\b[a-zA-Z0-9+#.-]+\b', s_kw)]
+                if not words_in_kw:
+                    continue
+                # If all words in kw are generic filler words, skip
+                if all(w in GENERIC_FILLER_WORDS for w in words_in_kw):
+                    print(f"[LLM Matcher] Purged generic filler keyword: '{s_kw}'")
+                    continue
+                clean_list.append(s_kw)
+
             print(f"[LLM Matcher] Gemini extracted {len(clean_list)} high-value keywords: {clean_list[:8]}")
             return clean_list
 

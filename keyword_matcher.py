@@ -25,6 +25,18 @@ STOP_WORDS = {
     "including", "required", "preferred", "bonus", "etc", "e.g", "i.e",
     "as", "if", "not", "so", "such", "than", "more", "also", "both",
     "each", "while", "about", "like", "per", "across", "within", "who",
+    "responsiveness", "knowledge", "leading", "work", "code", "ensure", "ensuring",
+    "optimize", "optimizing", "integrating", "integration", "current", "design",
+    "dynamic", "using", "use", "building", "build", "developing", "development",
+    "maintaining", "maintenance", "collaborating", "collaboration", "implementing",
+    "implementation", "understanding", "working", "deliver", "delivering", "create",
+    "creating", "manage", "managing", "management", "provide", "providing",
+    "support", "supporting", "help", "helping", "drive", "driving", "write",
+    "writing", "test", "testing", "solution", "solutions", "platform", "platforms",
+    "system", "systems", "application", "applications", "user", "users", "feature",
+    "features", "requirement", "requirements", "quality", "process", "environment",
+    "architecture", "teams", "player", "communication", "skills", "ability",
+    "scalable", "robust", "innovative", "transformative", "groundbreaking", "seamless"
 }
 
 # Technical keyword patterns to detect in JDs and resumes

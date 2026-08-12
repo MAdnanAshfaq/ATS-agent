@@ -268,10 +268,25 @@ async def read_simplify_score(job_url: str, company: str = "", role: str = "") -
             missing_keywords = extraction.get("missingKeywords", [])
             matching_keywords = extraction.get("matchingKeywords", [])
 
-            # Filter out non-keyword UI text
-            skip_terms = {"jalal_khan_resume", "report", "autofill", "resume score", "profile"}
-            missing_keywords = [k for k in missing_keywords if k.lower() not in skip_terms]
-            matching_keywords = [k for k in matching_keywords if k.lower() not in skip_terms]
+            # Filter out non-keyword UI text & generic filler words
+            skip_terms = {
+                "jalal_khan_resume", "report", "autofill", "resume score", "profile", "feedback", "help",
+                "responsiveness", "knowledge", "leading", "work", "code", "ensure", "ensuring",
+                "optimize", "optimizing", "integrating", "integration", "current", "design",
+                "dynamic", "using", "use", "building", "build", "developing", "development",
+                "maintaining", "maintenance", "collaborating", "collaboration", "implementing",
+                "implementation", "understanding", "working", "deliver", "delivering", "create",
+                "creating", "manage", "managing", "management", "provide", "providing",
+                "support", "supporting", "help", "helping", "drive", "driving", "write",
+                "writing", "test", "testing", "solution", "solutions", "platform", "platforms",
+                "system", "systems", "application", "applications", "user", "users", "feature",
+                "features", "requirement", "requirements", "quality", "process", "environment",
+                "architecture", "teams", "player", "communication", "skills", "ability",
+                "strong", "great", "good", "well", "experience", "candidate", "position", "job",
+                "opportunity", "company", "including", "required", "preferred", "bonus", "etc"
+            }
+            missing_keywords = [k for k in missing_keywords if k.lower().strip() not in skip_terms]
+            matching_keywords = [k for k in matching_keywords if k.lower().strip() not in skip_terms]
 
             print(f"  [Simplify] Real Score Extracted: {score}%")
             print(f"  [Simplify] Missing Keywords ({len(missing_keywords)}): {missing_keywords}")
