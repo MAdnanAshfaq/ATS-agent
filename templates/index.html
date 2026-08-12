@@ -487,8 +487,8 @@
             <div class="check-item" id="check-resume">
               <i class="fa-solid fa-circle-check item-icon text-emerald"></i>
               <div class="item-text">
-                <strong>Master Resume (base_resume.json)</strong>
-                <span>Jalal Khan master resume with 3 roles and 53 skills</span>
+                <strong>Master Resume Profile</strong>
+                <span>Upload your PDF or DOCX resume to activate the agent for your profile</span>
               </div>
             </div>
 
@@ -519,12 +519,12 @@
       <div class="section-header-row">
         <div>
           <h2>Master Resume Profile</h2>
-          <p>Ground-truth master profile (<code>base_resume.json</code>). Upload any PDF/DOCX resume or edit visually below.</p>
+          <p>Upload your PDF or DOCX resume. The agent will parse it and always tailor from it.</p>
         </div>
-        <div class="action-btn-group">
+        <div class="action-btn-group" id="resume-actions-bar">
           <input type="file" id="master-resume-file-input" accept=".pdf,.docx,.json" style="display:none" onchange="uploadMasterResumeFile(event)">
           <button class="btn btn-outline" onclick="document.getElementById('master-resume-file-input').click()">
-            <i class="fa-solid fa-file-arrow-up text-cyan"></i> Upload Resume (PDF / DOCX)
+            <i class="fa-solid fa-file-arrow-up text-cyan"></i> Replace Resume
           </button>
           <button class="btn btn-outline" id="toggle-json-view-btn" onclick="toggleResumeViewMode()">
             <i class="fa-solid fa-code"></i> Raw JSON Mode
@@ -535,13 +535,20 @@
         </div>
       </div>
 
+      <!-- Upload Prompt (shown when no resume uploaded yet) -->
+      <div class="upload-prompt-card" id="resume-upload-prompt">
+        <i class="fa-solid fa-cloud-arrow-up"></i>
+        <h3>Upload Your Resume to Get Started</h3>
+        <p>Upload your PDF or DOCX resume. Gemini AI will parse it into a structured profile that's used for every job application tailoring.</p>
+        <input type="file" id="master-resume-file-input" accept=".pdf,.docx,.json" style="display:none" onchange="uploadMasterResumeFile(event)">
+        <button class="btn btn-primary" style="font-size:16px; padding:14px 32px;" onclick="document.getElementById('master-resume-file-input').click()">
+          <i class="fa-solid fa-file-arrow-up"></i> Upload PDF / DOCX / JSON Resume
+        </button>
+      </div>
+
       <!-- Human-Readable Formatted Visual Resume Card -->
-      <div class="glass-card visual-resume-card" id="visual-resume-card">
+      <div class="glass-card visual-resume-card hidden" id="visual-resume-card">
         <!-- Rendered dynamically by static/app.js -->
-        <div class="empty-state">
-          <i class="fa-solid fa-spinner fa-spin empty-icon"></i>
-          <p>Loading master resume profile...</p>
-        </div>
       </div>
 
       <!-- Raw JSON Editor (Hidden by default) -->

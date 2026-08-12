@@ -574,12 +574,32 @@ let currentMasterResumeData = null;
 
 async function loadMasterResume() {
   const textarea = document.getElementById("resume-json-editor");
+  const visualCard = document.getElementById("visual-resume-card");
+  const jsonCard = document.getElementById("json-editor-card");
+  const uploadPrompt = document.getElementById("resume-upload-prompt");
+  const resumeActionsBar = document.getElementById("resume-actions-bar");
+
   try {
     const res = await fetch("/api/resume");
     const data = await res.json();
     currentMasterResumeData = data;
-    textarea.value = JSON.stringify(data, null, 2);
-    renderVisualResume(data);
+
+    const isEmpty = data._empty || (!data.name && (!data.skills || data.skills.length === 0));
+
+    if (isEmpty) {
+      // Show upload prompt, hide resume views
+      if (uploadPrompt) uploadPrompt.classList.remove("hidden");
+      if (visualCard) visualCard.classList.add("hidden");
+      if (jsonCard) jsonCard.classList.add("hidden");
+      if (resumeActionsBar) resumeActionsBar.classList.add("hidden");
+    } else {
+      if (uploadPrompt) uploadPrompt.classList.add("hidden");
+      if (visualCard) visualCard.classList.remove("hidden");
+      if (jsonCard) jsonCard.classList.add("hidden");
+      if (resumeActionsBar) resumeActionsBar.classList.remove("hidden");
+      textarea.value = JSON.stringify(data, null, 2);
+      renderVisualResume(data);
+    }
   } catch (err) {
     textarea.value = "// Error loading base_resume.json";
   }

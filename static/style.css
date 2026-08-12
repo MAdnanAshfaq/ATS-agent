@@ -776,41 +776,63 @@ input:checked + .slider:before { transform: translateX(20px); }
   background: var(--bg-card);
   border: 1px solid var(--border-glass);
   border-radius: var(--radius-lg);
-  padding: 24px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
   transition: all 0.2s ease;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .history-card:hover {
-  transform: translateY(-4px);
+  transform: translateY(-2px);
   border-color: var(--border-glass-bright);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
 }
 
 .history-card-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
 }
 
-.history-company { font-weight: 700; font-size: 18px; }
-.history-role { font-size: 14px; color: var(--text-muted); }
-.history-date { font-size: 11px; color: var(--text-dim); }
+.history-card-header .flex-align-center {
+  min-width: 0;
+  flex: 1;
+}
+
+.history-card-header .flex-align-center > div {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.history-company { font-weight: 700; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.history-role { font-size: 13px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.history-date { font-size: 11px; color: var(--text-dim); white-space: nowrap; flex-shrink: 0; }
 
 .history-scores {
   display: flex;
-  gap: 16px;
+  gap: 12px;
   background: rgba(2, 6, 23, 0.5);
-  padding: 12px 16px;
+  padding: 10px 14px;
   border-radius: var(--radius-md);
+  flex-wrap: nowrap;
 }
 
-.score-col { display: flex; flex-direction: column; }
-.score-col span { font-size: 11px; color: var(--text-dim); }
-.score-col strong { font-size: 18px; }
+.score-col { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.score-col span { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+.score-col strong { font-size: 16px; }
 
-.history-actions { display: flex; gap: 10px; }
+.history-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 4px;
+}
 
 .empty-state {
   grid-column: 1 / -1;
@@ -1181,4 +1203,72 @@ input:checked + .slider:before { transform: translateX(20px); }
 .btn-danger-sm:hover {
   background: rgba(239, 68, 68, 0.3);
   color: #ffffff;
+}
+
+/* History Toolbar */
+.history-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-muted);
+  user-select: none;
+}
+.checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+.history-item-cb {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* Utility Classes */
+.flex-align-center { display: flex; align-items: center; }
+.gap-sm { gap: 10px; }
+.gap-xs { gap: 6px; }
+.margin-right-sm { margin-right: 12px; }
+.margin-top-xs { margin-top: 6px; }
+.margin-bottom-xs { margin-bottom: 6px; }
+.text-sm { font-size: 13px; }
+.text-dim { color: var(--text-dim); }
+.text-cyan { color: var(--cyan); }
+.text-emerald { color: var(--emerald); }
+.font-semibold { font-weight: 600; }
+
+/* Empty Resume Upload State */
+.upload-prompt-card {
+  text-align: center;
+  padding: 60px 30px;
+  border: 2px dashed rgba(139, 92, 246, 0.35);
+  border-radius: var(--radius-xl);
+  background: rgba(139, 92, 246, 0.05);
+}
+.upload-prompt-card i {
+  font-size: 52px;
+  color: var(--primary);
+  margin-bottom: 20px;
+  display: block;
+}
+.upload-prompt-card h3 { font-size: 22px; font-weight: 700; margin-bottom: 10px; }
+.upload-prompt-card p { color: var(--text-muted); font-size: 15px; margin-bottom: 28px; max-width: 480px; margin-inline: auto; }
+
+/* History grid override */
+.history-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 18px;
+  margin-top: 0;
 }
