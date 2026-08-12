@@ -387,8 +387,11 @@
             <a id="download-pdf-btn" href="#" class="btn btn-cyan btn-xl" download>
               <i class="fa-solid fa-file-pdf"></i> Download .pdf
             </a>
+            <button class="btn btn-purple btn-xl" onclick="openCurrentCoverLetter()">
+              <i class="fa-solid fa-envelope-open-text"></i> AI Cover Letter
+            </button>
             <button class="btn btn-secondary btn-xl" onclick="openOutputFolder()">
-              <i class="fa-solid fa-folder-open"></i> Open Output Folder
+              <i class="fa-solid fa-folder-open"></i> Open Folder
             </button>
           </div>
 
@@ -561,6 +564,36 @@
     </section>
 
   </main>
+
+  <!-- Cover Letter Preview & Edit Modal -->
+  <div id="cover-letter-modal" class="modal-overlay hidden">
+    <div class="modal-card glass-card">
+      <div class="modal-header">
+        <div class="flex-align-center gap-sm">
+          <i class="fa-solid fa-envelope-open-text text-purple text-xl"></i>
+          <div>
+            <h3 id="cl-modal-title">Job-Specific AI Cover Letter</h3>
+            <span class="text-sub text-muted" id="cl-modal-subtitle">Tailored for Job Application</span>
+          </div>
+        </div>
+        <button type="button" class="btn-icon" onclick="closeCoverLetterModal()"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <div class="modal-body">
+        <textarea id="cl-modal-textarea" class="cover-letter-textarea" placeholder="Generating recruiter-targeting cover letter..."></textarea>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="copyCoverLetterText()">
+          <i class="fa-solid fa-copy"></i> Copy to Clipboard
+        </button>
+        <a id="cl-modal-docx-download" href="#" class="btn btn-emerald" download>
+          <i class="fa-solid fa-file-word"></i> Download Cover Letter (.docx)
+        </a>
+        <button class="btn btn-outline" onclick="closeCoverLetterModal()">Close</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Notification Toast -->
   <div id="toast-container" class="toast-container"></div>

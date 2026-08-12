@@ -449,9 +449,12 @@ async function loadHistory() {
         </div>
         <div class="history-actions">
           <a href="/api/download/${app.relative_file_path}" class="btn btn-emerald btn-sm" download>
-            <i class="fa-solid fa-download"></i> Download .docx
+            <i class="fa-solid fa-download"></i> .docx
           </a>
           ${app.relative_file_path ? `<a href="/api/download/${app.relative_file_path.replace('.docx', '.pdf')}" class="btn btn-cyan btn-sm" download><i class="fa-solid fa-file-pdf"></i> .pdf</a>` : ''}
+          <button class="btn btn-purple-sm" onclick="generateOrViewHistoryCoverLetter('${escapeHtml(app.company)}', '${escapeHtml(app.role)}', '${escapeHtml(app.relative_file_path)}')">
+            <i class="fa-solid fa-envelope"></i> Cover Letter
+          </button>
           <button class="btn btn-secondary btn-sm" onclick="openSpecificFolder('${escapeHtml(app.output_file)}')">
             <i class="fa-solid fa-folder-open"></i> Folder
           </button>
@@ -981,3 +984,91 @@ function generateWithSelectedKeywords() {
   // Pass the score captured from the Analyze step into the generation run
   startGeneration({ scoreBefore: analyzeScoreBefore });
 }
+
+/* ── Cover Letter Modal Handlers ────────────────────────────────────────── */
+async function openCurrentCoverLetter() {
+  if (!window.lastResult) {
+    showToast("Please run an application first to view its Cover Letter", "warning");
+    return;
+  }
+
+  const company = window.lastResult.company;
+  const role = window.lastResult.role;
+  const relPath = window.lastResult.relative_path;
+
+  document.getElementById("cl-modal-title").innerText = `${role} Cover Letter`;
+  document.getElementById("cl-modal-subtitle").innerText = `Tailored for ${company}`;
+  const modal = document.getElementById("cover-letter-modal");
+  modal.classList.remove("hidden");
+
+  const textarea = document.getElementById("cl-modal-textarea");
+
+  if (window.lastResult.cover_letter_text) {
+    textarea.value = window.lastResult.cover_letter_text;
+    const downloadDocx = document.getElementById("cl-modal-docx-download");
+    const coverLetterRel = relPath ? relPath.replace(/[^\/\\]+\.docx$/i, "Jalal_Khan_Cover_Letter.docx") : "";
+    downloadDocx.href = `/api/download/${coverLetterRel}`;
+    return;
+  }
+
+  textarea.value = "Generating high-impact recruiter cover letter with Gemini...";
+  try {
+    const res = await fetch("/api/cover-letter", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ company, role, keywords: window.lastResult.newly_added || [] })
+    });
+    const data = await res.json();
+    if (data.success) {
+      textarea.value = data.cover_letter_text;
+      window.lastResult.cover_letter_text = data.cover_letter_text;
+      document.getElementById("cl-modal-docx-download").href = `/api/download/${data.relative_docx}`;
+    } else {
+      textarea.value = `Failed to generate cover letter: ${data.error}`;
+    }
+  } catch (err) {
+    textarea.value = `Error generating cover letter: ${err.message}`;
+  }
+}
+
+async function generateOrViewHistoryCoverLetter(company, role, relativePath) {
+  const modal = document.getElementById("cover-letter-modal");
+  modal.classList.remove("hidden");
+
+  document.getElementById("cl-modal-title").innerText = `${role} Cover Letter`;
+  document.getElementById("cl-modal-subtitle").innerText = `Tailored for ${company}`;
+  const textarea = document.getElementById("cl-modal-textarea");
+  textarea.value = "Generating recruiter-targeting AI cover letter...";
+
+  const coverLetterRel = relativePath ? relativePath.replace(/[^\/\\]+\.docx$/i, "Jalal_Khan_Cover_Letter.docx") : "";
+  document.getElementById("cl-modal-docx-download").href = `/api/download/${coverLetterRel}`;
+
+  try {
+    const res = await fetch("/api/cover-letter", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ company, role })
+    });
+    const data = await res.json();
+    if (data.success) {
+      textarea.value = data.cover_letter_text;
+      document.getElementById("cl-modal-docx-download").href = `/api/download/${data.relative_docx}`;
+    } else {
+      textarea.value = `Failed to generate cover letter: ${data.error}`;
+    }
+  } catch (err) {
+    textarea.value = `Error generating cover letter: ${err.message}`;
+  }
+}
+
+function copyCoverLetterText() {
+  const textarea = document.getElementById("cl-modal-textarea");
+  if (!textarea.value) return;
+  navigator.clipboard.writeText(textarea.value);
+  showToast("Cover letter copied to clipboard!", "success");
+}
+
+function closeCoverLetterModal() {
+  document.getElementById("cover-letter-modal").classList.add("hidden");
+}
+

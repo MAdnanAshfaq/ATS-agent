@@ -449,6 +449,60 @@ def open_folder():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/cover-letter", methods=["POST"])
+def generate_cover_letter_api():
+    """Generate a job-specific AI cover letter for the given job URL or role."""
+    data = request.json or {}
+    url = data.get("url", "").strip()
+    company = data.get("company", "").strip()
+    role = data.get("role", "").strip()
+    custom_keywords = data.get("keywords", [])
+
+    if not url and (not company or not role):
+        return jsonify({"error": "Please provide a valid job URL or company/role details"}), 400
+
+    try:
+        from agent import load_base_resume
+        from scraper import scrape_jd_sync
+        from cover_letter_generator import generate_cover_letter
+
+        base_resume = load_base_resume()
+
+        if url:
+            jd_data = scrape_jd_sync(url)
+            company = company or jd_data["company"]
+            role = role or jd_data["role"]
+            jd_text = jd_data["jd_text"]
+        else:
+            jd_text = f"Role: {role} at {company}"
+
+        from resume_builder import slugify
+        folder_name = f"{slugify(company)}_{slugify(role)}"[:80]
+        target_dir = OUTPUT_DIR / folder_name
+
+        res = generate_cover_letter(
+            base_resume=base_resume,
+            jd_text=jd_text,
+            company=company,
+            role=role,
+            missing_keywords=custom_keywords,
+            output_dir=str(target_dir),
+        )
+
+        rel_docx = os.path.relpath(res["file_path_docx"], str(OUTPUT_DIR)) if res.get("file_path_docx") else ""
+
+        return jsonify({
+            "success": True,
+            "cover_letter_text": res["cover_letter_text"],
+            "file_path_docx": res["file_path_docx"],
+            "relative_docx": rel_docx,
+            "company": company,
+            "role": role,
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/run", methods=["POST"])
 def start_run():
     """Start pipeline generation run and return run_id for streaming."""
@@ -650,6 +704,24 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
         except Exception as pdf_err:
             print(f"[Pipeline] PDF conversion note: {pdf_err}")
 
+        # Automatically generate recruiter-targeting AI Cover Letter
+        cover_letter_text = ""
+        try:
+            from cover_letter_generator import generate_cover_letter
+            target_dir = Path(doc_path).parent
+            cl_res = generate_cover_letter(
+                base_resume=base_resume,
+                jd_text=jd_text,
+                company=company,
+                role=role,
+                missing_keywords=missing_keywords,
+                output_dir=str(target_dir),
+            )
+            cover_letter_text = cl_res.get("cover_letter_text", "")
+            send_log(7, "Cover Letter", "Generated high-impact AI Cover Letter!", status="success")
+        except Exception as cl_err:
+            print(f"[Pipeline] Cover letter note: {cl_err}")
+
         rel_path = os.path.relpath(doc_path, str(OUTPUT_DIR))
 
         # Save log entry
@@ -691,6 +763,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                 "embedded_keywords": embedded_keywords,
                 "still_missing": still_missing,
                 "folder_path": str(Path(doc_path).parent),
+                "cover_letter_text": cover_letter_text,
                 "next_step": "Upload the .docx to your Simplify profile to verify your new score",
             }
         })
