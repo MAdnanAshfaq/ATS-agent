@@ -48,12 +48,22 @@ PLATFORM_SELECTORS = {
     "ashbyhq.com": {
         "jd": [
             "div[class*='job-posting']",
-            "[class*='description']",
             "div[class*='posting']",
             "main",
+            "#app",
         ],
         "title": ["h1"],
-        "company": [],
+        "company": ["h2", "[class*='company']"],
+    },
+    "notion.site": {
+        "jd": ["main", ".notion-scroller", ".notion-page-content", "body"],
+        "title": ["h1.notion-header__title", "h1", "title"],
+        "company": [".notion-header__company"],
+    },
+    "notion.so": {
+        "jd": ["main", ".notion-scroller", ".notion-page-content", "body"],
+        "title": ["h1.notion-header__title", "h1", "title"],
+        "company": [".notion-header__company"],
     },
     "smartrecruiters.com": {
         "jd": [".job-sections", "[class*='job-description']"],
@@ -84,6 +94,8 @@ def detect_platform(url: str) -> Optional[str]:
 
 def clean_text(text: str) -> str:
     """Remove excess whitespace, unicode artifacts, and normalize text."""
+    if not text:
+        return ""
     # Normalize whitespace
     text = re.sub(r'\r\n|\r', '\n', text)
     text = re.sub(r'\n{3,}', '\n\n', text)
@@ -97,11 +109,11 @@ def clean_text(text: str) -> str:
     text = text.replace('\u2013', '-')
     text = text.replace('\u2014', '-')
 
-    # Strip EEOC / Legal Disclaimer / Form Field noise lines
+    # Strip short EEOC / Legal Disclaimer / Form Field noise lines (< 150 chars)
     clean_lines = []
     for line in text.split('\n'):
         l_lower = line.lower().strip()
-        if any(noise in l_lower for noise in [
+        if len(line) < 150 and any(noise in l_lower for noise in [
             "equal opportunity employer", "affirmative action", "veteran status",
             "paperwork reduction act", "executive order", "readjustment assistance",
             "vietnam era", "race, color, religion", "sexual orientation", "gender identity",
@@ -131,10 +143,19 @@ def extract_company_from_url(url: str) -> str:
     if wellfound:
         return wellfound.group(1).replace('-', ' ').title()
     
-    # ashby: jobs.ashbyhq.com/company
+    # ashby: jobs.ashbyhq.com/company/role
     ashby = re.search(r'ashbyhq\.com/([^/]+)', url)
     if ashby:
         return ashby.group(1).replace('-', ' ').title()
+    
+    # notion: company.notion.site/role
+    notion = re.search(r'https?://([^/]+)\.notion\.(?:site|so)', url)
+    if notion:
+        name = notion.group(1).replace('-', ' ').title()
+        if name.lower().endswith("ai"):
+            name = name[:-2].strip().title()
+        if name and name.lower() != "www":
+            return name
     
     # generic: extract domain
     domain = re.search(r'https?://(?:www\.|jobs\.)?([^./]+)', url)
@@ -142,6 +163,61 @@ def extract_company_from_url(url: str) -> str:
         return domain.group(1).replace('-', ' ').title()
     
     return "Unknown Company"
+
+
+def fetch_notion_via_api(url: str) -> Optional[dict]:
+    """Instant 200ms REST API fetch for Notion pages (.notion.site or .notion.so)."""
+    match = re.search(r'([a-f0-9]{32})', url)
+    if not match:
+        return None
+    page_id = match.group(1)
+    uuid_str = f"{page_id[:8]}-{page_id[8:12]}-{page_id[12:16]}-{page_id[16:20]}-{page_id[20:]}"
+    try:
+        import requests
+        api_url = "https://www.notion.so/api/v3/loadPageChunk"
+        payload = {"pageId": uuid_str, "chunkIndex": 0, "limit": 100, "verticalColumns": False}
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/125.0.0.0 Safari/537.36"
+        }
+        res = requests.post(api_url, json=payload, headers=headers, timeout=8)
+        if res.status_code == 200:
+            blocks = res.json().get("recordMap", {}).get("block", {})
+            text_lines = []
+            role = ""
+            for b_id, b_obj in blocks.items():
+                val = b_obj.get("value", {})
+                if isinstance(val, dict) and "value" in val:
+                    val = val["value"]
+                if isinstance(val, dict) and "properties" in val:
+                    title_prop = val["properties"].get("title", [])
+                    line_parts = []
+                    for chunk in title_prop:
+                        if isinstance(chunk, list) and len(chunk) > 0 and isinstance(chunk[0], str):
+                            line_parts.append(chunk[0])
+                    if line_parts:
+                        line_str = "".join(line_parts).strip()
+                        if not role and len(line_str) < 80 and "career" not in line_str.lower():
+                            role = line_str
+                        text_lines.append(line_str)
+            full_txt = "\n".join(text_lines)
+            full_txt = clean_text(full_txt)
+            if len(full_txt) >= 100:
+                company = extract_company_from_url(url)
+                if not role or role.lower() == company.lower():
+                    role = "Full Stack Engineer"
+                folder_name = f"{slugify(company)}_{slugify(role)}"[:80]
+                print(f"[Scraper] Instant Notion API extraction ({len(full_txt)} chars)")
+                return {
+                    "url": url,
+                    "company": company,
+                    "role": role,
+                    "jd_text": full_txt,
+                    "folder_name": folder_name,
+                }
+    except Exception as e:
+        print(f"[Scraper] Notion API fallback note: {e}")
+    return None
 
 
 def slugify(text: str) -> str:
@@ -161,6 +237,12 @@ async def scrape_jd(url: str) -> dict:
     if "ashbyhq.com" in scrape_url and scrape_url.endswith("/application"):
         scrape_url = scrape_url[:-12]
 
+    # Fast path for Notion pages via Notion REST API
+    if "notion.site" in scrape_url or "notion.so" in scrape_url:
+        notion_data = fetch_notion_via_api(scrape_url)
+        if notion_data:
+            return notion_data
+
     print(f"[Scraper] Opening: {scrape_url}")
     platform = detect_platform(scrape_url)
     if platform:
@@ -174,47 +256,49 @@ async def scrape_jd(url: str) -> dict:
             args=[
                 '--no-sandbox',
                 '--disable-blink-features=AutomationControlled',
-                '--disable-web-security',
             ]
         )
-        context = await browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/125.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1280, "height": 800},
-        )
-        page = await context.new_page()
+        page = await browser.new_page()
         
-        # Navigate with smart wait
+        # Smart navigation using wait_until="domcontentloaded"
         try:
-            await page.goto(scrape_url, wait_until="networkidle", timeout=30000)
+            await page.goto(scrape_url, wait_until="domcontentloaded", timeout=15000)
+        except Exception as e:
+            print(f"[Scraper] Page goto note: {e} — proceeding with rendered DOM")
+
+        # Allow SPA JavaScript (Notion / React / Vue) 4s to hydrate the DOM
+        await asyncio.sleep(4)
+        
+        # Get full page HTML safely (handles client-side navigation/redirects)
+        html = ""
+        title = ""
+        try:
+            html = await page.content()
+            title = await page.title()
         except Exception:
+            await asyncio.sleep(2)
             try:
-                await page.goto(scrape_url, wait_until="domcontentloaded", timeout=20000)
-                await asyncio.sleep(3)
-            except Exception as e:
-                await browser.close()
-                raise RuntimeError(f"Failed to load page: {e}")
-        
-        # Additional wait for dynamic content
-        await asyncio.sleep(2)
-        
-        # Get full page HTML
-        html = await page.content()
-        
-        # Extract title from page
-        title = await page.title()
-        
+                html = await page.content()
+                title = await page.title()
+            except Exception as nav_err:
+                print(f"[Scraper] Content fetch error: {nav_err}")
+
+        if title and ("just a moment" in title.lower() or "attention required" in title.lower()):
+            await asyncio.sleep(2.5)
+            try:
+                html = await page.content()
+                title = await page.title()
+            except Exception:
+                pass
+
+        print(f"[Scraper DEBUG] Raw HTML fetched len: {len(html)}")
         await browser.close()
     
     # Parse with BeautifulSoup
     soup = BeautifulSoup(html, 'lxml')
     
-    # Remove noise elements
-    for tag in soup.find_all(['script', 'style', 'nav', 'header', 'footer',
-                               'noscript', 'iframe', 'svg']):
+    # Remove noise elements (keep noscript for Notion/SPA fallbacks)
+    for tag in soup.find_all(['script', 'style', 'nav', 'header', 'footer', 'iframe', 'svg']):
         tag.decompose()
     
     jd_text = ""
@@ -230,6 +314,7 @@ async def scrape_jd(url: str) -> dict:
             el = soup.select_one(sel)
             if el:
                 txt = el.get_text(separator='\n').strip()
+                print(f"[Scraper DEBUG] Selector '{sel}' found element with {len(txt)} raw chars")
                 if len(txt) >= 100:
                     jd_text = txt
                     print(f"[Scraper] Extracted JD via selector: {sel} ({len(txt)} chars)")
@@ -259,11 +344,34 @@ async def scrape_jd(url: str) -> dict:
                 break
     
     # Last resort: full body text
-    if not jd_text:
+    if not jd_text or len(jd_text) < 100:
         print("[Scraper] Warning: Using full body text — may include noise")
         body = soup.find('body')
         if body:
             jd_text = body.get_text(separator='\n')
+            jd_text = clean_text(jd_text)
+
+    # HTTP Fallback if Playwright returned insufficient text
+    if not jd_text or len(jd_text) < 100:
+        try:
+            import urllib.request
+            print("[Scraper] Playwright yielded < 100 chars — trying HTTP fetch fallback...")
+            req = urllib.request.Request(
+                url,
+                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/125.0.0.0 Safari/537.36'}
+            )
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                raw_html = resp.read().decode('utf-8', errors='ignore')
+                raw_soup = BeautifulSoup(raw_html, 'lxml')
+                for tag in raw_soup.find_all(['script', 'style', 'nav', 'header', 'footer', 'noscript', 'iframe', 'svg']):
+                    tag.decompose()
+                b = raw_soup.find('body') or raw_soup
+                txt = clean_text(b.get_text(separator='\n'))
+                if len(txt) >= 100:
+                    jd_text = txt
+                    print(f"[Scraper] ✅ HTTP fallback extracted {len(jd_text)} chars")
+        except Exception as http_err:
+            print(f"[Scraper] HTTP fallback note: {http_err}")
     
     # Extract role from page title if not found
     if not role:
@@ -282,6 +390,10 @@ async def scrape_jd(url: str) -> dict:
         if not role:
             role = title.split('|')[0].split('-')[0].strip()
     
+    # Fallback company name if identical to role
+    if not company or (role and company.lower() == role.lower()):
+        company = extract_company_from_url(scrape_url)
+
     jd_text = clean_text(jd_text)
     
     # Safety check
@@ -311,7 +423,17 @@ async def scrape_jd(url: str) -> dict:
 
 # Synchronous wrapper for non-async contexts
 def scrape_jd_sync(url: str) -> dict:
-    return asyncio.run(scrape_jd(url))
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        import nest_asyncio
+        nest_asyncio.apply()
+        return loop.run_until_complete(scrape_jd(url))
+    else:
+        return asyncio.run(scrape_jd(url))
 
 
 if __name__ == "__main__":
