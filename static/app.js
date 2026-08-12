@@ -381,6 +381,12 @@ function displayResults(res) {
   const downloadBtn = document.getElementById("download-doc-btn");
   downloadBtn.href = `/api/download/${res.relative_path}`;
 
+  const downloadPdfBtn = document.getElementById("download-pdf-btn");
+  if (downloadPdfBtn) {
+    const pdfPath = res.relative_path.replace(/\.docx$/i, ".pdf");
+    downloadPdfBtn.href = `/api/download/${pdfPath}`;
+  }
+
   window.lastResult = res;
 }
 

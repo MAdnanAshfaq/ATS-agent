@@ -368,16 +368,42 @@ def _categorize_skills(skills: list) -> dict:
 
 
 def convert_to_pdf(doc_path: str) -> str:
-    """Convert .docx file to .pdf using docx2pdf."""
+    """Convert .docx file to .pdf using Word COM on Windows or docx2pdf."""
+    if not doc_path or not os.path.exists(doc_path):
+        return ""
+
     pdf_path = str(Path(doc_path).with_suffix(".pdf"))
+    if os.path.exists(pdf_path):
+        return pdf_path
+
+    # Attempt 1: Native Windows Word COM Automation (Fastest, Pixel-Perfect)
+    try:
+        import win32com.client
+        import pythoncom
+        pythoncom.CoInitialize()
+        word = win32com.client.DispatchEx("Word.Application")
+        word.Visible = False
+        word.DisplayAlerts = 0
+        doc = word.Documents.Open(os.path.abspath(doc_path))
+        doc.SaveAs(os.path.abspath(pdf_path), FileFormat=17) # 17 = wdFormatPDF
+        doc.Close()
+        word.Quit()
+        if os.path.exists(pdf_path):
+            print(f"[PDF] [OK] Converted via Word COM: {pdf_path}")
+            return pdf_path
+    except Exception as e:
+        print(f"[PDF] Word COM conversion note: {e}")
+
+    # Attempt 2: docx2pdf fallback
     try:
         from docx2pdf import convert
         convert(doc_path, pdf_path)
-        if Path(pdf_path).exists():
-            print(f"[PDF] Converted: {pdf_path}")
+        if os.path.exists(pdf_path):
+            print(f"[PDF] [OK] Converted via docx2pdf: {pdf_path}")
             return pdf_path
     except Exception as e:
         print(f"[PDF] docx2pdf note: {e}")
+
     return pdf_path
 
 

@@ -317,8 +317,20 @@ def delete_history_batch():
 
 @app.route("/api/download/<path:filepath>")
 def download_file(filepath):
-    """Download a generated resume .docx file."""
+    """Download a generated resume .docx or .pdf file. Converts .docx to .pdf on the fly if needed."""
     full_path = (OUTPUT_DIR / filepath).resolve()
+
+    # If PDF requested but doesn't exist, check if DOCX exists and convert it on the fly!
+    if not full_path.exists() and filepath.lower().endswith(".pdf"):
+        docx_rel = filepath[:-4] + ".docx"
+        docx_counterpart = (OUTPUT_DIR / docx_rel).resolve()
+        if docx_counterpart.exists():
+            try:
+                from resume_builder import convert_to_pdf
+                convert_to_pdf(str(docx_counterpart))
+            except Exception as e:
+                print(f"[Download] On-the-fly PDF conversion error: {e}")
+
     if not full_path.exists() or not str(full_path).startswith(str(OUTPUT_DIR.resolve())):
         return jsonify({"error": "File not found"}), 404
 
@@ -615,13 +627,21 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                     role=role,
                     output_dir=custom_output,
                 )
-        else:
             doc_path = build_resume_docx(
                 resume=cleaned_resume,
                 company=company,
                 role=role,
                 output_dir=custom_output,
             )
+
+        # Automatically convert to PDF for instant viewing/download
+        try:
+            from resume_builder import convert_to_pdf
+            pdf_path = convert_to_pdf(doc_path)
+            send_log(7, "PDF Builder", "Converted document to PDF successfully!", status="success")
+        except Exception as pdf_err:
+            print(f"[Pipeline] PDF conversion note: {pdf_err}")
+
         rel_path = os.path.relpath(doc_path, str(OUTPUT_DIR))
 
         # Save log entry

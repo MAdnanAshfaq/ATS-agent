@@ -321,6 +321,14 @@ def run_pipeline(
                 output_dir=output_dir,
             )
             print_success(f"Word document saved: {output_path}")
+
+        # Automatically convert to PDF
+        try:
+            from resume_builder import convert_to_pdf
+            pdf_out = convert_to_pdf(output_path)
+            print_success(f"PDF document saved: {pdf_out}")
+        except Exception as pdf_err:
+            print_warning(f"PDF conversion note: {pdf_err}")
     except Exception as e:
         print_error(f"Resume builder failed: {e}")
         raise
