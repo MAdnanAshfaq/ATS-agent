@@ -194,8 +194,8 @@ async def read_simplify_score(job_url: str, company: str = "", role: str = "") -
                     pass
                 await page.wait_for_timeout(6000)
 
-            # Step 3: Wait for Simplify shadow root and click top 'Resume Score' tab
-            print("  [Simplify] Waiting for Simplify shadow root and switching to 'Resume Score' tab...")
+            # Step 3: Wait for Simplify shadow root and expand 'Resume Score' drawer
+            print("  [Simplify] Waiting for Simplify shadow root and expanding 'Resume Score' drawer...")
             
             # Wait for shadow root attachment
             shadow_ready = False
@@ -217,17 +217,28 @@ async def read_simplify_score(job_url: str, company: str = "", role: str = "") -
                     "error": "Simplify extension shadow root was not found on the job page.",
                 }
 
-            # Click top 'Resume Score' tab button
+            # Step 3a: Click top 'Resume Score' tab button
             await page.evaluate("""() => {
                 const host = document.querySelector('div.simplify-jobs-shadow-root') || document.querySelector('#simplify-jobs-shadow-root');
                 if (!host || !host.shadowRoot) return;
-                const buttons = Array.from(host.shadowRoot.querySelectorAll('button, a, div'));
-                const scoreTab = buttons.find(b => b.textContent.trim().includes('Resume Score') || b.textContent.trim().includes('Score'));
+                const buttons = Array.from(host.shadowRoot.querySelectorAll('button, a, div, span'));
+                const scoreTab = buttons.find(b => b.textContent.trim() === 'Resume Score');
                 if (scoreTab) scoreTab.click();
             }""")
-            await page.wait_for_timeout(2000)
+            await page.wait_for_timeout(1500)
 
-            # Step 4: Extract score & exact keyword chips directly from Shadow DOM with polling
+            # Step 3b: Click 'View resume score' sub-button to expand the full keyword drawer
+            await page.evaluate("""() => {
+                const host = document.querySelector('div.simplify-jobs-shadow-root') || document.querySelector('#simplify-jobs-shadow-root');
+                if (!host || !host.shadowRoot) return;
+                const buttons = Array.from(host.shadowRoot.querySelectorAll('button'));
+                const viewScoreBtn = buttons.find(b => (b.getAttribute('aria-label') || '').toLowerCase().includes('view resume score') ||
+                                                      b.textContent.toLowerCase().includes('only matches'));
+                if (viewScoreBtn) viewScoreBtn.click();
+            }""")
+            await page.wait_for_timeout(2500)
+
+            # Step 4: Extract exact score & exact keyword chips directly from expanded Shadow DOM
             extraction = {"found": False}
             for attempt in range(6):
                 extraction = await page.evaluate("""() => {
@@ -246,41 +257,27 @@ async def read_simplify_score(job_url: str, company: str = "", role: str = "") -
                     const missingKeywords = [];
                     const matchingKeywords = [];
 
-                    const allElements = Array.from(host.shadowRoot.querySelectorAll('span, button, div, a, p, li'));
+                    // Target Simplify rounded-full chip spans
+                    const chipSpans = Array.from(host.shadowRoot.querySelectorAll('span.rounded-full, span[class*="rounded-full"]'));
 
-                    for (const el of allElements) {
-                        const cls = (el.className || '').toString();
-                        if (el.querySelectorAll('div, section, p').length > 0) continue;
-
+                    for (const el of chipSpans) {
                         const txt = el.textContent.replace(/\\s+/g, ' ').trim();
-                        if (!txt || txt.length < 2 || txt.length > 60) continue;
+                        if (!txt || txt.length < 2 || txt.length > 50) continue;
 
-                        const lower = txt.toLowerCase();
-                        if (lower.includes('resume match') || lower.includes('autofill') || lower.includes('apply') ||
-                            lower.includes('submit') || lower.includes('feedback') || lower.includes('report') ||
-                            lower.includes('simplify') || lower.includes('login') || lower.startsWith('http')) {
-                            continue;
+                        const cls = (el.className || '').toString();
+
+                        // Matched chips have bg-primary-lightest / border-primary-dark
+                        if (cls.includes('bg-primary-lightest') || cls.includes('border-primary-dark') || cls.includes('text-primary-dark')) {
+                            matchingKeywords.push(txt);
                         }
-
-                        const isChip = cls.includes('rounded') || cls.includes('chip') || cls.includes('badge') || cls.includes('pill') || cls.includes('tag');
-
-                        if (isChip) {
-                            const cleanKw = txt.replace(/^[✓✔✕✖×+•\\-\\s]+/, '').replace(/[✓✔✕✖×+•\\-\\s]+$/, '').trim();
-                            if (cleanKw.length >= 2 && cleanKw.length <= 50) {
-                                const parentText = (el.parentElement ? el.parentElement.textContent : '').toLowerCase();
-                                const isMissingSection = parentText.includes('missing') || lower.includes('missing');
-                                const isMatchedSection = parentText.includes('matched') || parentText.includes('matching') || lower.includes('matched');
-
-                                if (isMissingSection) {
-                                    missingKeywords.push(cleanKw);
-                                } else if (isMatchedSection) {
-                                    matchingKeywords.push(cleanKw);
-                                } else if (cls.includes('bg-primary') || cls.includes('border-primary') || cls.includes('text-primary') || cls.includes('green') || cls.includes('emerald') || cls.includes('success')) {
-                                    matchingKeywords.push(cleanKw);
-                                } else {
-                                    missingKeywords.push(cleanKw);
-                                }
-                            }
+                        // Missing chips have bg-white / border-[#eceff5]
+                        else if (cls.includes('bg-white') || cls.includes('border-[#eceff5]') || cls.includes('border-[#e2e8f0]')) {
+                            missingKeywords.push(txt);
+                        }
+                        else {
+                            // Fallback based on text color or class
+                            if (cls.includes('primary') || cls.includes('emerald')) matchingKeywords.push(txt);
+                            else missingKeywords.push(txt);
                         }
                     }
 
@@ -311,25 +308,13 @@ async def read_simplify_score(job_url: str, company: str = "", role: str = "") -
             missing_keywords = extraction.get("missingKeywords", [])
             matching_keywords = extraction.get("matchingKeywords", [])
 
-            # Filter out non-keyword UI text & generic filler words
-            skip_terms = {
-                "preview resume", "tailor resume", "jalal_khan_resume", "report", "autofill", "resume score", "profile", "feedback", "help",
-                "responsiveness", "knowledge", "leading", "work", "code", "ensure", "ensuring",
-                "optimize", "optimizing", "integrating", "integration", "current", "design",
-                "dynamic", "using", "use", "building", "build", "developing", "development",
-                "maintaining", "maintenance", "collaborating", "collaboration", "implementing",
-                "implementation", "understanding", "working", "deliver", "delivering", "create",
-                "creating", "manage", "managing", "management", "provide", "providing",
-                "support", "supporting", "help", "helping", "drive", "driving", "write",
-                "writing", "test", "testing", "solution", "solutions", "platform", "platforms",
-                "system", "systems", "application", "applications", "user", "users", "feature",
-                "features", "requirement", "requirements", "quality", "process", "environment",
-                "architecture", "teams", "player", "communication", "skills", "ability",
-                "strong", "great", "good", "well", "experience", "candidate", "position", "job",
-                "opportunity", "company", "including", "required", "preferred", "bonus", "etc"
+            # Only filter out Simplify extension UI button texts (never filter tech/domain terms)
+            ui_button_terms = {
+                "preview resume", "tailor resume", "jalal_khan_resume", "report", "autofill",
+                "resume score", "profile", "feedback", "help", "log in", "login", "simplify"
             }
-            missing_keywords = [k for k in missing_keywords if k.lower().strip() not in skip_terms]
-            matching_keywords = [k for k in matching_keywords if k.lower().strip() not in skip_terms]
+            missing_keywords = [k for k in missing_keywords if k.lower().strip() not in ui_button_terms]
+            matching_keywords = [k for k in matching_keywords if k.lower().strip() not in ui_button_terms]
 
             print(f"  [Simplify] Real Score Extracted: {score}%")
             print(f"  [Simplify] Missing Keywords ({len(missing_keywords)}): {missing_keywords}")
