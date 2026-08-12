@@ -115,12 +115,7 @@ def extract_keywords_from_jd(jd_text: str, base_resume: dict) -> list:
     except Exception as e:
         print(f"[Agent] LLM keyword extraction note: {e}")
 
-    try:
-        from keyword_matcher import calculate_match_score
-        res = calculate_match_score(base_resume, jd_text)
-        return res.get("missing_keywords", [])
-    except Exception:
-        return []
+    return []
 
 
 def _format_keyword_coverage_report(

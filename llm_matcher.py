@@ -43,9 +43,8 @@ def analyze_jd_and_resume_with_gemini(jd_text: str, base_resume: dict) -> dict:
 
     api_key = os.getenv("GEMINI_API_KEY", "")
     if not api_key:
-        print("[LLM Matcher] Warning: GEMINI_API_KEY missing — fallback to local matcher")
-        from keyword_matcher import calculate_match_score
-        return calculate_match_score(base_resume, jd_text)
+        print("[LLM Matcher] Warning: GEMINI_API_KEY missing — returning empty keyword set")
+        return {"score": 70, "matching_keywords": [], "missing_keywords": [], "total_keywords": 0}
 
     try:
         client = genai.Client(api_key=api_key)
@@ -123,10 +122,9 @@ Return ONLY a valid JSON object matching this schema:
             }
 
     except Exception as e:
-        print(f"[LLM Matcher] Error calling Gemini: {e}. Falling back to local matcher.")
+        print(f"[LLM Matcher] Error calling Gemini: {e}")
 
-    from keyword_matcher import calculate_match_score
-    return calculate_match_score(base_resume, jd_text)
+    return {"score": 70, "matching_keywords": [], "missing_keywords": [], "total_keywords": 0}
 
 
 def extract_keywords_with_gemini(jd_text: str) -> list[str]:
