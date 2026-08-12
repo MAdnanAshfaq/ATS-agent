@@ -14,8 +14,9 @@ __pycache__/
 .Python
 *.egg-info/
 
-# PDF resume (personal)
+# PDF/DOCX resume uploads (personal data — never commit)
 *.pdf
+*.docx
 
 # Temp parsing files
 doc_raw.xml
