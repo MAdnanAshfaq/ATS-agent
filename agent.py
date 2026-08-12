@@ -299,16 +299,28 @@ def run_pipeline(
 
     # ─── STEP 7: Build Word Document ──────────────────────────────────────────
     print_step(7, "Generating Word Document")
-    from resume_builder import build_resume_docx
+    orig_docx_path = BASE_DIR / "master_resume_original.docx"
 
     try:
-        output_path = build_resume_docx(
-            resume=cleaned_resume,
-            company=company,
-            role=role,
-            output_dir=output_dir,
-        )
-        print_success(f"Word document saved: {output_path}")
+        if orig_docx_path.exists():
+            from docx_patcher import patch_docx_with_rewritten_resume
+            output_path = patch_docx_with_rewritten_resume(
+                original_docx_path=str(orig_docx_path),
+                rewritten_resume=cleaned_resume,
+                company=company,
+                role=role,
+                output_dir=output_dir,
+            )
+            print_success(f"Patched original Canva DOCX template saved: {output_path}")
+        else:
+            from resume_builder import build_resume_docx
+            output_path = build_resume_docx(
+                resume=cleaned_resume,
+                company=company,
+                role=role,
+                output_dir=output_dir,
+            )
+            print_success(f"Word document saved: {output_path}")
     except Exception as e:
         print_error(f"Resume builder failed: {e}")
         raise

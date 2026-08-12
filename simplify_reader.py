@@ -22,8 +22,18 @@ CHROME_USER_DATA = r"C:\Users\Dell\AppData\Local\Google\Chrome\User Data"
 SIMPLIFY_PROFILE = "Profile 8"
 SIMPLIFY_PROFILE_DIR = rf"{CHROME_USER_DATA}\{SIMPLIFY_PROFILE}"
 SIMPLIFY_EXT_ID = "pbanhockgagggenencehbnadejlgchfc"
-SIMPLIFY_EXT_PATH = f"C:/Users/Dell/AppData/Local/Google/Chrome/User Data/{SIMPLIFY_PROFILE}/Extensions/{SIMPLIFY_EXT_ID}/3.0.4_0"
 
+def get_simplify_ext_path() -> str:
+    """Find the latest Simplify extension directory dynamically (e.g., 3.0.5_0)."""
+    ext_dir = Path(CHROME_USER_DATA) / SIMPLIFY_PROFILE / "Extensions" / SIMPLIFY_EXT_ID
+    if ext_dir.exists():
+        subdirs = [d for d in ext_dir.iterdir() if d.is_dir()]
+        if subdirs:
+            latest = sorted(subdirs, key=lambda p: p.stat().st_mtime, reverse=True)[0]
+            return str(latest).replace("\\", "/")
+    return f"C:/Users/Dell/AppData/Local/Google/Chrome/User Data/{SIMPLIFY_PROFILE}/Extensions/{SIMPLIFY_EXT_ID}/3.0.5_0"
+
+SIMPLIFY_EXT_PATH = get_simplify_ext_path()
 TEMP_PROFILE_DIR = str(BASE_DIR / "chrome_profile_simplify")
 
 
@@ -81,13 +91,14 @@ async def read_simplify_score(job_url: str, company: str = "", role: str = "") -
     email = os.getenv("SIMPLIFY_EMAIL", "")
     password = os.getenv("SIMPLIFY_PASSWORD", "")
 
-    if not Path(SIMPLIFY_EXT_PATH).exists():
+    ext_path = get_simplify_ext_path()
+    if not Path(ext_path).exists():
         return {
             "success": False,
             "score": None,
             "missing_keywords": [],
             "matching_keywords": [],
-            "error": f"Simplify extension path not found: {SIMPLIFY_EXT_PATH}",
+            "error": f"Simplify extension path not found: {ext_path}",
         }
 
     temp_profile = _create_temp_profile()
@@ -105,8 +116,8 @@ async def read_simplify_score(job_url: str, company: str = "", role: str = "") -
                 headless=False,
                 ignore_default_args=["--disable-extensions"],
                 args=[
-                    f"--disable-extensions-except={SIMPLIFY_EXT_PATH}",
-                    f"--load-extension={SIMPLIFY_EXT_PATH}",
+                    f"--disable-extensions-except={ext_path}",
+                    f"--load-extension={ext_path}",
                     "--no-first-run",
                     "--no-default-browser-check",
                 ],

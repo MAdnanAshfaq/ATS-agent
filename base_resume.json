@@ -36,11 +36,6 @@
     "Atlas",
     "MySQL",
     "Redis",
-    "Data modeling",
-    "query optimization",
-    "replication",
-    "sharding",
-    "caching",
     "AWS",
     "Lambda",
     "ECS",
@@ -67,13 +62,10 @@
     "Agentic workflows",
     "Vector databases",
     "Mistral",
-    "AWS Bedrock",
-    "Claude",
-    "Anthropic",
+    "Claude (Anthropic)",
     "GitHub Copilot",
     "JWT",
-    "OAuth 2.0",
-    "AWS Cognito"
+    "OAuth 2.0"
   ],
   "experience": [
     {

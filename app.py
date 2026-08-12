@@ -188,12 +188,20 @@ def upload_resume():
         elif filename.endswith(".pdf") or filename.endswith(".docx"):
             from pdf_to_resume import parse_resume_pdf
             parsed_json = parse_resume_pdf(str(save_path))
+
+            # If uploaded file was .docx, save a copy as master_resume_original.docx for template patching
+            if filename.endswith(".docx"):
+                orig_target = BASE_DIR / "master_resume_original.docx"
+                import shutil
+                shutil.copy2(save_path, orig_target)
+                print(f"[Upload] Saved Canva template copy to: {orig_target}")
         else:
             return jsonify({"success": False, "error": "Unsupported file format. Please upload PDF, DOCX, or JSON."}), 400
 
-        # Always remove the uploaded temp file after parsing
+        # Remove temp upload file if distinct from master_resume_original
         try:
-            os.remove(save_path)
+            if save_path.exists() and save_path.name != "master_resume_original.docx":
+                os.remove(save_path)
         except Exception:
             pass
 
@@ -584,14 +592,36 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                  },
                  status="success" if coverage_pct >= 90 else "warning")
 
-        # Step 7: Build Word Doc
-        send_log(7, "Word Document", "Generating ATS-optimized .docx file...", status="working")
-        doc_path = build_resume_docx(
-            resume=cleaned_resume,
-            company=company,
-            role=role,
-            output_dir=custom_output,
-        )
+        # Step 7: Build Word Doc (patch original Canva DOCX if available, else build fresh)
+        send_log(7, "Word Document", "Generating Word document...", status="working")
+        orig_docx_path = BASE_DIR / "master_resume_original.docx"
+        if orig_docx_path.exists():
+            try:
+                from docx_patcher import patch_docx_with_rewritten_resume
+                send_log(7, "Word Document", "Patching original Canva DOCX template to preserve custom styling...", status="working")
+                doc_path = patch_docx_with_rewritten_resume(
+                    original_docx_path=str(orig_docx_path),
+                    rewritten_resume=cleaned_resume,
+                    company=company,
+                    role=role,
+                    output_dir=custom_output,
+                )
+                send_log(7, "Word Document", "Patched original Canva template with rewritten content!", status="success")
+            except Exception as patch_err:
+                print(f"[Pipeline] DOCX patcher error: {patch_err}, falling back to build_resume_docx")
+                doc_path = build_resume_docx(
+                    resume=cleaned_resume,
+                    company=company,
+                    role=role,
+                    output_dir=custom_output,
+                )
+        else:
+            doc_path = build_resume_docx(
+                resume=cleaned_resume,
+                company=company,
+                role=role,
+                output_dir=custom_output,
+            )
         rel_path = os.path.relpath(doc_path, str(OUTPUT_DIR))
 
         # Save log entry
