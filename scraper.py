@@ -96,7 +96,22 @@ def clean_text(text: str) -> str:
     text = text.replace('\u201d', '"')
     text = text.replace('\u2013', '-')
     text = text.replace('\u2014', '-')
-    return text.strip()
+
+    # Strip EEOC / Legal Disclaimer / Form Field noise lines
+    clean_lines = []
+    for line in text.split('\n'):
+        l_lower = line.lower().strip()
+        if any(noise in l_lower for noise in [
+            "equal opportunity employer", "affirmative action", "veteran status",
+            "paperwork reduction act", "executive order", "readjustment assistance",
+            "vietnam era", "race, color, religion", "sexual orientation", "gender identity",
+            "disability status", "cover letter drag", "gender select", "profile education add",
+            "experience add resume", "personal information first"
+        ]):
+            continue
+        clean_lines.append(line)
+
+    return "\n".join(clean_lines).strip()
 
 
 def extract_company_from_url(url: str) -> str:

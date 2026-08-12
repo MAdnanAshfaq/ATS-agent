@@ -35,8 +35,17 @@ STOP_WORDS = {
     "writing", "test", "testing", "solution", "solutions", "platform", "platforms",
     "system", "systems", "application", "applications", "user", "users", "feature",
     "features", "requirement", "requirements", "quality", "process", "environment",
-    "architecture", "teams", "player", "communication", "skills", "ability",
-    "scalable", "robust", "innovative", "transformative", "groundbreaking", "seamless"
+    "scalable", "robust", "innovative", "transformative", "groundbreaking", "seamless",
+    # EEOC / Legal / Disclaimer / Form Field Exclusions
+    "armed forces", "executive order", "paperwork reduction act", "paperwork reduction",
+    "readjustment assistance act", "readjustment assistance", "equal opportunity",
+    "no equal opportunity", "veterans act", "veterans affairs", "vietnam era veterans",
+    "vietnam era", "veteran status select", "veteran", "veterans", "san francisco",
+    "united states", "gender select", "cover letter drag", "profile education add",
+    "experience add resume", "personal information first", "qualification proficiency",
+    "responsibilities design", "service-connected", "000-100", "additional", "burden",
+    "statement", "half-month", "three-year", "up-to", "on-site", "full time", "docx",
+    "employer help", "end-to", "high-quality", "information", "public", "self-identification"
 }
 
 # Technical keyword patterns to detect in JDs and resumes
@@ -88,29 +97,31 @@ def extract_keywords_from_text(text: str) -> set:
     # 1. Extract known tech keywords using patterns
     for pattern in TECH_PATTERNS:
         for match in re.finditer(pattern, text, re.IGNORECASE):
-            keywords.add(match.group().strip().lower())
+            kw = match.group().strip().lower()
+            if kw not in STOP_WORDS:
+                keywords.add(kw)
 
-    # 2. Extract multi-word technical phrases (2-3 word combos that look technical)
-    phrase_pattern = re.compile(
-        r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})\b'
-    )
-    for match in phrase_pattern.finditer(text):
-        phrase = match.group().strip()
-        if (len(phrase) > 5
-                and phrase.lower() not in STOP_WORDS
-                and not all(w.lower() in STOP_WORDS for w in phrase.split())):
-            keywords.add(phrase.lower())
-
-    # 3. Extract standalone technical words (CamelCase or ALL_CAPS or kebab-case)
-    word_pattern = re.compile(r'\b([A-Z]{2,}|[A-Z][a-z]+[A-Z][a-z]+\w*|[\w]+-[\w]+)\b')
+    # 2. Extract standalone technical words (CamelCase or ALL_CAPS or tech-kebab-case)
+    word_pattern = re.compile(r'\b([A-Z]{2,}|[A-Z][a-z]+[A-Z][a-z]+\w*)\b')
     for match in word_pattern.finditer(text):
-        word = match.group().strip()
-        if (3 < len(word) < 40
-                and word.lower() not in STOP_WORDS
-                and not word.isnumeric()):
-            keywords.add(word.lower())
+        word = match.group().strip().lower()
+        if (3 < len(word) < 30
+                and word not in STOP_WORDS
+                and not word.isnumeric()
+                and not any(sw in word for sw in ["veteran", "gender", "paperwork", "officer", "disability", "federal", "ethnic"])):
+            keywords.add(word)
 
-    return keywords
+    # Purge any remaining legal/disclaimer keywords
+    clean_keywords = set()
+    for k in keywords:
+        k_lower = k.lower().strip()
+        if k_lower in STOP_WORDS:
+            continue
+        if any(bad in k_lower for bad in ["veteran", "equal opportunity", "paperwork", "disability", "executive order", "armed forces", "readjustment", "vietnam"]):
+            continue
+        clean_keywords.add(k)
+
+    return clean_keywords
 
 
 def calculate_match_score(resume: dict, jd_text: str) -> dict:

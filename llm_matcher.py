@@ -50,17 +50,18 @@ def analyze_jd_and_resume_with_gemini(jd_text: str, base_resume: dict) -> dict:
     try:
         client = genai.Client(api_key=api_key)
 
-        prompt = f"""You are an expert ATS (Applicant Tracking System) recruiter and parser. Analyze the following Job Description against the Candidate's Master Resume.
+        prompt = f"""You are an expert ATS (Applicant Tracking System) recruiter and resume architect.
+Analyze the following Job Description against the Candidate's Master Resume.
 
 YOUR TASK:
-1. Extract ALL high-value hard technical skills, tools, frameworks, and job titles required by the Job Description.
+1. Extract 12-25 HIGH-VALUE HARD TECHNICAL SKILLS, frameworks, programming languages, databases, cloud tools, and job role qualifications required by the Job Description.
 2. Cross-check each keyword against the candidate's Master Resume.
-3. Categorize them into "matching_keywords" (present in resume) and "missing_keywords" (missing from resume).
-4. Calculate an accurate ATS Match Score (0-100%).
+3. Categorize them into "matching_keywords" (present in candidate resume) and "missing_keywords" (missing from candidate resume).
+4. Calculate an accurate ATS Match Score (0-100%) based on how well candidate's experience covers the core requirements.
 
-CRITICAL FILTERS:
-- HARD SKILLS & TITLES ONLY (e.g. Python, React, AWS, Docker, PostgreSQL, CI/CD, GraphQL, Redis, Senior Engineer).
-- STRICTLY IGNORE generic action verbs, soft skills, and filler words (e.g. responsiveness, knowledge, leading, work, code, ensure, optimize, integrating, current, design, dynamic, using, team player, communication).
+CRITICAL EXCLUSION RULES:
+- ONLY HARD TECHNICAL SKILLS & ROLE TITLES (e.g. Python, React, Next.js, TypeScript, Node.js, AWS, Docker, PostgreSQL, GraphQL, Microservices, CI/CD, Redis, System Design).
+- STRICTLY EXCLUDE legal disclaimers, EEOC text, veteran disclosures, disability forms, paperwork reduction act, executive orders, locations (e.g. San Francisco, United States), application form fields (e.g. cover letter drag, gender select, education add), and soft skill filler words.
 
 JOB DESCRIPTION:
 {jd_text[:6000]}
@@ -69,14 +70,14 @@ CANDIDATE MASTER RESUME:
 {json.dumps(base_resume, indent=2, ensure_ascii=False)[:6000]}
 
 OUTPUT FORMAT:
-Return ONLY a raw JSON object with this exact structure:
+Return ONLY a valid JSON object matching this schema:
 {{
-  "score": 68,
-  "matching_keywords": ["React", "TypeScript", "Node.js"],
-  "missing_keywords": ["GraphQL", "Docker", "AWS Lambda"]
+  "score": 75,
+  "matching_keywords": ["React", "TypeScript", "Node.js", "PostgreSQL"],
+  "missing_keywords": ["GraphQL", "Docker", "AWS Lambda", "Redis"]
 }}"""
 
-        models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
+        models = ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.6-flash", "gemini-flash-latest", "gemini-flash-lite-latest"]
         response = None
         for m in models:
             try:
@@ -98,7 +99,11 @@ Return ONLY a raw JSON object with this exact structure:
             raise RuntimeError("All Gemini models exhausted")
 
         raw_text = response.text or ""
-        cleaned_text = raw_text.replace("```json", "").replace("```", "").strip()
+        match_json = re.search(r'\{.*\}', raw_text, re.DOTALL)
+        if match_json:
+            cleaned_text = match_json.group(0)
+        else:
+            cleaned_text = raw_text.replace("```json", "").replace("```", "").strip()
         data = json.loads(cleaned_text)
 
         if isinstance(data, dict) and "missing_keywords" in data:
