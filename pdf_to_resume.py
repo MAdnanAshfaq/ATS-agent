@@ -105,14 +105,55 @@ def extract_text_from_pdf(pdf_path: str) -> str:
 
 
 def extract_text_from_docx(docx_path: str) -> str:
-    """Extract raw text from a DOCX file."""
+    """Extract raw text from a DOCX file — reads paragraphs AND table cells."""
     print(f"[PDF Parser] Reading DOCX: {docx_path}")
     try:
         from docx import Document
+        from docx.oxml.ns import qn
+
         doc = Document(docx_path)
-        paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
-        full_text = "\n".join(paragraphs)
-        print(f"[PDF Parser] Extracted {len(full_text)} characters from DOCX")
+        lines = []
+
+        def iter_block_items(parent):
+            """Yield paragraphs and tables in document order."""
+            from docx.oxml.ns import qn
+            from docx.table import Table
+            from docx.text.paragraph import Paragraph
+            from docx.oxml import OxmlElement
+
+            for child in parent.element.body:
+                tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+                if tag == 'p':
+                    yield Paragraph(child, parent)
+                elif tag == 'tbl':
+                    yield Table(child, parent)
+
+        for block in iter_block_items(doc):
+            from docx.table import Table
+            from docx.text.paragraph import Paragraph
+
+            if isinstance(block, Paragraph):
+                text = block.text.strip()
+                if text:
+                    lines.append(text)
+            elif isinstance(block, Table):
+                for row in block.rows:
+                    row_parts = []
+                    for cell in row.cells:
+                        cell_text = cell.text.strip()
+                        if cell_text:
+                            row_parts.append(cell_text)
+                    if row_parts:
+                        lines.append("  |  ".join(row_parts))
+
+        full_text = "\n".join(lines)
+
+        # Fallback: if we got almost nothing, try the simple path
+        if len(full_text) < 200:
+            paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+            full_text = "\n".join(paragraphs)
+
+        print(f"[PDF Parser] Extracted {len(full_text)} characters from DOCX ({len(lines)} blocks)")
         return full_text
     except Exception as e:
         raise RuntimeError(f"Could not read DOCX: {e}")

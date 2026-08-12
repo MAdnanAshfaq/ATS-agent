@@ -185,17 +185,32 @@ def upload_resume():
         if filename.endswith(".json"):
             with open(save_path, "r", encoding="utf-8") as f:
                 parsed_json = json.load(f)
-        elif filename.endswith(".pdf"):
+        elif filename.endswith(".pdf") or filename.endswith(".docx"):
             from pdf_to_resume import parse_resume_pdf
             parsed_json = parse_resume_pdf(str(save_path))
         else:
-            return jsonify({"success": False, "error": "Unsupported file format. Please upload PDF or JSON."}), 400
+            return jsonify({"success": False, "error": "Unsupported file format. Please upload PDF, DOCX, or JSON."}), 400
+
+        # Always remove the uploaded temp file after parsing
+        try:
+            os.remove(save_path)
+        except Exception:
+            pass
 
         with open(RESUME_PATH, "w", encoding="utf-8") as f:
             json.dump(parsed_json, f, indent=2, ensure_ascii=False)
 
-        return jsonify({"success": True, "message": "Master resume uploaded and parsed successfully!", "resume": parsed_json})
+        name = parsed_json.get("name", "Your")
+        skills_count = len(parsed_json.get("skills", []))
+        exp_count = len(parsed_json.get("experience", []))
+        return jsonify({
+            "success": True,
+            "message": f"Resume parsed: {name} — {skills_count} skills, {exp_count} roles found.",
+            "resume": parsed_json
+        })
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"success": False, "error": f"Failed to parse resume: {e}"}), 500
 
 
