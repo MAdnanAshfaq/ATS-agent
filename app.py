@@ -384,6 +384,7 @@ def analyze_job():
         matching_keywords = []
         score = 0
 
+        s_data = {}
         # Try Simplify extension reader first if available & not disabled
         if not no_simplify:
             try:
@@ -398,7 +399,10 @@ def analyze_job():
                 print(f"[Analyze] Simplify read note: {e}")
 
         source = "simplify_extension"
-        if not s_data.get("success") or (not missing_keywords and not matching_keywords):
+        
+        # Only fallback to LLM if Simplify explicitly failed or was skipped. 
+        # If Simplify succeeded but returned empty keywords, trust Simplify.
+        if not s_data.get("success"):
             from llm_matcher import analyze_jd_and_resume_with_gemini
             llm_res = analyze_jd_and_resume_with_gemini(jd_text, base_resume)
             matching_keywords = llm_res.get("matching_keywords", [])
