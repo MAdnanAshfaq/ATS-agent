@@ -91,7 +91,7 @@ Return ONLY a valid JSON object matching this schema:
   "missing_keywords": ["GraphQL", "Docker", "AWS Lambda", "Redis"]
 }}"""
 
-        models = ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.6-flash", "gemini-flash-latest", "gemini-flash-lite-latest"]
+        models = ["gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-2.5-flash"]
         response = None
         for m in models:
             try:

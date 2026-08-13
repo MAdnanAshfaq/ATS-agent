@@ -82,7 +82,7 @@ TONE & STYLE RULES:
 - Return ONLY the clean cover letter text including date and recipient header. No markdown code blocks around the text.
 """
 
-    models_to_try = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.0-flash"]
+    models_to_try = ["gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-2.5-flash"]
     cover_letter_text = ""
 
     for model in models_to_try:
@@ -90,15 +90,15 @@ TONE & STYLE RULES:
             print(f"[Cover Letter] Generating with model {model}...")
             response = client.models.generate_content(
                 model=model,
-                contents=prompt,
+                contents=prompt + "\nIMPORTANT: Ensure you write the COMPLETE 3 paragraphs. Do not stop early.",
                 config=types.GenerateContentConfig(
                     temperature=0.4,
-                    max_output_tokens=1000,
+                    max_output_tokens=1500,
                 ),
             )
             if response.text and len(response.text.strip()) > 100:
                 cover_letter_text = response.text.strip()
-                print(f"[Cover Letter] ✅ Generated successfully ({len(cover_letter_text)} chars)")
+                print(f"[Cover Letter] Generated successfully ({len(cover_letter_text)} chars)")
                 break
         except Exception as e:
             print(f"[Cover Letter] Model {model} note: {e}")

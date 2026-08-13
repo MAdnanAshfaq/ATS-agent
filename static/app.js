@@ -452,7 +452,7 @@ async function loadHistory() {
             <i class="fa-solid fa-download"></i> .docx
           </a>
           ${app.relative_file_path ? `<a href="/api/download/${app.relative_file_path.replace('.docx', '.pdf')}" class="btn btn-cyan btn-sm" download><i class="fa-solid fa-file-pdf"></i> .pdf</a>` : ''}
-          <button class="btn btn-purple-sm" onclick="generateOrViewHistoryCoverLetter('${escapeHtml(app.company)}', '${escapeHtml(app.role)}', '${escapeHtml(app.relative_file_path)}')">
+          <button class="btn btn-purple-sm" onclick="generateOrViewHistoryCoverLetter('${escapeHtml(app.company)}', '${escapeHtml(app.role)}', '${escapeHtml(app.relative_file_path)}', '${escapeHtml(app.url || '')}')">
             <i class="fa-solid fa-envelope"></i> Cover Letter
           </button>
           <button class="btn btn-secondary btn-sm" onclick="openSpecificFolder('${escapeHtml(app.output_file)}')">
@@ -1002,6 +1002,8 @@ async function openCurrentCoverLetter() {
   modal.classList.remove("hidden");
 
   const textarea = document.getElementById("cl-modal-textarea");
+  const url = document.getElementById("job-url") ? document.getElementById("job-url").value.trim() : "";
+  window.currentCoverLetterParams = { company, role, keywords: window.lastResult.newly_added || [], url };
 
   if (window.lastResult.cover_letter_text) {
     textarea.value = window.lastResult.cover_letter_text;
@@ -1016,7 +1018,7 @@ async function openCurrentCoverLetter() {
     const res = await fetch("/api/cover-letter", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ company, role, keywords: window.lastResult.newly_added || [] })
+      body: JSON.stringify(window.currentCoverLetterParams)
     });
     const data = await res.json();
     if (data.success) {
@@ -1031,7 +1033,7 @@ async function openCurrentCoverLetter() {
   }
 }
 
-async function generateOrViewHistoryCoverLetter(company, role, relativePath) {
+async function generateOrViewHistoryCoverLetter(company, role, relativePath, url = "") {
   const modal = document.getElementById("cover-letter-modal");
   modal.classList.remove("hidden");
 
@@ -1043,11 +1045,13 @@ async function generateOrViewHistoryCoverLetter(company, role, relativePath) {
   const coverLetterRel = relativePath ? relativePath.replace(/[^\/\\]+\.docx$/i, "Jalal_Khan_Cover_Letter.docx") : "";
   document.getElementById("cl-modal-docx-download").href = `/api/download/${coverLetterRel}`;
 
+  window.currentCoverLetterParams = { company, role, keywords: [], url, isHistory: true };
+
   try {
     const res = await fetch("/api/cover-letter", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ company, role })
+      body: JSON.stringify(window.currentCoverLetterParams)
     });
     const data = await res.json();
     if (data.success) {
@@ -1058,6 +1062,38 @@ async function generateOrViewHistoryCoverLetter(company, role, relativePath) {
     }
   } catch (err) {
     textarea.value = `Error generating cover letter: ${err.message}`;
+  }
+}
+
+async function regenerateCoverLetter() {
+  if (!window.currentCoverLetterParams) return;
+  
+  const textarea = document.getElementById("cl-modal-textarea");
+  textarea.value = "Regenerating high-impact recruiter cover letter with Gemini...";
+  const btn = document.querySelector("#cover-letter-modal .btn-primary");
+  if(btn) btn.disabled = true;
+
+  try {
+    const res = await fetch("/api/cover-letter", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(window.currentCoverLetterParams)
+    });
+    const data = await res.json();
+    if (data.success) {
+      textarea.value = data.cover_letter_text;
+      document.getElementById("cl-modal-docx-download").href = `/api/download/${data.relative_docx}`;
+      if (window.lastResult && !window.currentCoverLetterParams.isHistory) {
+          window.lastResult.cover_letter_text = data.cover_letter_text;
+      }
+      showToast("Cover letter regenerated successfully!", "success");
+    } else {
+      textarea.value = `Failed to regenerate cover letter: ${data.error}`;
+    }
+  } catch (err) {
+    textarea.value = `Error regenerating cover letter: ${err.message}`;
+  } finally {
+    if(btn) btn.disabled = false;
   }
 }
 

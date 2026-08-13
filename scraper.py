@@ -372,6 +372,25 @@ async def scrape_jd(url: str) -> dict:
                     print(f"[Scraper] ✅ HTTP fallback extracted {len(jd_text)} chars")
         except Exception as http_err:
             print(f"[Scraper] HTTP fallback note: {http_err}")
+            
+    # Ultimate Fallback: Jina Reader API for heavy JS or bot-protected pages
+    if not jd_text or len(jd_text) < 100:
+        try:
+            import urllib.request
+            print("[Scraper] Both fallbacks failed — trying Jina Reader API (Bot bypass)...")
+            jina_url = "https://r.jina.ai/" + url
+            req = urllib.request.Request(
+                jina_url,
+                headers={'User-Agent': 'Mozilla/5.0'}
+            )
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                raw_markdown = resp.read().decode('utf-8', errors='ignore')
+                txt = clean_text(raw_markdown)
+                if len(txt) >= 100:
+                    jd_text = txt
+                    print(f"[Scraper] ✅ Jina Reader extracted {len(jd_text)} chars")
+        except Exception as jina_err:
+            print(f"[Scraper] Jina Reader fallback note: {jina_err}")
     
     # Extract role from page title if not found
     if not role:

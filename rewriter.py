@@ -147,8 +147,10 @@ DYNAMIC INPUT DATA:
 
 YOUR ARCHITECTURAL PROTOCOLS:
 
-1. IDENTIFY & ADD (Keyword Ingestion)
-Scan the MISSING_KEYWORDS_FROM_SIMPLIFY array. Seamlessly weave 100% of these terms into the MASTER_PROFILE experience bullets or skill categories. 
+1. IDENTIFY & ADD (Keyword & Phrase Ingestion)
+Scan the MISSING_KEYWORDS_FROM_SIMPLIFY array. 
+- For SHORT technical keywords (e.g., "Python", "Docker"): Seamlessly weave 100% of these terms into the MASTER_PROFILE experience bullets or skill categories.
+- For LONG PHRASES or sentences (e.g., "owning production enterprise systems"): Do NOT treat these as standalone skills. You MUST integrate these fully into the bullets of the candidate's MOST RECENT job experience as key achievements or responsibilities. Use the exact wording where possible.
 
 2. IDENTIFY & PURGE (Remove Previous Job Stuffing)
 Start strictly from MASTER_PROFILE. If there are hyper-specific keywords from previous application runs that do NOT appear in the current missing keywords list or the master profile (e.g., niche databases or competitor tool names like "BigQuery" if this job doesn't use it), REMOVE or REPLACE them back to the clean master format. Do not carry over baggage from previous job scans.
@@ -164,6 +166,7 @@ Return the updated resume strictly as a valid JSON object matching the exact key
 
 JSON OUTPUT FORMAT (return exactly this structure):
 {{
+  "target_role": "A generic, professional version of the job title (e.g. 'Software Engineer' instead of 'Software Eng III - AI (L4)')",
   "summary": "2-4 sentence professional summary targeting {role} at {company}",
   "skills": ["skill1", "skill2", ...],
   "experience": [
@@ -334,13 +337,19 @@ def rewrite_resume(
 
 def _manual_keyword_injection(resume: dict, still_missing: list) -> dict:
     """
-    Force-injects remaining items directly into skills array matching
+    Force-injects remaining short items directly into skills array matching
     the structural requirements of your base resume profile.
+    Long phrases (> 3 words) are ignored to prevent bizarre skills.
     """
     if "skills" not in resume or not isinstance(resume["skills"], list):
         resume["skills"] = []
         
     for kw in still_missing:
+        # Ignore long sentences/phrases that Simplify extracted but the LLM couldn't weave in
+        if len(kw.split()) > 3:
+            print(f"[Rewriter] Skipping manual injection for long phrase: '{kw}'")
+            continue
+            
         if kw not in resume["skills"]:
             resume["skills"].append(kw)
             

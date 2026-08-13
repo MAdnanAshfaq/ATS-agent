@@ -161,15 +161,23 @@ def build_resume_docx(
         
         return para
     
-    # ─── HEADER: Name ────────────────────────────────────────────────────────
+    # ─── HEADER: Name & Target Role ──────────────────────────────────────────
     contact = resume.get("contact", {})
     name = sanitize_text(resume.get("name", "Jalal Khan"))
+    target_role = sanitize_text(resume.get("target_role", role)).upper()
     
     name_para = doc.add_paragraph()
     name_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
     add_paragraph_spacing(name_para, space_before=0, space_after=3)
-    run = name_para.add_run(name)
-    set_font(run, size=18, bold=True, color=(31, 73, 125))
+    
+    # 1. Add Name
+    run_name = name_para.add_run(f"{name.upper()}        ")
+    set_font(run_name, size=18, bold=True, color=(31, 73, 125))
+    
+    # 2. Add Generic Target Role
+    if target_role:
+        run_title = name_para.add_run(target_role)
+        set_font(run_title, size=14, bold=False, color=(31, 73, 125))
     
     # ─── HEADER: Contact line ─────────────────────────────────────────────────
     contact_parts = []
