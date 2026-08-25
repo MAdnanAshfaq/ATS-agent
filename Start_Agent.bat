@@ -45,6 +45,21 @@ goto :end
 for /f "tokens=*" %%V in ('!PYTHON_CMD! --version 2^>^&1') do echo        !PYTHON_CMD! = %%V
 echo.
 
+:: Ensure .env exists
+if not exist ".env" (
+    if exist ".env.example" (
+        copy /y ".env.example" ".env" >nul 2>&1
+    ) else (
+        (
+            echo GEMINI_API_KEY=
+            echo SIMPLIFY_EMAIL=
+            echo SIMPLIFY_PASSWORD=
+            echo OUTPUT_DIR=output
+        ) > ".env"
+    )
+    echo        Created default .env configuration.
+)
+
 :: ===========================================================
 :: STEP 2: Install required packages
 :: ===========================================================
@@ -52,21 +67,26 @@ echo [2/4] Installing required packages (only missing ones)...
 
 !PYTHON_CMD! -m pip install --quiet --upgrade pip 2>nul
 
-!PYTHON_CMD! -m pip install ^
-    flask ^
-    flask-cors ^
-    google-genai ^
-    playwright ^
-    beautifulsoup4 ^
-    python-docx ^
-    python-dotenv ^
-    lxml ^
-    httpx ^
-    pdfplumber ^
-    pypdf ^
-    pywin32 ^
-    docx2pdf ^
-    --quiet 2>&1
+if exist "requirements.txt" (
+    !PYTHON_CMD! -m pip install -r requirements.txt --quiet 2>&1
+) else (
+    !PYTHON_CMD! -m pip install ^
+        flask ^
+        flask-cors ^
+        google-genai ^
+        playwright ^
+        beautifulsoup4 ^
+        python-docx ^
+        python-dotenv ^
+        lxml ^
+        httpx ^
+        pdfplumber ^
+        pypdf ^
+        pywin32 ^
+        docx2pdf ^
+        --quiet 2>&1
+)
+
 
 if errorlevel 1 (
     echo  [WARN] Some packages may have had issues above -- trying to continue anyway.

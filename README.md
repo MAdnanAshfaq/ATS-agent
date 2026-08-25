@@ -1,9 +1,14 @@
-# AI Job Application Agent
-**Jalal Khan · Gemini API (Free) · Simplify Score Reader · Wikipedia AI Detection Loop · Zero Paid Tools**
+## Quick Start (1-Click on Windows)
+
+1. Clone or download this repository.
+2. Double-click **`Start_Agent.bat`**.
+3. It will automatically check Python, install all required packages, configure Playwright Chromium, launch the local server, and open your web browser at `http://127.0.0.1:5000`.
+4. Enter your free **Gemini API Key** in the web interface (under **Prerequisites & Setup**) and you're ready!
 
 ---
 
 ## What This Does
+
 
 You paste a job description URL. The agent does everything from that point automatically:
 1. Scrapes the full JD (LinkedIn, Lever, Greenhouse, Workday, Wellfound, and more)
