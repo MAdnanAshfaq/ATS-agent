@@ -67,21 +67,26 @@ def build_resume_docx(
     folder_path = Path(output_dir) / folder_name
     folder_path.mkdir(parents=True, exist_ok=True)
     
-    file_path = folder_path / "Jalal_Khan_Resume.docx"
+    name = sanitize_text(resume.get("name", "Candidate Name"))
+    file_name = f"{slugify(name)}_Resume.docx"
+    file_path = folder_path / file_name
     
     # ─── Create Document ─────────────────────────────────────────────────────
     doc = Document()
     
-    # Set page margins (narrow for more content space)
+    # Set page margins (clean professional standard)
     for section in doc.sections:
-        section.top_margin = Inches(0.6)
-        section.bottom_margin = Inches(0.6)
-        section.left_margin = Inches(0.75)
-        section.right_margin = Inches(0.75)
+        section.top_margin = Inches(0.5)
+        section.bottom_margin = Inches(0.5)
+        section.left_margin = Inches(0.65)
+        section.right_margin = Inches(0.65)
+    
+    # Content width: 8.5 - 2*0.65 = 7.20 inches = 10368 twips
+    CONTENT_WIDTH_TWIPS = '10368'
     
     # ─── Helper functions ─────────────────────────────────────────────────────
     
-    def set_font(run, size=10.5, bold=False, italic=False, color=None):
+    def set_font(run, size=10, bold=False, italic=False, color=None):
         run.font.name = "Calibri"
         run.font.size = Pt(size)
         run.font.bold = bold
@@ -92,11 +97,13 @@ def build_resume_docx(
     def add_paragraph_spacing(para, space_before=0, space_after=0):
         para.paragraph_format.space_before = Pt(space_before)
         para.paragraph_format.space_after = Pt(space_after)
+        para.paragraph_format.line_spacing = 1.05
     
     def add_section_header(title: str):
-        """Add a formatted section header with a bottom border line."""
+        """Add a formatted section header with a bottom border line and keep_with_next."""
         para = doc.add_paragraph()
-        add_paragraph_spacing(para, space_before=8, space_after=2)
+        para.paragraph_format.keep_with_next = True
+        add_paragraph_spacing(para, space_before=7, space_after=2)
         run = para.add_run(title.upper())
         set_font(run, size=10.5, bold=True, color=(31, 73, 125))  # Dark blue
         
@@ -120,42 +127,46 @@ def build_resume_docx(
             return
         para = doc.add_paragraph(style='List Bullet')
         run = para.add_run(text)
-        set_font(run, size=10)
-        add_paragraph_spacing(para, space_before=1, space_after=1)
-        para.paragraph_format.left_indent = Inches(0.25)
+        set_font(run, size=9.5)
+        add_paragraph_spacing(para, space_before=0, space_after=1.5)
+        para.paragraph_format.left_indent = Inches(0.2)
     
-    def add_normal_text(text: str, size=10, bold=False, italic=False):
+    def add_normal_text(text: str, size=9.5, bold=False, italic=False, keep_next=False):
         """Add a normal paragraph."""
         text = sanitize_text(text)
         para = doc.add_paragraph()
+        if keep_next:
+            para.paragraph_format.keep_with_next = True
         run = para.add_run(text)
         set_font(run, size=size, bold=bold)
         run.italic = italic
-        add_paragraph_spacing(para, space_before=1, space_after=1)
+        add_paragraph_spacing(para, space_before=0, space_after=1.5)
         return para
     
-    def add_two_column_line(left: str, right: str, left_bold=False, right_italic=False):
-        """Add a line with text on left and right (e.g., role + dates) cleanly aligned."""
+    def add_two_column_line(left: str, right: str, left_bold=False, right_italic=False, keep_next=True):
+        """Add a line with text on left and right (e.g., role + dates) with keep_with_next."""
         para = doc.add_paragraph()
+        if keep_next:
+            para.paragraph_format.keep_with_next = True
         add_paragraph_spacing(para, space_before=3, space_after=1)
         
-        # Add right-aligned tab stop at the exact right margin (7.0 inches = 10080 twips)
+        # Add right-aligned tab stop at exact right margin
         pPr = para._p.get_or_add_pPr()
         tabs = OxmlElement('w:tabs')
         tab = OxmlElement('w:tab')
         tab.set(qn('w:val'), 'right')
-        tab.set(qn('w:pos'), '10080')
+        tab.set(qn('w:pos'), CONTENT_WIDTH_TWIPS)
         tabs.append(tab)
         pPr.append(tabs)
         
         run_left = para.add_run(sanitize_text(left))
-        set_font(run_left, size=10.5, bold=left_bold)
+        set_font(run_left, size=10, bold=left_bold)
         
         if right:
             tab_run = para.add_run("\t")
-            set_font(tab_run, size=10)
+            set_font(tab_run, size=9.5)
             run_right = para.add_run(sanitize_text(right))
-            set_font(run_right, size=10, italic=right_italic)
+            set_font(run_right, size=9.5, italic=right_italic)
         
         return para
     
@@ -249,9 +260,6 @@ def build_resume_docx(
             for bullet in bullets:
                 if bullet and len(sanitize_text(bullet)) > 5:
                     add_bullet(bullet)
-            
-            # Small spacing between roles
-            doc.add_paragraph().paragraph_format.space_after = Pt(2)
     
     # ─── PROJECTS ────────────────────────────────────────────────────────────
     projects = resume.get("projects", [])
