@@ -619,122 +619,458 @@ function renderVisualResume(data) {
   if (!card || !data) return;
 
   const contact = data.contact || {};
-  const name = contact.name || data.name || "Candidate Name";
+  const name = data.name || contact.name || "";
   const email = contact.email || "";
   const phone = contact.phone || "";
   const linkedin = contact.linkedin || "";
   const github = contact.github || "";
+  const location = contact.location || "";
 
   const summary = data.summary || "";
-  const skills = data.skills || [];
+  const skills = (data.skills || []).join(", ");
   const experience = data.experience || [];
   const projects = data.projects || [];
   const education = data.education || [];
+  const certifications = data.certifications || [];
 
   let html = `
-    <div class="resume-header-block">
-      <h1>${escapeHtml(name)}</h1>
-      <div class="contact-badges">
-        ${email ? `<span><i class="fa-solid fa-envelope text-cyan"></i> ${escapeHtml(email)}</span>` : ''}
-        ${phone ? `<span><i class="fa-solid fa-phone text-cyan"></i> ${escapeHtml(phone)}</span>` : ''}
-        ${linkedin ? `<span><i class="fa-brands fa-linkedin text-cyan"></i> <a href="https://${escapeHtml(linkedin)}" target="_blank">${escapeHtml(linkedin)}</a></span>` : ''}
-        ${github ? `<span><i class="fa-brands fa-github text-cyan"></i> <a href="https://${escapeHtml(github)}" target="_blank">${escapeHtml(github)}</a></span>` : ''}
+    <div class="vr-editor-container">
+      
+      <!-- ── SECTION 1: Personal Info & Contact ── -->
+      <div class="vr-section">
+        <div class="vr-section-header">
+          <div class="vr-section-title"><i class="fa-solid fa-user-circle"></i> Candidate Profile & Contact Info</div>
+        </div>
+        <div class="vr-grid-2">
+          <div class="vr-field">
+            <label class="vr-label">Full Name</label>
+            <input type="text" id="vr-name" class="vr-input" value="${escapeHtml(name)}" placeholder="e.g. Haseeb Khan">
+          </div>
+          <div class="vr-field">
+            <label class="vr-label">Location</label>
+            <input type="text" id="vr-location" class="vr-input" value="${escapeHtml(location)}" placeholder="e.g. West Warwick, RI">
+          </div>
+        </div>
+        <div class="vr-grid-2">
+          <div class="vr-field">
+            <label class="vr-label">Email Address</label>
+            <input type="email" id="vr-email" class="vr-input" value="${escapeHtml(email)}" placeholder="e.g. candidate@example.com">
+          </div>
+          <div class="vr-field">
+            <label class="vr-label">Phone Number</label>
+            <input type="text" id="vr-phone" class="vr-input" value="${escapeHtml(phone)}" placeholder="e.g. +1 555-123-4567">
+          </div>
+        </div>
+        <div class="vr-grid-2">
+          <div class="vr-field">
+            <label class="vr-label">LinkedIn Profile URL / Handle</label>
+            <input type="text" id="vr-linkedin" class="vr-input" value="${escapeHtml(linkedin)}" placeholder="e.g. linkedin.com/in/username">
+          </div>
+          <div class="vr-field">
+            <label class="vr-label">GitHub Profile URL / Handle (optional)</label>
+            <input type="text" id="vr-github" class="vr-input" value="${escapeHtml(github)}" placeholder="e.g. github.com/username">
+          </div>
+        </div>
       </div>
+
+      <!-- ── SECTION 2: Professional Summary ── -->
+      <div class="vr-section">
+        <div class="vr-section-header">
+          <div class="vr-section-title"><i class="fa-solid fa-file-lines"></i> Professional Summary</div>
+        </div>
+        <div class="vr-field">
+          <textarea id="vr-summary" class="vr-textarea" style="min-height: 100px;" placeholder="Write or edit your master professional summary...">${escapeHtml(summary)}</textarea>
+        </div>
+      </div>
+
+      <!-- ── SECTION 3: Technical Skills ── -->
+      <div class="vr-section">
+        <div class="vr-section-header">
+          <div class="vr-section-title"><i class="fa-solid fa-bolt"></i> Technical Skills</div>
+          <span style="font-size:12px; color:var(--text-muted);">Separate skills with commas</span>
+        </div>
+        <div class="vr-field">
+          <textarea id="vr-skills" class="vr-textarea" style="min-height: 70px;" placeholder="Python, SQL, React, AWS, Docker, Databricks, PostgreSQL, PySpark..." oninput="updateSkillsPillsPreview()">${escapeHtml(skills)}</textarea>
+        </div>
+        <div id="vr-skills-pills" class="skills-pill-group" style="margin-top: 4px;">
+          ${(data.skills || []).map(s => `<span class="chip-cyan">${escapeHtml(s)}</span>`).join('')}
+        </div>
+      </div>
+
+      <!-- ── SECTION 4: Work Experience ── -->
+      <div class="vr-section">
+        <div class="vr-section-header">
+          <div class="vr-section-title"><i class="fa-solid fa-briefcase"></i> Work Experience (${experience.length})</div>
+          <button type="button" class="vr-btn-add" onclick="addExperienceRole()"><i class="fa-solid fa-plus"></i> Add Role</button>
+        </div>
+        <div id="vr-experience-list" style="display:flex; flex-direction:column; gap:14px;">
+          ${experience.map((exp, roleIdx) => `
+            <div class="vr-item-card" data-role-idx="${roleIdx}">
+              <div class="vr-item-card-header">
+                <span style="font-weight:700; color:var(--text-main); font-size:14px;">Role #${roleIdx + 1}</span>
+                <button type="button" class="vr-btn-delete" onclick="removeExperienceRole(${roleIdx})"><i class="fa-solid fa-trash"></i> Delete Role</button>
+              </div>
+              <div class="vr-grid-2">
+                <div class="vr-field">
+                  <label class="vr-label">Job Title</label>
+                  <input type="text" class="vr-input vr-exp-title" value="${escapeHtml(exp.title || '')}" placeholder="e.g. Senior Data Engineer">
+                </div>
+                <div class="vr-field">
+                  <label class="vr-label">Company Name</label>
+                  <input type="text" class="vr-input vr-exp-company" value="${escapeHtml(exp.company || '')}" placeholder="e.g. Tech Corp">
+                </div>
+              </div>
+              <div class="vr-grid-2">
+                <div class="vr-field">
+                  <label class="vr-label">Dates / Duration</label>
+                  <input type="text" class="vr-input vr-exp-dates" value="${escapeHtml(exp.dates || '')}" placeholder="e.g. 2021 – Present">
+                </div>
+                <div class="vr-field">
+                  <label class="vr-label">Location (optional)</label>
+                  <input type="text" class="vr-input vr-exp-location" value="${escapeHtml(exp.location || '')}" placeholder="e.g. Remote / New York, NY">
+                </div>
+              </div>
+              
+              <!-- Bullets list -->
+              <div class="vr-field">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                  <label class="vr-label">Experience Bullet Points</label>
+                  <button type="button" class="vr-btn-add" style="padding:4px 8px; font-size:11px;" onclick="addExpBullet(${roleIdx})"><i class="fa-solid fa-plus"></i> Add Bullet</button>
+                </div>
+                <div class="vr-exp-bullets-container" data-role-idx="${roleIdx}" style="display:flex; flex-direction:column; gap:6px;">
+                  ${(exp.bullets || []).map((b, bIdx) => `
+                    <div class="vr-bullet-item">
+                      <textarea class="vr-textarea vr-exp-bullet" placeholder="Action verb + achievement + technical tools used...">${escapeHtml(b)}</textarea>
+                      <button type="button" class="vr-btn-delete" style="padding:8px;" onclick="removeExpBullet(${roleIdx}, ${bIdx})"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- ── SECTION 5: Education ── -->
+      <div class="vr-section">
+        <div class="vr-section-header">
+          <div class="vr-section-title"><i class="fa-solid fa-graduation-cap"></i> Education (${education.length})</div>
+          <button type="button" class="vr-btn-add" onclick="addEducationEntry()"><i class="fa-solid fa-plus"></i> Add Education</button>
+        </div>
+        <div id="vr-education-list" style="display:flex; flex-direction:column; gap:12px;">
+          ${education.map((edu, eduIdx) => `
+            <div class="vr-item-card" data-edu-idx="${eduIdx}">
+              <div class="vr-item-card-header">
+                <span style="font-weight:700; color:var(--text-main); font-size:14px;">Degree #${eduIdx + 1}</span>
+                <button type="button" class="vr-btn-delete" onclick="removeEducationEntry(${eduIdx})"><i class="fa-solid fa-trash"></i> Delete</button>
+              </div>
+              <div class="vr-grid-2">
+                <div class="vr-field">
+                  <label class="vr-label">Degree</label>
+                  <input type="text" class="vr-input vr-edu-degree" value="${escapeHtml(edu.degree || '')}" placeholder="e.g. Bachelor of Software Engineering">
+                </div>
+                <div class="vr-field">
+                  <label class="vr-label">Field of Study</label>
+                  <input type="text" class="vr-input vr-edu-field" value="${escapeHtml(edu.field || '')}" placeholder="e.g. Computer Science">
+                </div>
+              </div>
+              <div class="vr-grid-3">
+                <div class="vr-field">
+                  <label class="vr-label">Institution / University</label>
+                  <input type="text" class="vr-input vr-edu-institution" value="${escapeHtml(edu.institution || '')}" placeholder="e.g. Foundation University">
+                </div>
+                <div class="vr-field">
+                  <label class="vr-label">Graduation Date / Year</label>
+                  <input type="text" class="vr-input vr-edu-dates" value="${escapeHtml(edu.graduation_date || edu.dates || '')}" placeholder="e.g. 2017">
+                </div>
+                <div class="vr-field">
+                  <label class="vr-label">GPA (optional)</label>
+                  <input type="text" class="vr-input vr-edu-gpa" value="${escapeHtml(edu.gpa || '')}" placeholder="e.g. 3.8 / 4.0">
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- ── SECTION 6: Key Projects ── -->
+      <div class="vr-section">
+        <div class="vr-section-header">
+          <div class="vr-section-title"><i class="fa-solid fa-laptop-code"></i> Key Projects (${projects.length})</div>
+          <button type="button" class="vr-btn-add" onclick="addProjectEntry()"><i class="fa-solid fa-plus"></i> Add Project</button>
+        </div>
+        <div id="vr-projects-list" style="display:flex; flex-direction:column; gap:12px;">
+          ${projects.map((proj, pIdx) => `
+            <div class="vr-item-card" data-proj-idx="${pIdx}">
+              <div class="vr-item-card-header">
+                <span style="font-weight:700; color:var(--text-main); font-size:14px;">Project #${pIdx + 1}</span>
+                <button type="button" class="vr-btn-delete" onclick="removeProjectEntry(${pIdx})"><i class="fa-solid fa-trash"></i> Delete</button>
+              </div>
+              <div class="vr-grid-2">
+                <div class="vr-field">
+                  <label class="vr-label">Project Name</label>
+                  <input type="text" class="vr-input vr-proj-name" value="${escapeHtml(proj.name || '')}" placeholder="e.g. Automated Lakehouse Pipeline">
+                </div>
+                <div class="vr-field">
+                  <label class="vr-label">Project URL / Repo Link (optional)</label>
+                  <input type="text" class="vr-input vr-proj-url" value="${escapeHtml(proj.url || '')}" placeholder="e.g. https://github.com/...">
+                </div>
+              </div>
+              <div class="vr-field">
+                <label class="vr-label">Description</label>
+                <textarea class="vr-textarea vr-proj-description" placeholder="Project overview and impact...">${escapeHtml(proj.description || '')}</textarea>
+              </div>
+              <div class="vr-field">
+                <label class="vr-label">Tech Stack (comma-separated)</label>
+                <input type="text" class="vr-input vr-proj-tech" value="${escapeHtml((proj.tech_stack || []).join(', '))}" placeholder="e.g. Python, Databricks, Delta Lake, AWS">
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- ── SECTION 7: Certifications ── -->
+      <div class="vr-section">
+        <div class="vr-section-header">
+          <div class="vr-section-title"><i class="fa-solid fa-award"></i> Certifications (${certifications.length})</div>
+          <button type="button" class="vr-btn-add" onclick="addCertificationEntry()"><i class="fa-solid fa-plus"></i> Add Certification</button>
+        </div>
+        <div id="vr-certifications-list" style="display:flex; flex-direction:column; gap:8px;">
+          ${certifications.map((cert, cIdx) => `
+            <div class="vr-bullet-item" data-cert-idx="${cIdx}">
+              <input type="text" class="vr-input vr-cert-item" value="${escapeHtml(cert)}" placeholder="e.g. AZ-900 | Azure Fundamentals">
+              <button type="button" class="vr-btn-delete" style="padding:8px;" onclick="removeCertificationEntry(${cIdx})"><i class="fa-solid fa-trash"></i></button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
     </div>
   `;
 
-  if (summary) {
-    html += `
-      <div>
-        <div class="resume-section-title"><i class="fa-solid fa-user"></i> Professional Summary</div>
-        <div class="resume-summary-text">${escapeHtml(summary)}</div>
-      </div>
-    `;
-  }
-
-  if (skills.length > 0) {
-    html += `
-      <div>
-        <div class="resume-section-title"><i class="fa-solid fa-bolt"></i> Technical Skills (${skills.length})</div>
-        <div class="skills-pill-group">
-          ${skills.map(s => `<span class="chip-cyan">${escapeHtml(s)}</span>`).join('')}
-        </div>
-      </div>
-    `;
-  }
-
-  if (experience.length > 0) {
-    html += `<div><div class="resume-section-title"><i class="fa-solid fa-briefcase"></i> Work Experience</div>`;
-    experience.forEach(exp => {
-      html += `
-        <div class="experience-card">
-          <div class="exp-title-row">
-            <div>
-              <div class="exp-role">${escapeHtml(exp.title || '')}</div>
-              <div class="exp-company">${escapeHtml(exp.company || '')}</div>
-            </div>
-            <div class="exp-dates">${escapeHtml(exp.dates || '')} ${exp.location ? '| ' + escapeHtml(exp.location) : ''}</div>
-          </div>
-          <ul class="exp-bullets">
-            ${(exp.bullets || []).map(b => `<li>${escapeHtml(b)}</li>`).join('')}
-          </ul>
-        </div>
-      `;
-    });
-    html += `</div>`;
-  }
-
-  if (projects.length > 0) {
-    html += `<div><div class="resume-section-title"><i class="fa-solid fa-laptop-code"></i> Key Projects</div>`;
-    projects.forEach(proj => {
-      html += `
-        <div class="project-card">
-          <div class="exp-title-row">
-            <div class="exp-role">${escapeHtml(proj.name || '')}</div>
-            ${proj.url ? `<a href="${escapeHtml(proj.url)}" target="_blank" class="text-cyan text-sm">${escapeHtml(proj.url)}</a>` : ''}
-          </div>
-          <p class="text-dim text-sm margin-bottom-xs">${escapeHtml(proj.description || '')}</p>
-          ${proj.tech_stack ? `<div class="skills-pill-group margin-top-xs">${(proj.tech_stack || []).map(t => `<span class="chip-cyan" style="font-size:12px; padding:4px 10px;">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
-        </div>
-      `;
-    });
-    html += `</div>`;
-  }
-
-  if (education.length > 0) {
-    html += `<div><div class="resume-section-title"><i class="fa-solid fa-graduation-cap"></i> Education</div>`;
-    education.forEach(edu => {
-      html += `
-        <div class="experience-card">
-          <div class="exp-title-row">
-            <div class="exp-role">${escapeHtml(edu.degree || '')} ${edu.field ? '- ' + escapeHtml(edu.field) : ''}</div>
-            <div class="exp-dates">${escapeHtml(edu.dates || '')}</div>
-          </div>
-          <div class="exp-company">${escapeHtml(edu.institution || '')}</div>
-        </div>
-      `;
-    });
-    html += `</div>`;
-  }
-
   card.innerHTML = html;
+}
+
+function updateSkillsPillsPreview() {
+  const input = document.getElementById("vr-skills");
+  const pillsContainer = document.getElementById("vr-skills-pills");
+  if (!input || !pillsContainer) return;
+  const skills = input.value.split(",").map(s => s.trim()).filter(Boolean);
+  pillsContainer.innerHTML = skills.map(s => `<span class="chip-cyan">${escapeHtml(s)}</span>`).join('');
+}
+
+function collectVisualResumeData() {
+  const name = (document.getElementById("vr-name")?.value || "").trim();
+  const location = (document.getElementById("vr-location")?.value || "").trim();
+  const email = (document.getElementById("vr-email")?.value || "").trim();
+  const phone = (document.getElementById("vr-phone")?.value || "").trim();
+  const linkedin = (document.getElementById("vr-linkedin")?.value || "").trim();
+  const github = (document.getElementById("vr-github")?.value || "").trim();
+  const summary = (document.getElementById("vr-summary")?.value || "").trim();
+  
+  const rawSkills = (document.getElementById("vr-skills")?.value || "");
+  const skills = rawSkills.split(",").map(s => s.trim()).filter(Boolean);
+
+  // Experience
+  const expCards = document.querySelectorAll("#vr-experience-list .vr-item-card");
+  const experience = [];
+  expCards.forEach(card => {
+    const title = card.querySelector(".vr-exp-title")?.value.trim() || "";
+    const company = card.querySelector(".vr-exp-company")?.value.trim() || "";
+    const dates = card.querySelector(".vr-exp-dates")?.value.trim() || "";
+    const loc = card.querySelector(".vr-exp-location")?.value.trim() || "";
+    const bulletEls = card.querySelectorAll(".vr-exp-bullet");
+    const bullets = [];
+    bulletEls.forEach(bEl => {
+      const bText = bEl.value.trim();
+      if (bText) bullets.push(bText);
+    });
+    if (title || company || bullets.length > 0) {
+      experience.push({
+        title: title,
+        company: company,
+        dates: dates,
+        location: loc || null,
+        bullets: bullets
+      });
+    }
+  });
+
+  // Education
+  const eduCards = document.querySelectorAll("#vr-education-list .vr-item-card");
+  const education = [];
+  eduCards.forEach(card => {
+    const degree = card.querySelector(".vr-edu-degree")?.value.trim() || "";
+    const field = card.querySelector(".vr-edu-field")?.value.trim() || "";
+    const institution = card.querySelector(".vr-edu-institution")?.value.trim() || "";
+    const gradDate = card.querySelector(".vr-edu-dates")?.value.trim() || "";
+    const gpa = card.querySelector(".vr-edu-gpa")?.value.trim() || null;
+    if (degree || institution) {
+      education.push({
+        degree: degree,
+        field: field,
+        institution: institution,
+        graduation_date: gradDate,
+        gpa: gpa
+      });
+    }
+  });
+
+  // Projects
+  const projCards = document.querySelectorAll("#vr-projects-list .vr-item-card");
+  const projects = [];
+  projCards.forEach(card => {
+    const pName = card.querySelector(".vr-proj-name")?.value.trim() || "";
+    const url = card.querySelector(".vr-proj-url")?.value.trim() || "";
+    const desc = card.querySelector(".vr-proj-description")?.value.trim() || "";
+    const techRaw = card.querySelector(".vr-proj-tech")?.value.trim() || "";
+    const techStack = techRaw.split(",").map(t => t.trim()).filter(Boolean);
+    if (pName || desc) {
+      projects.push({
+        name: pName,
+        url: url || null,
+        description: desc,
+        tech_stack: techStack
+      });
+    }
+  });
+
+  // Certifications
+  const certInputs = document.querySelectorAll("#vr-certifications-list .vr-cert-item");
+  const certifications = [];
+  certInputs.forEach(cIn => {
+    const val = cIn.value.trim();
+    if (val) certifications.push(val);
+  });
+
+  return {
+    name: name,
+    contact: {
+      email: email,
+      phone: phone,
+      linkedin: linkedin,
+      github: github || null,
+      portfolio: null,
+      location: location
+    },
+    summary: summary,
+    skills: skills,
+    experience: experience,
+    education: education,
+    projects: projects,
+    certifications: certifications
+  };
+}
+
+// ── Dynamic Visual Editor Helpers ───────────────────────────────────────────
+function addExperienceRole() {
+  const currentData = collectVisualResumeData();
+  currentData.experience.push({
+    title: "",
+    company: "",
+    dates: "",
+    location: null,
+    bullets: [""]
+  });
+  renderVisualResume(currentData);
+}
+
+function removeExperienceRole(roleIdx) {
+  const currentData = collectVisualResumeData();
+  currentData.experience.splice(roleIdx, 1);
+  renderVisualResume(currentData);
+}
+
+function addExpBullet(roleIdx) {
+  const currentData = collectVisualResumeData();
+  if (currentData.experience[roleIdx]) {
+    currentData.experience[roleIdx].bullets.push("");
+    renderVisualResume(currentData);
+  }
+}
+
+function removeExpBullet(roleIdx, bulletIdx) {
+  const currentData = collectVisualResumeData();
+  if (currentData.experience[roleIdx]) {
+    currentData.experience[roleIdx].bullets.splice(bulletIdx, 1);
+    renderVisualResume(currentData);
+  }
+}
+
+function addEducationEntry() {
+  const currentData = collectVisualResumeData();
+  currentData.education.push({
+    degree: "",
+    field: "",
+    institution: "",
+    graduation_date: "",
+    gpa: null
+  });
+  renderVisualResume(currentData);
+}
+
+function removeEducationEntry(eduIdx) {
+  const currentData = collectVisualResumeData();
+  currentData.education.splice(eduIdx, 1);
+  renderVisualResume(currentData);
+}
+
+function addProjectEntry() {
+  const currentData = collectVisualResumeData();
+  currentData.projects.push({
+    name: "",
+    url: null,
+    description: "",
+    tech_stack: []
+  });
+  renderVisualResume(currentData);
+}
+
+function removeProjectEntry(projIdx) {
+  const currentData = collectVisualResumeData();
+  currentData.projects.splice(projIdx, 1);
+  renderVisualResume(currentData);
+}
+
+function addCertificationEntry() {
+  const currentData = collectVisualResumeData();
+  currentData.certifications.push("");
+  renderVisualResume(currentData);
+}
+
+function removeCertificationEntry(certIdx) {
+  const currentData = collectVisualResumeData();
+  currentData.certifications.splice(certIdx, 1);
+  renderVisualResume(currentData);
 }
 
 function toggleResumeViewMode() {
   const visualCard = document.getElementById("visual-resume-card");
   const jsonCard = document.getElementById("json-editor-card");
   const toggleBtn = document.getElementById("toggle-json-view-btn");
+  const textarea = document.getElementById("resume-json-editor");
 
   if (jsonCard.classList.contains("hidden")) {
+    // Switch Visual -> JSON
+    const visualData = collectVisualResumeData();
+    textarea.value = JSON.stringify(visualData, null, 2);
     jsonCard.classList.remove("hidden");
     visualCard.classList.add("hidden");
     toggleBtn.innerHTML = `<i class="fa-solid fa-eye"></i> Visual Resume Mode`;
   } else {
-    jsonCard.classList.add("hidden");
-    visualCard.classList.remove("hidden");
-    toggleBtn.innerHTML = `<i class="fa-solid fa-code"></i> Raw JSON Mode`;
+    // Switch JSON -> Visual
+    try {
+      const parsed = JSON.parse(textarea.value);
+      renderVisualResume(parsed);
+      jsonCard.classList.add("hidden");
+      visualCard.classList.remove("hidden");
+      toggleBtn.innerHTML = `<i class="fa-solid fa-code"></i> Raw JSON Mode`;
+    } catch (e) {
+      showToast("Invalid JSON syntax — fix JSON before switching to visual mode", "error");
+    }
   }
 }
+
 
 async function uploadMasterResumeFile(event) {
   const file = event.target.files[0];
@@ -889,23 +1225,35 @@ async function deleteHistoryItem(filename) {
 }
 
 async function saveMasterResume() {
+  const jsonCard = document.getElementById("json-editor-card");
   const textarea = document.getElementById("resume-json-editor");
+  let resumePayload = null;
+
   try {
-    const parsed = JSON.parse(textarea.value);
+    if (jsonCard && !jsonCard.classList.contains("hidden")) {
+      // Saving from Raw JSON Mode
+      resumePayload = JSON.parse(textarea.value);
+    } else {
+      // Saving from Visual Resume Mode
+      resumePayload = collectVisualResumeData();
+      textarea.value = JSON.stringify(resumePayload, null, 2);
+    }
+
     const res = await fetch("/api/resume", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(parsed),
+      body: JSON.stringify(resumePayload),
     });
     const data = await res.json();
     if (data.success) {
-      showToast("Master resume updated successfully!", "success");
+      showToast("Master resume saved & updated successfully!", "success");
+      currentMasterResumeData = resumePayload;
       loadMasterResume();
     } else {
       showToast(`Save failed: ${data.error}`, "error");
     }
   } catch (err) {
-    showToast("Invalid JSON syntax in Master Resume Editor", "error");
+    showToast(`Error saving resume: ${err.message || "Invalid syntax"}`, "error");
   }
 }
 

@@ -135,49 +135,41 @@ def build_resume_docx(
         return para
     
     def add_two_column_line(left: str, right: str, left_bold=False, right_italic=False):
-        """Add a line with text on left and right (e.g., role + dates)."""
+        """Add a line with text on left and right (e.g., role + dates) cleanly aligned."""
         para = doc.add_paragraph()
         add_paragraph_spacing(para, space_before=3, space_after=1)
+        
+        # Add right-aligned tab stop at the exact right margin (7.0 inches = 10080 twips)
+        pPr = para._p.get_or_add_pPr()
+        tabs = OxmlElement('w:tabs')
+        tab = OxmlElement('w:tab')
+        tab.set(qn('w:val'), 'right')
+        tab.set(qn('w:pos'), '10080')
+        tabs.append(tab)
+        pPr.append(tabs)
         
         run_left = para.add_run(sanitize_text(left))
         set_font(run_left, size=10.5, bold=left_bold)
         
         if right:
-            # Tab to right-align the date
-            tab_stop = OxmlElement('w:tab')
-            run_left._r.append(tab_stop)
-            
-            # Add right-aligned tab stop at page right margin
-            pPr = para._p.get_or_add_pPr()
-            tabs = OxmlElement('w:tabs')
-            tab = OxmlElement('w:tab')
-            tab.set(qn('w:val'), 'right')
-            tab.set(qn('w:pos'), '9360')  # ~6.5 inches in twips
-            tabs.append(tab)
-            pPr.append(tabs)
-            
+            tab_run = para.add_run("\t")
+            set_font(tab_run, size=10)
             run_right = para.add_run(sanitize_text(right))
             set_font(run_right, size=10, italic=right_italic)
         
         return para
     
-    # ─── HEADER: Name & Target Role ──────────────────────────────────────────
+    # ─── HEADER: Candidate Name ──────────────────────────────────────────────
     contact = resume.get("contact", {})
-    name = sanitize_text(resume.get("name", "Jalal Khan"))
-    target_role = sanitize_text(resume.get("target_role", role)).upper()
+    name = sanitize_text(resume.get("name", "Candidate Name"))
     
     name_para = doc.add_paragraph()
     name_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
     add_paragraph_spacing(name_para, space_before=0, space_after=3)
     
-    # 1. Add Name
-    run_name = name_para.add_run(f"{name.upper()}        ")
+    run_name = name_para.add_run(name.upper())
     set_font(run_name, size=18, bold=True, color=(31, 73, 125))
-    
-    # 2. Add Generic Target Role
-    if target_role:
-        run_title = name_para.add_run(target_role)
-        set_font(run_title, size=14, bold=False, color=(31, 73, 125))
+
     
     # ─── HEADER: Contact line ─────────────────────────────────────────────────
     contact_parts = []

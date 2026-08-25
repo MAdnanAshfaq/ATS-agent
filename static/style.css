@@ -1383,3 +1383,163 @@ input:checked + .slider:before { transform: translateX(20px); }
   color: #fff;
 }
 
+/* ── Interactive Master Resume Editor ────────────────────────────────────── */
+.vr-editor-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.vr-section {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-md);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.vr-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-glass);
+  padding-bottom: 10px;
+}
+
+.vr-section-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--cyan);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vr-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.vr-grid-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+
+.vr-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vr-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.vr-input {
+  background: rgba(2, 6, 23, 0.7);
+  border: 1px solid var(--border-glass-bright);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  font-family: var(--font-main);
+  font-size: 14px;
+  padding: 8px 12px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  width: 100%;
+}
+
+.vr-input:focus, .vr-textarea:focus {
+  border-color: var(--cyan);
+  box-shadow: 0 0 10px var(--cyan-glow);
+}
+
+.vr-textarea {
+  background: rgba(2, 6, 23, 0.7);
+  border: 1px solid var(--border-glass-bright);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  font-family: var(--font-main);
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 10px 12px;
+  outline: none;
+  min-height: 80px;
+  resize: vertical;
+  width: 100%;
+}
+
+.vr-item-card {
+  background: rgba(2, 6, 23, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: relative;
+}
+
+.vr-item-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.vr-bullet-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 6px;
+}
+
+.vr-bullet-item .vr-textarea {
+  min-height: 50px;
+  flex: 1;
+}
+
+.vr-btn-delete {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.vr-btn-delete:hover {
+  background: rgba(239, 68, 68, 0.35);
+  color: #fff;
+}
+
+.vr-btn-add {
+  background: rgba(6, 182, 212, 0.15);
+  color: #67e8f9;
+  border: 1px solid rgba(6, 182, 212, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+}
+
+.vr-btn-add:hover {
+  background: rgba(6, 182, 212, 0.35);
+  color: #fff;
+}
+
