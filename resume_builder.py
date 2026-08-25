@@ -170,16 +170,28 @@ def build_resume_docx(
         
         return para
     
-    # ─── HEADER: Candidate Name ──────────────────────────────────────────────
+    # ─── HEADER: Candidate Name & Target Role ────────────────────────────────
     contact = resume.get("contact", {})
     name = sanitize_text(resume.get("name", "Candidate Name"))
     
+    # Extract & clean role title (strip any brackets/parentheses like "(Databricks)")
+    from scraper import clean_role_title
+    raw_role = resume.get("target_role") or role or ""
+    clean_role = clean_role_title(raw_role).upper()
+    
     name_para = doc.add_paragraph()
     name_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    add_paragraph_spacing(name_para, space_before=0, space_after=3)
+    add_paragraph_spacing(name_para, space_before=0, space_after=1)
     
     run_name = name_para.add_run(name.upper())
-    set_font(run_name, size=18, bold=True, color=(31, 73, 125))
+    set_font(run_name, size=17, bold=True, color=(31, 73, 125))
+    
+    if clean_role and clean_role not in ("UNKNOWN", "NONE"):
+        role_para = doc.add_paragraph()
+        role_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        add_paragraph_spacing(role_para, space_before=0, space_after=3)
+        run_role = role_para.add_run(clean_role)
+        set_font(run_role, size=11.5, bold=True, color=(31, 73, 125))
 
     
     # ─── HEADER: Contact line ─────────────────────────────────────────────────
