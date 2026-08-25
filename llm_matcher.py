@@ -91,8 +91,17 @@ Return ONLY a valid JSON object matching this schema:
   "missing_keywords": ["GraphQL", "Docker", "AWS Lambda", "Redis"]
 }}"""
 
-        models = ["gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-2.5-flash"]
+        # Confirmed working order: gemini-3.1-flash-lite is verified with this key type.
+        # gemini-3.5-flash / gemini-2.5-flash may return None text in JSON mode with some key types.
+        models = [
+            "gemini-3.1-flash-lite",
+            "gemini-2.5-flash",
+            "gemini-3.5-flash",
+            "gemini-3.1-pro-preview",
+        ]
         response = None
+
+        # Pass 1: try with JSON mode (cleanest output)
         for m in models:
             try:
                 response = client.models.generate_content(
@@ -104,13 +113,36 @@ Return ONLY a valid JSON object matching this schema:
                     ),
                 )
                 if response and response.text:
+                    print(f"[LLM Matcher] Using model: {m} (JSON mode)")
                     break
+                response = None  # reset if text is None
             except Exception as model_err:
-                print(f"[LLM Matcher] Note for model {m}: {model_err}")
+                print(f"[LLM Matcher] {m} JSON mode error: {model_err}")
+                response = None
                 continue
 
+        # Pass 2: if JSON mode gave None, retry without mime type constraint
         if not response or not response.text:
-            raise RuntimeError("All Gemini models exhausted")
+            print("[LLM Matcher] JSON mode returned None — retrying in plain text mode...")
+            for m in models:
+                try:
+                    response = client.models.generate_content(
+                        model=m,
+                        contents=prompt + "\n\nIMPORTANT: Respond ONLY with a raw JSON object, no markdown, no explanation.",
+                        config=types.GenerateContentConfig(temperature=0.1),
+                    )
+                    if response and response.text:
+                        print(f"[LLM Matcher] Using model: {m} (plain text mode)")
+                        break
+                    response = None
+                except Exception as model_err:
+                    print(f"[LLM Matcher] {m} plain mode error: {model_err}")
+                    response = None
+                    continue
+
+        if not response or not response.text:
+            raise RuntimeError("All Gemini models exhausted — no usable response")
+
 
         raw_text = response.text or ""
         match_json = re.search(r'\{.*\}', raw_text, re.DOTALL)

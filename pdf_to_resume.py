@@ -8,11 +8,12 @@ import json
 import re
 import os
 import sys
-import io
 
-# Fix Windows cp1252 encoding issues
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+# Fix Windows cp1252 encoding issues — only when running as __main__, not when imported by Flask
+if __name__ == "__main__" and hasattr(sys.stdout, 'buffer'):
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 
 # ─── Gemini LLM Parser (primary) ──────────────────────────────────────────────
@@ -50,7 +51,7 @@ RESUME TEXT:
 {raw_text}
 """
 
-    models = ["gemini-2.5-flash-lite", "gemini-1.5-flash", "gemini-2.5-flash", "gemini-2.0-flash"]
+    models = ["gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-3.5-flash", "gemini-2.5-flash-lite"]
     for model_name in models:
         try:
             response = client.models.generate_content(
@@ -58,6 +59,8 @@ RESUME TEXT:
                 contents=prompt,
                 config={"temperature": 0.1, "max_output_tokens": 8192},
             )
+            if not response or not response.text:
+                continue
             text = response.text.strip()
             # Strip markdown fences if present
             text = re.sub(r'^```(?:json)?\s*', '', text)

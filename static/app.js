@@ -740,27 +740,134 @@ async function uploadMasterResumeFile(event) {
   const file = event.target.files[0];
   if (!file) return;
 
+  // Reset the input so the same file can be re-selected if needed
+  event.target.value = "";
+
+  const progressCard  = document.getElementById("resume-upload-progress-card");
+  const uploadPrompt  = document.getElementById("resume-upload-prompt");
+  const visualCard    = document.getElementById("visual-resume-card");
+  const jsonCard      = document.getElementById("json-editor-card");
+  const actionsBar    = document.getElementById("resume-actions-bar");
+  const bar           = document.getElementById("resume-upload-bar");
+  const pctLabel      = document.getElementById("upload-progress-pct");
+  const mainLabel     = document.getElementById("upload-progress-label");
+  const subLabel      = document.getElementById("upload-progress-sub");
+
+  // Show progress card, hide everything else
+  if (uploadPrompt) uploadPrompt.classList.add("hidden");
+  if (visualCard)   visualCard.classList.add("hidden");
+  if (jsonCard)     jsonCard.classList.add("hidden");
+  if (actionsBar)   actionsBar.classList.add("hidden");
+  progressCard.classList.remove("hidden");
+
+  mainLabel.textContent = `Uploading ${file.name}…`;
+  subLabel.textContent  = "Sending file to server…";
+
+  // ── Phase 1: Real XHR upload progress (0 → 40%) ─────────────────────────
+  function setBar(pct) {
+    bar.style.width = pct + "%";
+    pctLabel.textContent = pct + "%";
+  }
+
+  let uploadPct = 0;
+  setBar(0);
+
   const formData = new FormData();
   formData.append("resume_file", file);
 
-  showToast(`Uploading and parsing ${file.name}...`, "info");
+  const result = await new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
 
-  try {
-    const res = await fetch("/api/upload_resume", {
-      method: "POST",
-      body: formData
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable) {
+        uploadPct = Math.round((e.loaded / e.total) * 40);  // 0–40%
+        setBar(uploadPct);
+      }
     });
-    const data = await res.json();
-    if (data.success) {
-      showToast(data.message || "Resume updated cleanly!", "success");
-      loadMasterResume();
-    } else {
-      showToast(`Upload failed: ${data.error}`, "error");
+
+    xhr.addEventListener("load", () => {
+      resolve({ ok: xhr.status < 400, body: xhr.responseText });
+    });
+    xhr.addEventListener("error", () => {
+      resolve({ ok: false, body: null });
+    });
+
+    xhr.open("POST", "/api/upload_resume");
+    xhr.send(formData);
+  });
+
+  if (!result.ok || !result.body) {
+    progressCard.classList.add("hidden");
+    if (uploadPrompt) uploadPrompt.classList.remove("hidden");
+    showToast("Upload failed — check that the server is running.", "error");
+    return;
+  }
+
+  // ── Phase 2: Gemini parsing phase (40 → 95%, animated) ──────────────────
+  mainLabel.textContent = "Parsing resume with Gemini AI…";
+  subLabel.textContent  = "Extracting skills, experience, education…";
+  setBar(40);
+
+  // Animate the bar smoothly from 40 → 92% while Gemini works
+  let parsePct = 40;
+  const parseInterval = setInterval(() => {
+    if (parsePct < 92) {
+      parsePct += Math.random() * 3 + 1;  // 1–4% per tick
+      setBar(Math.min(Math.round(parsePct), 92));
     }
-  } catch (err) {
-    showToast(`Error uploading file: ${err.message}`, "error");
+  }, 400);
+
+  // The upload already completed (xhr.load fired) so parse data is ready
+  clearInterval(parseInterval);
+
+  let data;
+  try {
+    data = JSON.parse(result.body);
+  } catch {
+    progressCard.classList.add("hidden");
+    if (uploadPrompt) uploadPrompt.classList.remove("hidden");
+    showToast("Server returned an unexpected response.", "error");
+    return;
+  }
+
+  // ── Phase 3: Done ─────────────────────────────────────────────────────────
+  setBar(100);
+  pctLabel.textContent = "100%";
+  mainLabel.textContent = data.success ? "✅ Resume parsed successfully!" : "❌ Parse failed";
+  subLabel.textContent  = data.message || data.error || "";
+
+  await new Promise(r => setTimeout(r, 900));  // brief moment so user sees 100%
+
+  progressCard.classList.add("hidden");
+
+  if (data.success) {
+    showToast(data.message || "Resume uploaded and parsed!", "success");
+    loadMasterResume();
+  } else {
+    showToast(`Upload failed: ${data.error}`, "error");
+    if (uploadPrompt) uploadPrompt.classList.remove("hidden");
   }
 }
+
+async function deleteCurrentResume() {
+  if (!confirm("Are you sure you want to delete your Master Resume? You will need to upload a new one before generating applications.")) return;
+
+  try {
+    const res = await fetch("/api/delete_resume", { method: "DELETE" });
+    const data = await res.json();
+    if (data.success) {
+      showToast("Master resume deleted. Please upload a new one.", "warning");
+      currentMasterResumeData = null;
+      loadMasterResume();
+    } else {
+      showToast(`Delete failed: ${data.error}`, "error");
+    }
+  } catch (err) {
+    showToast(`Error deleting resume: ${err.message}`, "error");
+  }
+}
+
+
 
 async function deleteHistoryItem(filename) {
   if (!confirm("Are you sure you want to delete this test application from your history and computer?")) return;

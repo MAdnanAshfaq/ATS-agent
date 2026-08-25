@@ -229,6 +229,30 @@ def upload_resume():
         return jsonify({"success": False, "error": f"Failed to parse resume: {e}"}), 500
 
 
+@app.route("/api/delete_resume", methods=["DELETE"])
+def delete_resume():
+    """Delete the current master resume (base_resume.json) and reset to empty."""
+    try:
+        # Write an empty sentinel so the UI reverts to the upload prompt
+        empty = {"_empty": True, "name": "", "contact": {}, "summary": "",
+                 "skills": [], "experience": [], "education": [],
+                 "projects": [], "certifications": []}
+        with open(RESUME_PATH, "w", encoding="utf-8") as f:
+            json.dump(empty, f, indent=2)
+
+        # Also remove the canva docx template if it exists
+        orig_docx = BASE_DIR / "master_resume_original.docx"
+        if orig_docx.exists():
+            try:
+                os.remove(orig_docx)
+            except Exception:
+                pass
+
+        return jsonify({"success": True, "message": "Master resume deleted successfully."})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/history")
 def history():
     """List all previously generated resume applications."""
@@ -399,10 +423,13 @@ def analyze_job():
                 print(f"[Analyze] Simplify read note: {e}")
 
         source = "simplify_extension"
-        
-        # Only fallback to LLM if Simplify explicitly failed or was skipped. 
-        # If Simplify succeeded but returned empty keywords, trust Simplify.
-        if not s_data.get("success"):
+        simplify_has_keywords = len(missing_keywords) + len(matching_keywords) > 0
+
+        # Fallback to LLM if:
+        # - Simplify explicitly failed (no success), OR
+        # - Simplify succeeded but returned 0 keywords (overlay unavailable on this page)
+        if not s_data.get("success") or not simplify_has_keywords:
+            print(f"[Analyze] Simplify returned 0 keywords or failed — using Gemini LLM fallback...")
             from llm_matcher import analyze_jd_and_resume_with_gemini
             llm_res = analyze_jd_and_resume_with_gemini(jd_text, base_resume)
             matching_keywords = llm_res.get("matching_keywords", [])

@@ -133,7 +133,7 @@ RESUME TO CLEAN:
 Check EVERY word against the rules. Rewrite any sentence matching an AI pattern.
 Return the full cleaned resume as valid JSON."""
 
-    models = ["gemini-2.5-flash", "gemini-3.6-flash", "gemini-3.5-flash"]
+    models = ["gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-3.6-flash", "gemini-3.5-flash"]
     print(f"[Detector] Pass {pass_number}: Sending to Gemini...")
 
     for attempt in range(1, max_retries + 1):

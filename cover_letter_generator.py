@@ -82,7 +82,7 @@ TONE & STYLE RULES:
 - Return ONLY the clean cover letter text including date and recipient header. No markdown code blocks around the text.
 """
 
-    models_to_try = ["gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-2.5-flash"]
+    models_to_try = ["gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.1-pro-preview"]
     cover_letter_text = ""
 
     for model in models_to_try:
