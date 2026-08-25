@@ -400,7 +400,8 @@ def analyze_job():
         print(f"[Analyze] Scraping JD from {url}...")
         jd_data = loop.run_until_complete(scrape_jd(url))
         company = jd_data["company"]
-        role = jd_data["role"]
+        from scraper import clean_role_title
+        role = clean_role_title(jd_data["role"])
         jd_text = jd_data["jd_text"]
         print(f"[Analyze] Scraped {len(jd_text)} chars for {role} at {company}")
 
@@ -595,7 +596,8 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
         send_log(2, "Scrape JD", f"Extracting job description from {url}...", status="working")
         jd_data = scrape_jd_sync(url)
         company = jd_data["company"]
-        role = jd_data["role"]
+        from scraper import clean_role_title
+        role = clean_role_title(jd_data["role"])
         jd_text = jd_data["jd_text"]
         send_log(2, "Scrape JD", f"Extracted {len(jd_text):,} chars for {role} at {company}", data={
             "company": company,

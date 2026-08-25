@@ -126,6 +126,19 @@ def clean_text(text: str) -> str:
     return "\n".join(clean_lines).strip()
 
 
+def clean_role_title(role: str) -> str:
+    """Clean job role title by removing parenthetical suffixes, brackets, location tags, etc."""
+    if not role:
+        return "Software Engineer"
+    # Remove bracketed/parenthetical text e.g. "(Databricks)", "[Remote]", "(US / Hybrid)"
+    role = re.sub(r'[\(\[\{].*?[\)\]\}]', '', role)
+    # Remove trailing dashes or pipes or location artifacts e.g. " - Remote", " | Full Time"
+    role = re.sub(r'\s*[-–—|/]\s*(?:remote|hybrid|onsite|full[- ]?time|contract|part[- ]?time|us|usa|uk|canada|emea|latam|apac|tier\s*\d+|l\d+|level\s*\d+).*$', '', role, flags=re.IGNORECASE)
+    # Remove dangling punctuation/whitespace
+    role = re.sub(r'\s+', ' ', role).strip(' -–—|/,:;')
+    return role or "Software Engineer"
+
+
 def extract_company_from_url(url: str) -> str:
     """Try to extract company name from URL."""
     # lever: jobs.lever.co/company/role
@@ -408,7 +421,10 @@ async def scrape_jd(url: str) -> dict:
                 break
         if not role:
             role = title.split('|')[0].split('-')[0].strip()
-    
+
+    # Clean role title from parentheses / brackets / location suffixes
+    role = clean_role_title(role)
+
     # Fallback company name if identical to role
     if not company or (role and company.lower() == role.lower()):
         company = extract_company_from_url(scrape_url)
