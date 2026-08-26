@@ -1619,23 +1619,27 @@ function aiLabReset() {
 }
 
 async function runHfDetect() {
-  const text = (document.getElementById("ai-lab-input")?.value || "").trim();
+  const text     = (document.getElementById("ai-lab-input")?.value || "").trim();
+  const hfKey    = (document.getElementById("ai-lab-hf-key")?.value || "").trim();
+  const colabUrl = (document.getElementById("ai-lab-colab-url")?.value || "").trim();
+
   if (!text) { showToast("Please paste some text first.", "error"); return; }
   if (text.length < 50) { showToast("Text must be at least 50 characters.", "error"); return; }
 
-  const hfKey = (document.getElementById("ai-lab-hf-key")?.value || "").trim();
   const btn = document.getElementById("ai-lab-detect-btn");
-
   if (btn) btn.disabled = true;
   _aiLabShowState("ai-lab-loading");
 
   try {
-    const res = await fetch("/api/hf-detect", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, hf_key: hfKey || undefined }),
-    });
+    const payload = { text };
+    if (hfKey)    payload.hf_key    = hfKey;
+    if (colabUrl) payload.colab_url = colabUrl;   // UI override (server ignores this — .env takes priority)
 
+    const res  = await fetch("/api/hf-detect", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify(payload),
+    });
     const data = await res.json();
 
     if (!res.ok) {
@@ -1645,31 +1649,32 @@ async function runHfDetect() {
       return;
     }
 
-    // Fill results
+    // Verdict badge
     const badge = document.getElementById("ai-lab-verdict-badge");
     badge.textContent = data.verdict === "AI" ? "AI-Generated" : "Human";
-    badge.className = "ai-verdict-badge " + (data.verdict === "AI" ? "verdict-ai" : "verdict-human");
+    badge.className   = "ai-verdict-badge " + (data.verdict === "AI" ? "verdict-ai" : "verdict-human");
 
-    document.getElementById("ai-lab-label").textContent =
-      data.verdict === "AI"
-        ? `This text is very likely written by an AI (${data.ai_probability}% confidence)`
-        : `This text appears to be human-written (${data.human_probability}% confidence)`;
+    // Label + model source
+    const modelName = data.model || "AI Detector";
+    document.getElementById("ai-lab-label").innerHTML =
+      (data.verdict === "AI"
+        ? `AI text detected with <strong>${data.ai_probability}%</strong> confidence`
+        : `Likely human-written with <strong>${data.human_probability}%</strong> confidence`)
+      + `<br><span style="font-size:11px;opacity:0.6;margin-top:4px;display:block;">via ${modelName}</span>`;
 
-    document.getElementById("ai-lab-ai-pct").textContent   = `${data.ai_probability}%`;
+    // Probability numbers
+    document.getElementById("ai-lab-ai-pct").textContent    = `${data.ai_probability}%`;
     document.getElementById("ai-lab-human-pct").textContent = `${data.human_probability}%`;
 
-    // Animate bars (short delay so CSS transition triggers)
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const aiBar = document.getElementById("ai-lab-ai-bar");
-        const hBar  = document.getElementById("ai-lab-human-bar");
-        if (aiBar) aiBar.style.width  = `${data.ai_probability}%`;
-        if (hBar)  hBar.style.width   = `${data.human_probability}%`;
-      });
-    });
+    // Animate bars
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const aiBar = document.getElementById("ai-lab-ai-bar");
+      const hBar  = document.getElementById("ai-lab-human-bar");
+      if (aiBar) aiBar.style.width = `${data.ai_probability}%`;
+      if (hBar)  hBar.style.width  = `${data.human_probability}%`;
+    }));
 
     document.getElementById("ai-lab-raw").textContent = JSON.stringify(data.raw, null, 2);
-
     _aiLabShowState("ai-lab-results");
 
   } catch (err) {

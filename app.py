@@ -56,6 +56,8 @@ def get_env_vars() -> dict:
         "SIMPLIFY_PASSWORD": "",
         "BASE_RESUME_PATH": "base_resume.json",
         "OUTPUT_DIR": str(OUTPUT_DIR),
+        "HF_API_KEY": "",
+        "COLAB_DETECTOR_URL": "",
     }
 
     if ENV_PATH.exists():
@@ -79,6 +81,7 @@ def write_env_vars(env_vars: dict):
     lines.append(f"BASE_RESUME_PATH={env_vars.get('BASE_RESUME_PATH', 'base_resume.json')}")
     lines.append(f"OUTPUT_DIR={env_vars.get('OUTPUT_DIR', str(OUTPUT_DIR))}")
     lines.append(f"HF_API_KEY={env_vars.get('HF_API_KEY', '')}")
+    lines.append(f"COLAB_DETECTOR_URL={env_vars.get('COLAB_DETECTOR_URL', '')}")
 
     with open(ENV_PATH, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
@@ -91,33 +94,85 @@ def write_env_vars(env_vars: dict):
 @app.route("/api/hf-detect", methods=["POST"])
 def hf_detect():
     """
-    Calls PirateXX/AI-Content-Detector via HuggingFace Inference Providers router.
-    Uses router.huggingface.co (api-inference subdomain may be DNS-blocked on some networks).
+    AI Lab detector — two modes (auto-selected):
+
+    MODE A — Colab (Oxidane/tmr-ai-text-detector, RAID-trained RoBERTa):
+      Set COLAB_DETECTOR_URL=https://xxxx.gradio.live in .env
+      The Colab notebook calls /run/predict on the Gradio interface.
+
+    MODE B — HuggingFace API (PirateXX/AI-Content-Detector, fallback):
+      Requires HF_API_KEY in .env.
+      Uses router.huggingface.co (works where api-inference subdomain is blocked).
+
     Completely isolated from the ATS resume pipeline.
     """
     import httpx
 
-    body = request.get_json(silent=True) or {}
-    text = (body.get("text") or "").strip()
+    body      = request.get_json(silent=True) or {}
+    text      = (body.get("text") or "").strip()
+    hf_key_ui = (body.get("hf_key") or "").strip()
+
     if not text:
         return jsonify({"error": "No text provided"}), 400
     if len(text) < 50:
         return jsonify({"error": "Text too short — please enter at least 50 characters"}), 400
 
-    # Resolve HF key: body override → .env → env var
-    hf_key = (
-        body.get("hf_key")
-        or get_env_vars().get("HF_API_KEY")
-        or os.environ.get("HF_API_KEY", "")
-    ).strip()
+    env = get_env_vars()
+    colab_url = (env.get("COLAB_DETECTOR_URL") or os.environ.get("COLAB_DETECTOR_URL", "")).strip().rstrip("/")
+
+    # ── MODE A: Colab Gradio endpoint (Oxidane/tmr-ai-text-detector) ──────────
+    if colab_url:
+        # Gradio exposes the fn at /run/predict  (fn_index=0 = first Interface)
+        predict_url = f"{colab_url}/run/predict"
+        try:
+            resp = httpx.post(
+                predict_url,
+                json={"data": [text]},
+                timeout=60.0,
+            )
+        except Exception as exc:
+            return jsonify({
+                "error": f"Cannot reach Colab server at {colab_url}. Is the notebook still running? ({exc})"
+            }), 500
+
+        if resp.status_code != 200:
+            return jsonify({
+                "error": f"Colab server error {resp.status_code}",
+                "detail": resp.text,
+            }), resp.status_code
+
+        try:
+            result = resp.json()
+            # Gradio wraps output as {"data": [...]}
+            payload = result.get("data", [result])[0]
+            if isinstance(payload, str):
+                import json as _json
+                payload = _json.loads(payload)
+        except Exception:
+            return jsonify({"error": "Bad response from Colab server", "raw_text": resp.text}), 502
+
+        ai_prob    = float(payload.get("ai_probability",    50.0))
+        human_prob = float(payload.get("human_probability", 50.0))
+        verdict    = payload.get("verdict", "AI" if ai_prob >= 50 else "Human")
+        label      = payload.get("label",   "AI-Generated" if verdict == "AI" else "Likely Human")
+
+        return jsonify({
+            "ai_probability":    round(ai_prob, 1),
+            "human_probability": round(human_prob, 1),
+            "verdict":  verdict,
+            "label":    label,
+            "model":    "Oxidane/tmr-ai-text-detector (Colab)",
+            "raw":      payload,
+        })
+
+    # ── MODE B: HuggingFace router (PirateXX/AI-Content-Detector, fallback) ──
+    hf_key = (hf_key_ui or env.get("HF_API_KEY") or os.environ.get("HF_API_KEY", "")).strip()
     if not hf_key:
         return jsonify({
-            "error": "HuggingFace API key not set. Add HF_API_KEY to your .env or enter it in the UI."
+            "error": "No detector configured. Either set COLAB_DETECTOR_URL (recommended) or HF_API_KEY in your .env."
         }), 401
 
-    # Use the HF Inference Providers router endpoint (works where api-inference subdomain is blocked)
     api_url = "https://router.huggingface.co/hf-inference/models/PirateXX/AI-Content-Detector"
-
     try:
         resp = httpx.post(
             api_url,
@@ -132,44 +187,28 @@ def hf_detect():
 
     if resp.status_code == 503:
         return jsonify({
-            "error": "Model is loading on HuggingFace (cold start) — wait ~20 seconds and retry.",
+            "error": "Model loading on HuggingFace (cold start) — wait ~20s and retry.",
             "detail": resp.text,
         }), 503
-
     if resp.status_code != 200:
-        return jsonify({
-            "error": f"HuggingFace API error {resp.status_code}",
-            "detail": resp.text,
-        }), resp.status_code
+        return jsonify({"error": f"HuggingFace API error {resp.status_code}", "detail": resp.text}), resp.status_code
 
     try:
         raw = resp.json()
     except Exception:
         return jsonify({"error": "Invalid JSON from HuggingFace", "raw_text": resp.text}), 502
 
-    # Flatten nested list if needed: [[{...}]] -> [{...}]
     scores = raw
     if isinstance(scores, list) and scores and isinstance(scores[0], list):
         scores = scores[0]
-
     if not isinstance(scores, list):
         return jsonify({"error": "Unexpected response shape", "raw": raw}), 502
 
-    # Build label map (case-insensitive)
-    label_map = {}
-    for item in scores:
-        lbl = (item.get("label") or "").strip().lower()
-        label_map[lbl] = item.get("score", 0.0)
-
-    # Label mappings this model uses:
-    #   "fake"    or "label_1" = AI-generated
-    #   "real"    or "label_0" = Human-written
-    ai_prob    = label_map.get("fake",    label_map.get("label_1", label_map.get("ai",    0.0)))
-    human_prob = label_map.get("real",    label_map.get("label_0", label_map.get("human", 0.0)))
-
+    label_map = {(item.get("label") or "").strip().lower(): item.get("score", 0.0) for item in scores}
+    ai_prob    = label_map.get("fake",  label_map.get("label_1", label_map.get("ai",    0.0)))
+    human_prob = label_map.get("real",  label_map.get("label_0", label_map.get("human", 0.0)))
     if ai_prob + human_prob == 0:
-        ai_prob    = 0.5
-        human_prob = 0.5
+        ai_prob = human_prob = 0.5
 
     verdict = "AI"    if ai_prob >= 0.5 else "Human"
     label   = "AI-Generated" if verdict == "AI" else "Likely Human"
@@ -179,6 +218,7 @@ def hf_detect():
         "human_probability": round(human_prob * 100, 1),
         "verdict":  verdict,
         "label":    label,
+        "model":    "PirateXX/AI-Content-Detector (HuggingFace)",
         "raw":      raw,
     })
 

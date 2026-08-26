@@ -627,7 +627,7 @@
           <div class="config-field" style="margin-top:18px;">
             <label class="config-label" for="ai-lab-hf-key">
               <i class="fa-brands fa-huggingface" style="color:#f59e0b;"></i>
-              HuggingFace API Key <span style="color:var(--text-muted); font-weight:400;">(optional if set in .env)</span>
+              HuggingFace API Key <span style="color:var(--text-muted); font-weight:400;">(fallback model — optional if set in .env)</span>
             </label>
             <input
               type="password"
@@ -636,6 +636,21 @@
               placeholder="hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
               autocomplete="off"
             >
+          </div>
+
+          <div class="config-field" style="margin-top:14px;">
+            <label class="config-label" for="ai-lab-colab-url">
+              <i class="fa-solid fa-flask" style="color:#10b981;"></i>
+              Colab API URL <span style="color:var(--text-muted); font-weight:400;">(Oxidane model — priority if set in .env or here)</span>
+            </label>
+            <input
+              type="text"
+              id="ai-lab-colab-url"
+              class="config-input"
+              placeholder="https://xxxx.gradio.live"
+              autocomplete="off"
+            >
+            <div style="font-size:11px; color:var(--text-muted); margin-top:5px;">Run <code>TMR_AI_Detector_Colab.ipynb</code> in Google Colab and paste the public URL here</div>
           </div>
 
           <button class="btn btn-primary" id="ai-lab-detect-btn" onclick="runHfDetect()" style="width:100%; margin-top:20px; font-size:15px; padding:14px;">
