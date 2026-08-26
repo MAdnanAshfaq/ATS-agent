@@ -48,6 +48,9 @@
         <button class="nav-tab" data-tab="resume">
           <i class="fa-solid fa-file-user"></i> Master Resume
         </button>
+        <button class="nav-tab" data-tab="ai-lab">
+          <i class="fa-solid fa-flask-vial"></i> AI Lab <span class="tab-badge tab-badge-hf">HF</span>
+        </button>
       </nav>
 
       <!-- System Readiness Indicator -->
@@ -578,6 +581,152 @@
       <!-- Raw JSON Editor (Hidden by default) -->
       <div class="glass-card editor-card hidden" id="json-editor-card">
         <textarea id="resume-json-editor" class="code-textarea" spellcheck="false"></textarea>
+      </div>
+    </section>
+
+    <!-- ── TAB 5: AI LAB — HuggingFace Detector ──────────────────────────── -->
+    <section class="tab-content" id="tab-ai-lab">
+      <div class="hero-section" style="margin-bottom:24px;">
+        <h1 class="hero-title">AI <span class="gradient-text">Content Lab</span></h1>
+        <p class="hero-subtitle">
+          Standalone AI vs Human text detector powered by
+          <a href="https://huggingface.co/PirateXX/AI-Content-Detector" target="_blank" style="color:var(--accent-cyan);text-decoration:none;">
+            PirateXX/AI-Content-Detector
+          </a>
+          on HuggingFace. Zero connection to the ATS pipeline.
+        </p>
+      </div>
+
+      <div class="ai-lab-grid">
+
+        <!-- Left — Input & Config -->
+        <div class="glass-card ai-lab-input-card">
+          <div class="section-header" style="margin-bottom:20px;">
+            <div class="section-icon" style="background:linear-gradient(135deg,#f59e0b,#ef4444);"><i class="fa-solid fa-flask-vial"></i></div>
+            <div>
+              <div class="section-title">Text to Analyze</div>
+              <div class="section-sub">Paste any paragraph, resume bullet, email, or essay</div>
+            </div>
+          </div>
+
+          <textarea
+            id="ai-lab-input"
+            class="code-textarea"
+            style="min-height:220px; font-family:var(--font-body); font-size:14px; line-height:1.6; resize:vertical;"
+            placeholder="Paste your text here (minimum 50 characters)...&#10;&#10;Tip: try a bullet point from a generated resume vs your own writing."
+          ></textarea>
+
+          <div style="margin-top:14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <span id="ai-lab-charcount" style="font-size:12px; color:var(--text-muted);">0 characters</span>
+            <button class="btn btn-outline btn-sm" onclick="aiLabClear()" style="margin-left:auto;">
+              <i class="fa-solid fa-eraser"></i> Clear
+            </button>
+          </div>
+
+          <!-- HF Key Override (optional if already in .env) -->
+          <div class="config-field" style="margin-top:18px;">
+            <label class="config-label" for="ai-lab-hf-key">
+              <i class="fa-brands fa-huggingface" style="color:#f59e0b;"></i>
+              HuggingFace API Key <span style="color:var(--text-muted); font-weight:400;">(optional if set in .env)</span>
+            </label>
+            <input
+              type="password"
+              id="ai-lab-hf-key"
+              class="config-input"
+              placeholder="hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              autocomplete="off"
+            >
+          </div>
+
+          <button class="btn btn-primary" id="ai-lab-detect-btn" onclick="runHfDetect()" style="width:100%; margin-top:20px; font-size:15px; padding:14px;">
+            <i class="fa-solid fa-magnifying-glass-chart"></i> Analyze Text
+          </button>
+        </div>
+
+        <!-- Right — Results -->
+        <div class="glass-card ai-lab-result-card" id="ai-lab-result-panel">
+
+          <!-- Idle state -->
+          <div id="ai-lab-idle" style="text-align:center; padding:60px 20px; color:var(--text-muted);">
+            <i class="fa-solid fa-microscope" style="font-size:48px; opacity:0.3; margin-bottom:16px; display:block;"></i>
+            <p style="font-size:15px;">Results will appear here after analysis</p>
+          </div>
+
+          <!-- Loading state -->
+          <div id="ai-lab-loading" class="hidden" style="text-align:center; padding:60px 20px;">
+            <i class="fa-solid fa-spinner fa-spin text-cyan" style="font-size:40px; margin-bottom:16px; display:block;"></i>
+            <p style="color:var(--text-muted); font-size:14px;">Calling HuggingFace API...</p>
+            <p style="color:var(--text-muted); font-size:12px; margin-top:6px;">First call may take ~20s if model is cold-starting</p>
+          </div>
+
+          <!-- Result state -->
+          <div id="ai-lab-results" class="hidden">
+            <!-- Big verdict badge -->
+            <div style="text-align:center; margin-bottom:28px;">
+              <div id="ai-lab-verdict-badge" class="ai-verdict-badge"></div>
+              <div id="ai-lab-label" style="font-size:13px; color:var(--text-muted); margin-top:8px;"></div>
+            </div>
+
+            <!-- Probability bars -->
+            <div style="margin-bottom:24px;">
+              <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                <span style="font-size:13px; color:#ef4444; font-weight:600;"><i class="fa-solid fa-robot"></i> AI-Generated</span>
+                <span id="ai-lab-ai-pct" style="font-size:13px; font-weight:700; color:#ef4444;"></span>
+              </div>
+              <div class="ai-bar-track">
+                <div id="ai-lab-ai-bar" class="ai-bar-fill ai-bar-red"></div>
+              </div>
+
+              <div style="display:flex; justify-content:space-between; margin-bottom:6px; margin-top:14px;">
+                <span style="font-size:13px; color:#10b981; font-weight:600;"><i class="fa-solid fa-user-pen"></i> Human-Written</span>
+                <span id="ai-lab-human-pct" style="font-size:13px; font-weight:700; color:#10b981;"></span>
+              </div>
+              <div class="ai-bar-track">
+                <div id="ai-lab-human-bar" class="ai-bar-fill ai-bar-green"></div>
+              </div>
+            </div>
+
+            <!-- Raw model output accordion -->
+            <details style="margin-top:8px;">
+              <summary style="font-size:12px; color:var(--text-muted); cursor:pointer; user-select:none; margin-bottom:8px;">
+                <i class="fa-solid fa-code"></i> Raw Model Output
+              </summary>
+              <pre id="ai-lab-raw" style="font-size:11px; color:var(--text-muted); background:rgba(0,0,0,0.25); padding:12px; border-radius:8px; overflow:auto; max-height:140px; white-space:pre-wrap;"></pre>
+            </details>
+
+            <button class="btn btn-outline btn-sm" onclick="aiLabReset()" style="margin-top:16px; width:100%;">
+              <i class="fa-solid fa-rotate-left"></i> Analyze Another
+            </button>
+          </div>
+
+          <!-- Error state -->
+          <div id="ai-lab-error" class="hidden" style="padding:20px;">
+            <div class="alert-card alert-error">
+              <div class="alert-icon"><i class="fa-solid fa-circle-exclamation"></i></div>
+              <div class="alert-content">
+                <h4>Detection Failed</h4>
+                <p id="ai-lab-error-msg"></p>
+              </div>
+            </div>
+            <button class="btn btn-outline btn-sm" onclick="aiLabReset()" style="margin-top:12px;">
+              <i class="fa-solid fa-rotate-left"></i> Try Again
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Info Note -->
+      <div class="glass-card" style="margin-top:20px; padding:18px 24px; display:flex; gap:14px; align-items:flex-start;">
+        <i class="fa-solid fa-circle-info" style="color:var(--accent-cyan); font-size:18px; margin-top:2px; flex-shrink:0;"></i>
+        <div style="font-size:13px; color:var(--text-muted); line-height:1.7;">
+          <strong style="color:var(--text-primary);">About this model:</strong>
+          PirateXX/AI-Content-Detector is a RoBERTa-based classifier fine-tuned to distinguish AI-generated text from human writing.
+          Labels: <code>Fake</code> = AI-generated, <code>Real</code> = Human.
+          The model uses HuggingFace Inference API — your text is sent securely to HuggingFace's servers (not to Gemini, not to the ATS pipeline).
+          <br><br>
+          <strong style="color:var(--text-primary);">HF Key:</strong> Add <code>HF_API_KEY=hf_xxxx</code> to your <code>.env</code> file to avoid entering it each time.
+        </div>
       </div>
     </section>
 

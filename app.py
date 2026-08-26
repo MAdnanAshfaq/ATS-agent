@@ -78,9 +78,112 @@ def write_env_vars(env_vars: dict):
     lines.append(f"SIMPLIFY_PASSWORD={env_vars.get('SIMPLIFY_PASSWORD', '')}")
     lines.append(f"BASE_RESUME_PATH={env_vars.get('BASE_RESUME_PATH', 'base_resume.json')}")
     lines.append(f"OUTPUT_DIR={env_vars.get('OUTPUT_DIR', str(OUTPUT_DIR))}")
+    lines.append(f"HF_API_KEY={env_vars.get('HF_API_KEY', '')}")
 
     with open(ENV_PATH, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  AI LAB — HuggingFace AI Content Detector  (standalone, isolated from ATS)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/hf-detect", methods=["POST"])
+def hf_detect():
+    """
+    Calls PirateXX/AI-Content-Detector on HuggingFace Inference API.
+    Completely isolated from the ATS resume pipeline.
+    Expects JSON: { "text": "...", "hf_key": "..." (optional override) }
+    Returns:      { "ai_probability": 0.92, "human_probability": 0.08,
+                    "verdict": "AI", "label": "AI-Generated",
+                    "raw": [...] }
+    """
+    import urllib.request
+    import urllib.error
+
+    body = request.get_json(silent=True) or {}
+    text = (body.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "No text provided"}), 400
+    if len(text) < 50:
+        return jsonify({"error": "Text too short — please enter at least 50 characters"}), 400
+
+    # Resolve HF key: body override → .env → env var
+    hf_key = (
+        body.get("hf_key")
+        or get_env_vars().get("HF_API_KEY")
+        or os.environ.get("HF_API_KEY", "")
+    ).strip()
+    if not hf_key:
+        return jsonify({
+            "error": "HuggingFace API key not set. Add HF_API_KEY to your .env or enter it in the UI."
+        }), 401
+
+    api_url = "https://api-inference.huggingface.co/models/PirateXX/AI-Content-Detector"
+    payload = json.dumps({"inputs": text}).encode("utf-8")
+    req = urllib.request.Request(
+        api_url,
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {hf_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw_body = resp.read().decode("utf-8")
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode("utf-8", errors="replace")
+        if e.code == 503:
+            return jsonify({
+                "error": "Model is loading on HuggingFace (cold start) — wait ~20 seconds and retry.",
+                "detail": err_body,
+            }), 503
+        return jsonify({"error": f"HuggingFace API error {e.code}", "detail": err_body}), e.code
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    try:
+        raw = json.loads(raw_body)
+    except Exception:
+        return jsonify({"error": "Invalid JSON from HuggingFace", "raw_text": raw_body}), 502
+
+    # The model returns [[{"label": "Real", "score": 0.08}, {"label": "Fake", "score": 0.92}]]
+    # Normalise into a flat dict regardless of nesting
+    scores = raw
+    if isinstance(scores, list) and scores and isinstance(scores[0], list):
+        scores = scores[0]
+
+    if not isinstance(scores, list):
+        return jsonify({"error": "Unexpected response shape", "raw": raw}), 502
+
+    label_map = {}
+    for item in scores:
+        lbl = (item.get("label") or "").strip().lower()
+        label_map[lbl] = item.get("score", 0.0)
+
+    # "Fake" = AI-generated,  "Real" = Human-written
+    ai_prob    = label_map.get("fake", label_map.get("ai", 0.0))
+    human_prob = label_map.get("real", label_map.get("human", 0.0))
+
+    if ai_prob + human_prob == 0:
+        ai_prob = 0.5
+        human_prob = 0.5
+
+    verdict = "AI" if ai_prob >= 0.5 else "Human"
+    label   = "AI-Generated" if verdict == "AI" else "Likely Human"
+
+    return jsonify({
+        "ai_probability":    round(ai_prob * 100, 1),
+        "human_probability": round(human_prob * 100, 1),
+        "verdict":  verdict,
+        "label":    label,
+        "raw":      raw,
+    })
+
+
 
 
 @app.route("/")

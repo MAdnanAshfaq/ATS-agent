@@ -1581,3 +1581,101 @@ function closeCoverLetterModal() {
   document.getElementById("cover-letter-modal").classList.add("hidden");
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════
+   AI LAB — HuggingFace Detector  (completely isolated from ATS pipeline)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+// Live character counter
+document.addEventListener("DOMContentLoaded", () => {
+  const inp = document.getElementById("ai-lab-input");
+  if (inp) {
+    inp.addEventListener("input", () => {
+      const count = inp.value.length;
+      const el = document.getElementById("ai-lab-charcount");
+      if (el) {
+        el.textContent = `${count.toLocaleString()} characters`;
+        el.style.color = count < 50 ? "#ef4444" : "var(--text-muted)";
+      }
+    });
+  }
+});
+
+function _aiLabShowState(state) {
+  ["ai-lab-idle", "ai-lab-loading", "ai-lab-results", "ai-lab-error"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle("hidden", id !== state);
+  });
+}
+
+function aiLabClear() {
+  const inp = document.getElementById("ai-lab-input");
+  if (inp) { inp.value = ""; inp.dispatchEvent(new Event("input")); }
+  _aiLabShowState("ai-lab-idle");
+}
+
+function aiLabReset() {
+  _aiLabShowState("ai-lab-idle");
+}
+
+async function runHfDetect() {
+  const text = (document.getElementById("ai-lab-input")?.value || "").trim();
+  if (!text) { showToast("Please paste some text first.", "error"); return; }
+  if (text.length < 50) { showToast("Text must be at least 50 characters.", "error"); return; }
+
+  const hfKey = (document.getElementById("ai-lab-hf-key")?.value || "").trim();
+  const btn = document.getElementById("ai-lab-detect-btn");
+
+  if (btn) btn.disabled = true;
+  _aiLabShowState("ai-lab-loading");
+
+  try {
+    const res = await fetch("/api/hf-detect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, hf_key: hfKey || undefined }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      document.getElementById("ai-lab-error-msg").textContent =
+        data.error || `Server error ${res.status}`;
+      _aiLabShowState("ai-lab-error");
+      return;
+    }
+
+    // Fill results
+    const badge = document.getElementById("ai-lab-verdict-badge");
+    badge.textContent = data.verdict === "AI" ? "AI-Generated" : "Human";
+    badge.className = "ai-verdict-badge " + (data.verdict === "AI" ? "verdict-ai" : "verdict-human");
+
+    document.getElementById("ai-lab-label").textContent =
+      data.verdict === "AI"
+        ? `This text is very likely written by an AI (${data.ai_probability}% confidence)`
+        : `This text appears to be human-written (${data.human_probability}% confidence)`;
+
+    document.getElementById("ai-lab-ai-pct").textContent   = `${data.ai_probability}%`;
+    document.getElementById("ai-lab-human-pct").textContent = `${data.human_probability}%`;
+
+    // Animate bars (short delay so CSS transition triggers)
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const aiBar = document.getElementById("ai-lab-ai-bar");
+        const hBar  = document.getElementById("ai-lab-human-bar");
+        if (aiBar) aiBar.style.width  = `${data.ai_probability}%`;
+        if (hBar)  hBar.style.width   = `${data.human_probability}%`;
+      });
+    });
+
+    document.getElementById("ai-lab-raw").textContent = JSON.stringify(data.raw, null, 2);
+
+    _aiLabShowState("ai-lab-results");
+
+  } catch (err) {
+    document.getElementById("ai-lab-error-msg").textContent = err.message || "Network error";
+    _aiLabShowState("ai-lab-error");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
