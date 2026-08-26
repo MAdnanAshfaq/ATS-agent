@@ -381,7 +381,15 @@ def download_file(filepath):
             except Exception as e:
                 print(f"[Download] On-the-fly PDF conversion error: {e}")
 
-    # 5. If .json requested (e.g. Haseeb_Khan_Resume.json) but not found, fallback to base_resume.json
+    # 5. If Cover Letter requested with any name, find any Cover_Letter in the target subfolder or output directory
+    if not target_path.exists() and "cover_letter" in clean_fp.lower():
+        subfolder = Path(clean_fp).parent
+        search_dir = (OUTPUT_DIR / subfolder).resolve() if (OUTPUT_DIR / subfolder).exists() else OUTPUT_DIR
+        cl_matches = list(search_dir.rglob("*Cover_Letter*.docx")) or list(OUTPUT_DIR.rglob("*Cover_Letter*.docx"))
+        if cl_matches:
+            target_path = cl_matches[0].resolve()
+
+    # 6. If .json requested (e.g. Haseeb_Khan_Resume.json) but not found, fallback to base_resume.json
     if not target_path.exists() and clean_fp.lower().endswith(".json"):
         if (BASE_DIR / "base_resume.json").exists():
             target_path = (BASE_DIR / "base_resume.json").resolve()
@@ -547,7 +555,7 @@ def generate_cover_letter_api():
             output_dir=str(target_dir),
         )
 
-        rel_docx = os.path.relpath(res["file_path_docx"], str(OUTPUT_DIR)) if res.get("file_path_docx") else ""
+        rel_docx = os.path.relpath(res["file_path_docx"], str(OUTPUT_DIR)).replace("\\", "/") if res.get("file_path_docx") else ""
 
         return jsonify({
             "success": True,

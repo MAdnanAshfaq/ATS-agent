@@ -1460,10 +1460,19 @@ async function openCurrentCoverLetter() {
   const url = document.getElementById("job-url") ? document.getElementById("job-url").value.trim() : "";
   window.currentCoverLetterParams = { company, role, keywords: window.lastResult.newly_added || [], url };
 
+  function _getCoverLetterRelPath(baseRel) {
+    if (!baseRel) return "";
+    let clean = baseRel.replace(/\\/g, "/");
+    if (clean.toLowerCase().includes("resume.docx")) {
+      return clean.replace(/_Resume\.docx$/i, "_Cover_Letter.docx").replace(/Resume\.docx$/i, "Cover_Letter.docx");
+    }
+    return clean.replace(/[^\/]+\.docx$/i, (m) => m.replace(/resume/i, "Cover_Letter"));
+  }
+
   if (window.lastResult.cover_letter_text) {
     textarea.value = window.lastResult.cover_letter_text;
     const downloadDocx = document.getElementById("cl-modal-docx-download");
-    const coverLetterRel = relPath ? relPath.replace(/[^\/\\]+\.docx$/i, "Jalal_Khan_Cover_Letter.docx") : "";
+    const coverLetterRel = _getCoverLetterRelPath(relPath);
     downloadDocx.href = `/api/download/${coverLetterRel}`;
     return;
   }
@@ -1479,7 +1488,7 @@ async function openCurrentCoverLetter() {
     if (data.success) {
       textarea.value = data.cover_letter_text;
       window.lastResult.cover_letter_text = data.cover_letter_text;
-      document.getElementById("cl-modal-docx-download").href = `/api/download/${data.relative_docx}`;
+      document.getElementById("cl-modal-docx-download").href = `/api/download/${data.relative_docx || _getCoverLetterRelPath(relPath)}`;
     } else {
       textarea.value = `Failed to generate cover letter: ${data.error}`;
     }
@@ -1497,7 +1506,16 @@ async function generateOrViewHistoryCoverLetter(company, role, relativePath, url
   const textarea = document.getElementById("cl-modal-textarea");
   textarea.value = "Generating recruiter-targeting AI cover letter...";
 
-  const coverLetterRel = relativePath ? relativePath.replace(/[^\/\\]+\.docx$/i, "Jalal_Khan_Cover_Letter.docx") : "";
+  function _getCoverLetterRelPath(baseRel) {
+    if (!baseRel) return "";
+    let clean = baseRel.replace(/\\/g, "/");
+    if (clean.toLowerCase().includes("resume.docx")) {
+      return clean.replace(/_Resume\.docx$/i, "_Cover_Letter.docx").replace(/Resume\.docx$/i, "Cover_Letter.docx");
+    }
+    return clean.replace(/[^\/]+\.docx$/i, (m) => m.replace(/resume/i, "Cover_Letter"));
+  }
+
+  const coverLetterRel = _getCoverLetterRelPath(relativePath);
   document.getElementById("cl-modal-docx-download").href = `/api/download/${coverLetterRel}`;
 
   window.currentCoverLetterParams = { company, role, keywords: [], url, isHistory: true };
@@ -1511,7 +1529,7 @@ async function generateOrViewHistoryCoverLetter(company, role, relativePath, url
     const data = await res.json();
     if (data.success) {
       textarea.value = data.cover_letter_text;
-      document.getElementById("cl-modal-docx-download").href = `/api/download/${data.relative_docx}`;
+      document.getElementById("cl-modal-docx-download").href = `/api/download/${data.relative_docx || coverLetterRel}`;
     } else {
       textarea.value = `Failed to generate cover letter: ${data.error}`;
     }
