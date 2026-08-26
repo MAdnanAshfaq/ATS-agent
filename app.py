@@ -91,9 +91,9 @@ def write_env_vars(env_vars: dict):
 @app.route("/api/hf-detect", methods=["POST"])
 def hf_detect():
     """
-    Calls PirateXX/AI-Content-Detector on HuggingFace Inference API.
+    Calls PirateXX/AI-Content-Detector via HuggingFace Inference Providers router.
+    Uses router.huggingface.co (api-inference subdomain may be DNS-blocked on some networks).
     Completely isolated from the ATS resume pipeline.
-    Uses httpx (already in requirements.txt) — resolves Windows urllib DNS issues.
     """
     import httpx
 
@@ -115,7 +115,8 @@ def hf_detect():
             "error": "HuggingFace API key not set. Add HF_API_KEY to your .env or enter it in the UI."
         }), 401
 
-    api_url = "https://api-inference.huggingface.co/models/PirateXX/AI-Content-Detector"
+    # Use the HF Inference Providers router endpoint (works where api-inference subdomain is blocked)
+    api_url = "https://router.huggingface.co/hf-inference/models/PirateXX/AI-Content-Detector"
 
     try:
         resp = httpx.post(
@@ -125,7 +126,7 @@ def hf_detect():
             timeout=30.0,
         )
     except httpx.ConnectError as exc:
-        return jsonify({"error": f"Cannot reach HuggingFace — check internet connection. ({exc})"}), 500
+        return jsonify({"error": f"Cannot reach HuggingFace router. ({exc})"}), 500
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -146,8 +147,7 @@ def hf_detect():
     except Exception:
         return jsonify({"error": "Invalid JSON from HuggingFace", "raw_text": resp.text}), 502
 
-    # The model returns [[{"label": "Real", "score": 0.08}, {"label": "Fake", "score": 0.92}]]
-    # Normalise regardless of nesting depth
+    # Flatten nested list if needed: [[{...}]] -> [{...}]
     scores = raw
     if isinstance(scores, list) and scores and isinstance(scores[0], list):
         scores = scores[0]
@@ -155,20 +155,23 @@ def hf_detect():
     if not isinstance(scores, list):
         return jsonify({"error": "Unexpected response shape", "raw": raw}), 502
 
+    # Build label map (case-insensitive)
     label_map = {}
     for item in scores:
         lbl = (item.get("label") or "").strip().lower()
         label_map[lbl] = item.get("score", 0.0)
 
-    # "Fake" = AI-generated,  "Real" = Human-written
-    ai_prob    = label_map.get("fake", label_map.get("ai", 0.0))
-    human_prob = label_map.get("real", label_map.get("human", 0.0))
+    # Label mappings this model uses:
+    #   "fake"    or "label_1" = AI-generated
+    #   "real"    or "label_0" = Human-written
+    ai_prob    = label_map.get("fake",    label_map.get("label_1", label_map.get("ai",    0.0)))
+    human_prob = label_map.get("real",    label_map.get("label_0", label_map.get("human", 0.0)))
 
     if ai_prob + human_prob == 0:
-        ai_prob = 0.5
+        ai_prob    = 0.5
         human_prob = 0.5
 
-    verdict = "AI" if ai_prob >= 0.5 else "Human"
+    verdict = "AI"    if ai_prob >= 0.5 else "Human"
     label   = "AI-Generated" if verdict == "AI" else "Likely Human"
 
     return jsonify({
