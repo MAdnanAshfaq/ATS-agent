@@ -93,13 +93,9 @@ def hf_detect():
     """
     Calls PirateXX/AI-Content-Detector on HuggingFace Inference API.
     Completely isolated from the ATS resume pipeline.
-    Expects JSON: { "text": "...", "hf_key": "..." (optional override) }
-    Returns:      { "ai_probability": 0.92, "human_probability": 0.08,
-                    "verdict": "AI", "label": "AI-Generated",
-                    "raw": [...] }
+    Uses httpx (already in requirements.txt) — resolves Windows urllib DNS issues.
     """
-    import urllib.request
-    import urllib.error
+    import httpx
 
     body = request.get_json(silent=True) or {}
     text = (body.get("text") or "").strip()
@@ -120,38 +116,38 @@ def hf_detect():
         }), 401
 
     api_url = "https://api-inference.huggingface.co/models/PirateXX/AI-Content-Detector"
-    payload = json.dumps({"inputs": text}).encode("utf-8")
-    req = urllib.request.Request(
-        api_url,
-        data=payload,
-        headers={
-            "Authorization": f"Bearer {hf_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
 
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            raw_body = resp.read().decode("utf-8")
-    except urllib.error.HTTPError as e:
-        err_body = e.read().decode("utf-8", errors="replace")
-        if e.code == 503:
-            return jsonify({
-                "error": "Model is loading on HuggingFace (cold start) — wait ~20 seconds and retry.",
-                "detail": err_body,
-            }), 503
-        return jsonify({"error": f"HuggingFace API error {e.code}", "detail": err_body}), e.code
+        resp = httpx.post(
+            api_url,
+            json={"inputs": text},
+            headers={"Authorization": f"Bearer {hf_key}"},
+            timeout=30.0,
+        )
+    except httpx.ConnectError as exc:
+        return jsonify({"error": f"Cannot reach HuggingFace — check internet connection. ({exc})"}), 500
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
+    if resp.status_code == 503:
+        return jsonify({
+            "error": "Model is loading on HuggingFace (cold start) — wait ~20 seconds and retry.",
+            "detail": resp.text,
+        }), 503
+
+    if resp.status_code != 200:
+        return jsonify({
+            "error": f"HuggingFace API error {resp.status_code}",
+            "detail": resp.text,
+        }), resp.status_code
+
     try:
-        raw = json.loads(raw_body)
+        raw = resp.json()
     except Exception:
-        return jsonify({"error": "Invalid JSON from HuggingFace", "raw_text": raw_body}), 502
+        return jsonify({"error": "Invalid JSON from HuggingFace", "raw_text": resp.text}), 502
 
     # The model returns [[{"label": "Real", "score": 0.08}, {"label": "Fake", "score": 0.92}]]
-    # Normalise into a flat dict regardless of nesting
+    # Normalise regardless of nesting depth
     scores = raw
     if isinstance(scores, list) and scores and isinstance(scores[0], list):
         scores = scores[0]
@@ -182,7 +178,6 @@ def hf_detect():
         "label":    label,
         "raw":      raw,
     })
-
 
 
 
