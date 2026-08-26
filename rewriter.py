@@ -272,9 +272,12 @@ def rewrite_resume(
             if not _validate_resume_structure(data):
                 raise ValueError(f"Missing required keys. Got: {list(data.keys())}")
 
-            # Merge with original resume (preserve contact, education, etc.)
+            # Merge with original resume (preserve contact, education, certifications, etc.)
             merged = dict(base_resume)
             merged.update(data)
+            for k in ("education", "certifications", "contact", "name", "projects"):
+                if k in base_resume and (k not in merged or not merged[k]):
+                    merged[k] = base_resume[k]
             merged.pop("_raw_text", None)
 
             # Verify keyword coverage

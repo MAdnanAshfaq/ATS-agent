@@ -700,6 +700,11 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
 
         # Step 7: Build Word Doc (patch original Canva DOCX if available, else build fresh)
         send_log(7, "Word Document", "Generating Word document...", status="working")
+        role = clean_role_title(role, company)
+        for sec in ("education", "certifications", "contact", "name", "projects"):
+            if sec in base_resume and (sec not in cleaned_resume or not cleaned_resume[sec]):
+                cleaned_resume[sec] = base_resume[sec]
+
         orig_docx_path = BASE_DIR / "master_resume_original.docx"
         if orig_docx_path.exists():
             try:

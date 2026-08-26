@@ -294,6 +294,12 @@ def run_pipeline(
 
     # ─── STEP 7: Build Word Document ──────────────────────────────────────────
     print_step(7, "Generating Word Document")
+    from scraper import clean_role_title
+    role = clean_role_title(role, company)
+    for sec in ("education", "certifications", "contact", "name", "projects"):
+        if sec in base_resume and (sec not in cleaned_resume or not cleaned_resume[sec]):
+            cleaned_resume[sec] = base_resume[sec]
+
     orig_docx_path = BASE_DIR / "master_resume_original.docx"
 
     try:

@@ -158,14 +158,15 @@ Return the full cleaned resume as valid JSON."""
             cleaned_text = _clean_json_response(raw_text)
             cleaned = json.loads(cleaned_text)
             
-            if not _validate_structure(resume, cleaned):
-                raise ValueError(
-                    f"Structure mismatch after Pass {pass_number}. "
-                    f"Original keys: {list(resume.keys())}, Cleaned keys: {list(cleaned.keys())}"
-                )
-            
+            # Merge with original input resume to guarantee non-rewritten sections (education, certs, contact, etc.) are 100% preserved
+            merged = dict(resume)
+            merged.update(cleaned)
+            for k in ("education", "certifications", "contact", "name", "projects"):
+                if k in resume and (k not in merged or not merged[k]):
+                    merged[k] = resume[k]
+
             print(f"[Detector] Pass {pass_number}: ✅ Clean JSON received (attempt {attempt})")
-            return cleaned
+            return merged
         
         except json.JSONDecodeError as e:
             print(f"[Detector] Pass {pass_number}, attempt {attempt}/{max_retries} — JSON error: {e}")

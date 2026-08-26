@@ -126,17 +126,47 @@ def clean_text(text: str) -> str:
     return "\n".join(clean_lines).strip()
 
 
-def clean_role_title(role: str) -> str:
-    """Clean job role title by removing parenthetical suffixes, brackets, location tags, etc."""
+def clean_role_title(role: str, company: str = "") -> str:
+    """Clean job role title by removing parenthetical suffixes, brackets, location tags, ATS noise words, etc."""
     if not role:
         return "Software Engineer"
-    # Remove bracketed/parenthetical text e.g. "(Databricks)", "[Remote]", "(US / Hybrid)"
+    
+    # 1. Remove bracketed / parenthetical text e.g. (Databricks), [Remote], (AI/ML)
     role = re.sub(r'[\(\[\{].*?[\)\]\}]', '', role)
-    # Remove trailing dashes or pipes or location artifacts e.g. " - Remote", " | Full Time"
-    role = re.sub(r'\s*[-–—|/]\s*(?:remote|hybrid|onsite|full[- ]?time|contract|part[- ]?time|us|usa|uk|canada|emea|latam|apac|tier\s*\d+|l\d+|level\s*\d+).*$', '', role, flags=re.IGNORECASE)
-    # Remove dangling punctuation/whitespace
+    
+    # 2. Handle prefix noise like 'Job Application for AI Engineer'
+    role = re.sub(r'^(?:job application for|job posting for|opening for|hiring for|apply for)\s+', '', role, flags=re.IGNORECASE)
+    
+    # 3. Handle 'Role at Company' or 'Role @ Company'
+    role = re.split(r'\s+(?:at|@)\s+', role, flags=re.IGNORECASE)[0]
+    
+    # 4. Handle pipes/dashes: 'AI Engineer | Careers | Tradeify' -> 'AI Engineer'
+    parts = [p.strip() for p in re.split(r'\s*[|•–—]\s*', role) if p.strip()]
+    noise_words = {
+        'careers', 'jobs', 'job', 'opportunities', 'hiring', 'apply', 'openings',
+        'working at', 'overview', 'job description', 'lever', 'greenhouse', 'ashby',
+        'workday', 'smartrecruiters', 'linkedin', 'join us', 'career', 'employment',
+        'recruitment', 'work with us', 'portal'
+    }
+    valid_parts = []
+    for p in parts:
+        p_clean = p.strip(' -–—|/,:;')
+        if p_clean.lower() in noise_words:
+            continue
+        if company and p_clean.lower() == company.lower():
+            continue
+        valid_parts.append(p_clean)
+    
+    role = valid_parts[0] if valid_parts else (parts[0] if parts else role)
+    
+    # 5. Remove trailing suffixes like '- Remote', ' - Full Time', ' - US'
+    role = re.sub(r'\s*[-–—|/]\s*(?:remote|hybrid|onsite|full[- ]?time|contract|part[- ]?time|intern|internship|us|usa|uk|canada|emea|latam|apac|tier\s*\d+|l\d+|level\s*\d+|requisition\s*#?\s*\d+|req\s*#?\s*\d+|req\d+|job\s*id\s*\d+|careers?).*$', '', role, flags=re.IGNORECASE)
+    
+    # 6. Strip leftover punctuation and spaces
     role = re.sub(r'\s+', ' ', role).strip(' -–—|/,:;')
+    
     return role or "Software Engineer"
+
 
 
 def extract_company_from_url(url: str) -> str:
