@@ -348,28 +348,53 @@ def delete_history_batch():
 
 @app.route("/api/download/<path:filepath>")
 def download_file(filepath):
-    """Download a generated resume .docx or .pdf file. Converts .docx to .pdf on the fly if needed."""
-    full_path = (OUTPUT_DIR / filepath).resolve()
+    """Download a generated resume .docx, .pdf, or .json file. Converts .docx to .pdf on the fly if needed."""
+    # Normalize slashes
+    clean_fp = filepath.replace("\\", "/").strip("/")
+    
+    # 1. Direct check inside OUTPUT_DIR
+    target_path = (OUTPUT_DIR / clean_fp).resolve()
+    
+    # 2. If not found, check inside BASE_DIR
+    if not target_path.exists():
+        candidate_base = (BASE_DIR / clean_fp).resolve()
+        if candidate_base.exists():
+            target_path = candidate_base
 
-    # If PDF requested but doesn't exist, check if DOCX exists and convert it on the fly!
-    if not full_path.exists() and filepath.lower().endswith(".pdf"):
-        docx_rel = filepath[:-4] + ".docx"
-        docx_counterpart = (OUTPUT_DIR / docx_rel).resolve()
-        if docx_counterpart.exists():
+    # 3. If still not found, search recursively inside OUTPUT_DIR by exact filename
+    if not target_path.exists():
+        fname = Path(clean_fp).name
+        matches = list(OUTPUT_DIR.rglob(fname))
+        if matches:
+            target_path = matches[0].resolve()
+
+    # 4. If PDF requested but doesn't exist, search for .docx counterpart and convert on the fly!
+    if not target_path.exists() and clean_fp.lower().endswith(".pdf"):
+        docx_name = Path(clean_fp).stem + ".docx"
+        docx_matches = list(OUTPUT_DIR.rglob(docx_name))
+        if docx_matches:
             try:
                 from resume_builder import convert_to_pdf
-                convert_to_pdf(str(docx_counterpart))
+                pdf_res = convert_to_pdf(str(docx_matches[0]))
+                if pdf_res and Path(pdf_res).exists():
+                    target_path = Path(pdf_res).resolve()
             except Exception as e:
                 print(f"[Download] On-the-fly PDF conversion error: {e}")
 
-    if not full_path.exists() or not str(full_path).startswith(str(OUTPUT_DIR.resolve())):
-        return jsonify({"error": "File not found"}), 404
+    # 5. If .json requested (e.g. Haseeb_Khan_Resume.json) but not found, fallback to base_resume.json
+    if not target_path.exists() and clean_fp.lower().endswith(".json"):
+        if (BASE_DIR / "base_resume.json").exists():
+            target_path = (BASE_DIR / "base_resume.json").resolve()
+
+    if not target_path.exists():
+        return jsonify({"error": f"File '{filepath}' not found"}), 404
 
     return send_from_directory(
-        directory=full_path.parent,
-        path=full_path.name,
+        directory=str(target_path.parent),
+        path=target_path.name,
         as_attachment=True,
     )
+
 
 
 @app.route("/api/analyze", methods=["POST"])
@@ -761,7 +786,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
         except Exception as cl_err:
             print(f"[Pipeline] Cover letter note: {cl_err}")
 
-        rel_path = os.path.relpath(doc_path, str(OUTPUT_DIR))
+        rel_path = os.path.relpath(doc_path, str(OUTPUT_DIR)).replace("\\", "/")
 
         # Save log entry
         _save_run_log(
