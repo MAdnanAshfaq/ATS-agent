@@ -91,10 +91,10 @@ def verify_dynamic_keywords(rewritten_json_output: dict, simplify_keywords: list
             missing_gaps.append(word)
             
     if missing_gaps:
-        print(f"❌ Guardrail Tripped! Missed keywords for this run: {missing_gaps}")
+        print(f"[Rewriter] [FAIL] Guardrail Tripped! Missed keywords for this run: {missing_gaps}")
         return embedded, missing_gaps
         
-    print("✅ 100% Dynamic Keyword Alignment Verified!")
+    print("[Rewriter] [OK] 100% Dynamic Keyword Alignment Verified!")
     return embedded, []
 
 
@@ -133,11 +133,11 @@ def _build_prompt(
         urgency = ""
     else:
         keyword_block = (
-            f"⚠️  CRITICAL — ATTEMPT {attempt} — The previous rewrite FAILED to embed these keywords:\n"
+            f"[CRITICAL - ATTEMPT {attempt}] The previous rewrite FAILED to embed these keywords:\n"
             + json.dumps(still_missing_from_last_attempt, indent=2)
             + "\n\nYou MUST embed ALL of the above. Check every single one before returning."
         )
-        urgency = "\n\n‼️ URGENCY LEVEL: MAXIMUM. Every keyword listed above MUST appear at least once."
+        urgency = "\n\nURGENCY LEVEL: MAXIMUM. Every keyword listed above MUST appear at least once."
 
     system_prompt = f"""You are a dynamic ATS Optimization Engine tailoring a candidate's resume for a brand-new job application.
 
@@ -147,19 +147,20 @@ DYNAMIC INPUT DATA:
 
 YOUR ARCHITECTURAL PROTOCOLS:
 
-1. IDENTIFY & ADD (Keyword & Phrase Ingestion)
-Scan the MISSING_KEYWORDS_FROM_SIMPLIFY array. 
-- For SHORT technical keywords (e.g., "Python", "Docker"): Seamlessly weave 100% of these terms into the MASTER_PROFILE experience bullets or skill categories.
-- For LONG PHRASES or sentences (e.g., "owning production enterprise systems"): Do NOT treat these as standalone skills. You MUST integrate these fully into the bullets of the candidate's MOST RECENT job experience as key achievements or responsibilities. Use the exact wording where possible.
+1. MANDATORY DUAL-LAYER KEYWORD INJECTION (Skills List + Experience Bullets):
+Every missing keyword from MISSING_KEYWORDS_FROM_SIMPLIFY MUST be reflected in BOTH of the following places:
+- A) In "skills": Include the exact technical skill, framework, cloud service, or database in the skills array.
+- B) In "experience" BULLETS: Weave each new skill/tool into at least 1–2 bullet points in the candidate's recent experience. Explicitly state HOW the tool was applied, for what architecture or pipeline, and what business/technical result was achieved (e.g., "Designed scalable streaming ingestion using Apache Kafka and Databricks Delta Live Tables, ensuring 99.9% data delivery SLA.").
+- Never just dump keywords into the skills section alone. Hiring managers and ATS parsers require contextual proof of practical usage in bullet points.
 
 2. IDENTIFY & PURGE (Remove Previous Job Stuffing)
-Start strictly from MASTER_PROFILE. If there are hyper-specific keywords from previous application runs that do NOT appear in the current missing keywords list or the master profile (e.g., niche databases or competitor tool names like "BigQuery" if this job doesn't use it), REMOVE or REPLACE them back to the clean master format. Do not carry over baggage from previous job scans.
+Start strictly from MASTER_PROFILE. If there are hyper-specific keywords from previous application runs that do NOT appear in the current missing keywords list or the master profile (e.g., niche competitor databases if this job doesn't use it), REMOVE or REPLACE them back to the clean master format. Do not carry over baggage from previous job scans.
 
-3. RESUME TRUTH CONSTRAINT
-You are only allowed to rephrase or adjust terminology (e.g., swapping "Full-Stack Engineer" to "Product Engineer" or "React Developer" if the job description demands it). Do NOT invent fake metrics, fake companies, or tools the candidate has never used.
+3. RESUME TRUTH CONSTRAINT & BULLET INTEGRITY
+You are allowed to rephrase or adjust terminology and weave in required tools naturally into candidate's experience. Maintain professional numbers, real company names, and dates. Ensure every bullet point starts with a strong action verb (e.g., "Architected", "Engineered", "Optimized", "Implemented", "Automated").
 
 4. NO AI BUZZWORDS
-Do NOT use obvious AI buzzwords like "spearheaded", "leveraged", "dynamic", "testament", "transformative", "fostered", "pivotal", "groundbreaking", "innovative", "robust", or "seamless". Use clear, active human language (e.g., "Led", "Built", "Managed", "Optimized").
+Do NOT use obvious AI buzzwords like "spearheaded", "leveraged", "dynamic", "testament", "transformative", "fostered", "pivotal", "groundbreaking", "innovative", "robust", or "seamless". Use clear, active human engineering language.
 
 5. OUTPUT SCHEMATIC
 Return the updated resume strictly as a valid JSON object matching the exact keys of the MASTER_PROFILE so the python-docx script runs smoothly.{urgency}
@@ -290,7 +291,7 @@ def rewrite_resume(
                 print(f"[Rewriter] Still missing ({len(still_missing)}): {still_missing[:8]}"
                       + (f"... +{len(still_missing)-8} more" if len(still_missing) > 8 else ""))
             else:
-                print(f"[Rewriter] ✅ All {len(missing_keywords)} keywords successfully embedded!")
+                print(f"[Rewriter] [OK] All {len(missing_keywords)} keywords successfully embedded!")
 
             last_valid_resume = merged
 

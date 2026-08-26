@@ -165,7 +165,7 @@ Return the full cleaned resume as valid JSON."""
                 if k in resume and (k not in merged or not merged[k]):
                     merged[k] = resume[k]
 
-            print(f"[Detector] Pass {pass_number}: ✅ Clean JSON received (attempt {attempt})")
+            print(f"[Detector] Pass {pass_number}: [OK] Clean JSON received (attempt {attempt})")
             return merged
         
         except json.JSONDecodeError as e:
@@ -187,7 +187,7 @@ Return the full cleaned resume as valid JSON."""
             elif attempt < max_retries:
                 time.sleep(2)
     
-    print(f"[Detector] ⚠️  Pass {pass_number} failed after {max_retries} attempts. Using previous version.")
+    print(f"[Detector] [WARN] Pass {pass_number} failed after {max_retries} attempts. Using previous version.")
     return resume  # Return unchanged if all retries fail
 
 
@@ -233,7 +233,7 @@ def run_ai_detection_loop(resume: dict, num_passes: int = 2) -> dict:
         
         # If clean, exit early
         if not remaining_issues:
-            print(f"[Detector] ✅ Resume is clean after pass {pass_num}. Skipping remaining passes.")
+            print(f"[Detector] [OK] Resume is clean after pass {pass_num}. Skipping remaining passes.")
             break
     
     # Final check
@@ -241,11 +241,11 @@ def run_ai_detection_loop(resume: dict, num_passes: int = 2) -> dict:
     final_issues = _check_for_ai_patterns(final_text, ai_signs)
     
     if final_issues:
-        print(f"\n[Detector] ⚠️  {len(final_issues)} patterns still present after {num_passes} passes:")
+        print(f"\n[Detector] [WARN] {len(final_issues)} patterns still present after {num_passes} passes:")
         for issue in final_issues[:8]:
             print(f"  • '{issue['flag']}' ({issue['rule']})")
     else:
-        print(f"\n[Detector] ✅ All AI patterns eliminated. Resume reads as human-written.")
+        print(f"\n[Detector] [OK] All AI patterns eliminated. Resume reads as human-written.")
     
     return current_resume
 
