@@ -221,7 +221,9 @@ def run_pipeline(
         try:
             simplify_data = read_simplify_score_sync(url, company, role)
 
-            if simplify_data.get("success"):
+            simplify_has_keywords = bool(simplify_data.get("success") and (len(simplify_data.get("missing_keywords", [])) + len(simplify_data.get("matching_keywords", []))) >= 5)
+
+            if simplify_has_keywords:
                 simplify_score_before = simplify_data["score"]
                 missing_keywords = simplify_data["missing_keywords"]
                 matching_keywords = simplify_data.get("matching_keywords", [])
@@ -236,16 +238,24 @@ def run_pipeline(
                 else:
                     print_success("All JD keywords already in resume!")
             else:
-                error = simplify_data.get("error", "Unknown error")
-                print_warning(f"Simplify read failed: {error}")
-                print_warning("Falling back to JD keyword extraction (scores estimated, not real)")
-                missing_keywords = extract_keywords_from_jd(jd_text, base_resume)
-                print_success(f"Extracted {len(missing_keywords)} keywords from JD")
+                print_warning("Simplify returned insufficient data — running Gemini ATS Keyword Cross-Check...")
+                from llm_matcher import analyze_jd_and_resume_with_gemini
+                llm_res = analyze_jd_and_resume_with_gemini(jd_text, base_resume)
+                matching_keywords = llm_res.get("matching_keywords", [])
+                missing_keywords = llm_res.get("missing_keywords", [])
+                simplify_score_before = llm_res.get("score", 70)
+                print_success(f"ATS Match Score: {simplify_score_before}%")
+                print_success(f"Keywords matching: {len(matching_keywords)} ({', '.join(matching_keywords[:6])}...)")
+                print_success(f"Keywords missing: {len(missing_keywords)} ({', '.join(missing_keywords[:6])}...)")
 
         except Exception as e:
-            print_warning(f"Simplify reader error: {e}")
-            print_warning("Falling back to JD keyword extraction")
-            missing_keywords = extract_keywords_from_jd(jd_text, base_resume)
+            print_warning(f"Simplify reader note: {e} — using Gemini ATS Keyword Matcher")
+            from llm_matcher import analyze_jd_and_resume_with_gemini
+            llm_res = analyze_jd_and_resume_with_gemini(jd_text, base_resume)
+            matching_keywords = llm_res.get("matching_keywords", [])
+            missing_keywords = llm_res.get("missing_keywords", [])
+            simplify_score_before = llm_res.get("score", 70)
+
 
     # ─── STEP 4: Gemini Resume Rewrite ────────────────────────────────────────
     print_step(4, "Rewriting Resume with Gemini (Strict Keyword Injection)")

@@ -424,19 +424,20 @@ def analyze_job():
                 print(f"[Analyze] Simplify read note: {e}")
 
         source = "simplify_extension"
-        simplify_has_keywords = len(missing_keywords) + len(matching_keywords) > 0
+        simplify_has_keywords = (len(missing_keywords) + len(matching_keywords)) >= 5
 
         # Fallback to LLM if:
         # - Simplify explicitly failed (no success), OR
-        # - Simplify succeeded but returned 0 keywords (overlay unavailable on this page)
+        # - Simplify returned fewer than 5 keywords (overlay unavailable or incomplete on this page)
         if not s_data.get("success") or not simplify_has_keywords:
-            print(f"[Analyze] Simplify returned 0 keywords or failed — using Gemini LLM fallback...")
+            print(f"[Analyze] Using Gemini LLM Matcher for rich ATS cross-check...")
             from llm_matcher import analyze_jd_and_resume_with_gemini
             llm_res = analyze_jd_and_resume_with_gemini(jd_text, base_resume)
             matching_keywords = llm_res.get("matching_keywords", [])
             missing_keywords = llm_res.get("missing_keywords", [])
             score = llm_res.get("score", 70)
-            source = "llm_fallback"
+            source = "llm_matcher"
+
 
         return jsonify({
             "success": True,

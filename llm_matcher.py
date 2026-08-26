@@ -47,6 +47,56 @@ def _flatten_resume_text(resume: dict) -> str:
     return " ".join(text_chunks).lower()
 
 
+def _normalize_token(text: str) -> str:
+    """Normalize text by stemming plurals and common aliases."""
+    t = text.lower().strip()
+    t = re.sub(r'\brestful\b', 'rest', t)
+    t = re.sub(r'\bpostgresql\b', 'postgres', t)
+    t = re.sub(r'\bjavascript\b', 'js', t)
+    t = re.sub(r'\btypescript\b', 'ts', t)
+    t = re.sub(r'(?:houses|es|s)\b', '', t)
+    return t
+
+
+def is_keyword_in_resume(kw: str, resume_full_text: str, resume_skills_list: list) -> bool:
+    """Intelligently check if a keyword or tool exists in candidate's resume."""
+    kw_raw = kw.strip()
+    kw_lower = kw_raw.lower()
+    if not kw_lower:
+        return False
+    
+    # Direct substring or word-boundary check
+    if kw_lower in resume_full_text:
+        return True
+    
+    pattern = r'\b' + re.escape(kw_lower) + r'\b'
+    if re.search(pattern, resume_full_text):
+        return True
+        
+    # Check normalized singular form
+    norm_kw = _normalize_token(kw_lower)
+    norm_resume = _normalize_token(resume_full_text)
+    if norm_kw and norm_kw in norm_resume:
+        return True
+
+    # Check skills list directly
+    for s in resume_skills_list:
+        s_lower = str(s).lower().strip()
+        if s_lower == kw_lower or s_lower in kw_lower or kw_lower in s_lower:
+            return True
+        if _normalize_token(s_lower) == norm_kw:
+            return True
+
+    # Compound skill check (e.g. 'Azure DevOps CI/CD', 'Delta Lake CDC', 'RESTful APIs')
+    sub_parts = [p.strip() for p in re.split(r'[/&+|, ]+', kw_lower) if len(p.strip()) > 1]
+    if sub_parts and len(sub_parts) > 1:
+        match_count = sum(1 for p in sub_parts if p in resume_full_text or _normalize_token(p) in norm_resume)
+        if match_count >= len(sub_parts) * 0.5:
+            return True
+
+    return False
+
+
 def analyze_jd_and_resume_with_gemini(jd_text: str, base_resume: dict) -> dict:
     """
     Passes BOTH the scraped Job Description AND the candidate's Base Resume to Gemini.
@@ -68,14 +118,14 @@ def analyze_jd_and_resume_with_gemini(jd_text: str, base_resume: dict) -> dict:
 Analyze the following Job Description against the Candidate's Master Resume.
 
 YOUR TASK:
-1. Extract 12-25 HIGH-VALUE HARD TECHNICAL SKILLS, frameworks, programming languages, databases, cloud tools, and job role qualifications required by the Job Description.
-2. Cross-check each keyword against the candidate's Master Resume.
+1. Extract 15-30 HIGH-VALUE HARD TECHNICAL SKILLS, programming languages, databases, cloud tools, frameworks, architectures, and job role qualifications required by the Job Description.
+2. Extract clean, ATOMIC tools (e.g. "Databricks", "PySpark", "Delta Lake", "dbt", "Azure DevOps", "SQL", "Power BI", "Docker", "AWS", "Kafka", "Snowflake") rather than long descriptions.
 3. Categorize them into "matching_keywords" (present in candidate resume) and "missing_keywords" (missing from candidate resume).
 4. Calculate an accurate ATS Match Score (0-100%) based on how well candidate's experience covers the core requirements.
 
 CRITICAL EXCLUSION RULES:
-- ONLY HARD TECHNICAL SKILLS & ROLE TITLES (e.g. Python, React, Next.js, TypeScript, Node.js, AWS, Docker, PostgreSQL, GraphQL, Microservices, CI/CD, Redis, System Design).
-- STRICTLY EXCLUDE legal disclaimers, EEOC text, veteran disclosures, disability forms, paperwork reduction act, executive orders, locations (e.g. San Francisco, United States), application form fields (e.g. cover letter drag, gender select, education add), and soft skill filler words.
+- ONLY HARD TECHNICAL SKILLS, TOOLS, FRAMEWORKS & ROLE TITLES.
+- STRICTLY EXCLUDE legal disclaimers, EEOC text, veteran disclosures, disability forms, paperwork reduction act, executive orders, locations (e.g. San Francisco, United States), application form fields, and soft skill filler words.
 
 JOB DESCRIPTION:
 {jd_text[:6000]}
@@ -91,8 +141,6 @@ Return ONLY a valid JSON object matching this schema:
   "missing_keywords": ["GraphQL", "Docker", "AWS Lambda", "Redis"]
 }}"""
 
-        # Confirmed working order: gemini-3.1-flash-lite is verified with this key type.
-        # gemini-3.5-flash / gemini-2.5-flash may return None text in JSON mode with some key types.
         models = [
             "gemini-3.1-flash-lite",
             "gemini-2.5-flash",
@@ -115,13 +163,13 @@ Return ONLY a valid JSON object matching this schema:
                 if response and response.text:
                     print(f"[LLM Matcher] Using model: {m} (JSON mode)")
                     break
-                response = None  # reset if text is None
+                response = None
             except Exception as model_err:
                 print(f"[LLM Matcher] {m} JSON mode error: {model_err}")
                 response = None
                 continue
 
-        # Pass 2: if JSON mode gave None, retry without mime type constraint
+        # Pass 2: plain text retry
         if not response or not response.text:
             print("[LLM Matcher] JSON mode returned None — retrying in plain text mode...")
             for m in models:
@@ -143,7 +191,6 @@ Return ONLY a valid JSON object matching this schema:
         if not response or not response.text:
             raise RuntimeError("All Gemini models exhausted — no usable response")
 
-
         raw_text = response.text or ""
         match_json = re.search(r'\{.*\}', raw_text, re.DOTALL)
         if match_json:
@@ -156,19 +203,16 @@ Return ONLY a valid JSON object matching this schema:
             raw_missing = [str(k).strip() for k in data.get("missing_keywords", []) if str(k).strip()]
             raw_matching = [str(k).strip() for k in data.get("matching_keywords", []) if str(k).strip()]
 
-            # Combine all keywords extracted from JD
             all_extracted = set(raw_missing + raw_matching)
             all_extracted = {k for k in all_extracted if k.lower().strip() not in GENERIC_FILLER_WORDS}
 
-            # Deterministically verify every single keyword against candidate's master resume
             resume_full_text = _flatten_resume_text(base_resume)
+            resume_skills_list = base_resume.get("skills", [])
             verified_matching = []
             verified_missing = []
 
             for kw in sorted(all_extracted):
-                kw_lower = kw.lower().strip()
-                pattern = r'\b' + re.escape(kw_lower) + r'\b'
-                if re.search(pattern, resume_full_text) or kw_lower in resume_full_text:
+                if is_keyword_in_resume(kw, resume_full_text, resume_skills_list):
                     verified_matching.append(kw)
                 else:
                     verified_missing.append(kw)
@@ -176,13 +220,14 @@ Return ONLY a valid JSON object matching this schema:
             total = len(verified_matching) + len(verified_missing)
             calc_score = round((len(verified_matching) / total) * 100) if total > 0 else data.get("score", 70)
 
-            print(f"[LLM Matcher] Deterministic Verification — Score: {calc_score}%, Matching ({len(verified_matching)}), Missing ({len(verified_missing)})")
+            print(f"[LLM Matcher] Smart Verification — Score: {calc_score}%, Matching ({len(verified_matching)}), Missing ({len(verified_missing)})")
             return {
                 "score": calc_score,
                 "matching_keywords": verified_matching,
                 "missing_keywords": verified_missing,
                 "total_keywords": total
             }
+
 
     except Exception as e:
         print(f"[LLM Matcher] Error calling Gemini: {e}")
