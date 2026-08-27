@@ -13,21 +13,12 @@ import time
 from typing import Optional
 from google import genai
 from google.genai import types
+from gemini_client import get_gemini_client, is_quota_error, rotate_key, get_all_gemini_keys
 
 
 def _get_gemini_client():
-    """Initialize and return the Gemini client."""
-    from dotenv import load_dotenv
-    load_dotenv()
-
-    api_key = os.getenv("GEMINI_API_KEY", "")
-    if not api_key:
-        raise RuntimeError(
-            "GEMINI_API_KEY not found in .env file. "
-            "Get your free key at: https://aistudio.google.com/"
-        )
-
-    return genai.Client(api_key=api_key)
+    """Initialize and return the Gemini client from key pool."""
+    return get_gemini_client()
 
 
 def _clean_json_response(text: str) -> str:
@@ -314,9 +305,15 @@ def rewrite_resume(
         except Exception as e:
             err_str = str(e)
             print(f"[Rewriter] Attempt {attempt}/{max_retries} — Error: {err_str}")
-            if "RESOURCE_EXHAUSTED" in err_str or "429" in err_str or "503" in err_str:
-                print("[Rewriter] Rate limit/high demand hit — waiting 12s before retry...")
-                time.sleep(12)
+            if is_quota_error(e):
+                keys = get_all_gemini_keys()
+                if len(keys) > 1:
+                    rotate_key(reason="Rewriter Quota Limit")
+                    client = _get_gemini_client()
+                    time.sleep(1)
+                else:
+                    print("[Rewriter] Rate limit hit on single key — waiting 10s before retry...")
+                    time.sleep(10)
             elif attempt < max_retries:
                 time.sleep(2)
             continue

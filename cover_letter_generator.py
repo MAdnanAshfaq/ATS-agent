@@ -13,15 +13,11 @@ import re
 from pathlib import Path
 from google import genai
 from google.genai import types
+from gemini_client import get_gemini_client, execute_with_failover, get_all_gemini_keys
 
 
 def _get_gemini_client():
-    from dotenv import load_dotenv
-    load_dotenv()
-    api_key = os.getenv("GEMINI_API_KEY", "")
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY not found in environment.")
-    return genai.Client(api_key=api_key)
+    return get_gemini_client()
 
 
 def generate_cover_letter(
@@ -82,26 +78,36 @@ TONE & STYLE RULES:
 - Return ONLY the clean cover letter text including date and recipient header. No markdown code blocks around the text.
 """
 
-    models_to_try = ["gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.1-pro-preview"]
-    cover_letter_text = ""
+    def _call_gemini(client):
+        for model in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=[
+                        types.Content(
+                            role="user",
+                            parts=[types.Part(text=prompt)],
+                        )
+                    ],
+                    config=types.GenerateContentConfig(
+                        temperature=0.4,
+                        max_output_tokens=1500,
+                    ),
+                )
+                if response.text and len(response.text.strip()) > 100:
+                    print(f"[Cover Letter] Generated successfully with {model} ({len(response.text.strip())} chars)")
+                    return response.text.strip()
+            except Exception as e:
+                print(f"[Cover Letter] Model {model} note: {e}")
+                if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                    raise e
+        return ""
 
-    for model in models_to_try:
-        try:
-            print(f"[Cover Letter] Generating with model {model}...")
-            response = client.models.generate_content(
-                model=model,
-                contents=prompt + "\nIMPORTANT: Ensure you write the COMPLETE 3 paragraphs. Do not stop early.",
-                config=types.GenerateContentConfig(
-                    temperature=0.4,
-                    max_output_tokens=1500,
-                ),
-            )
-            if response.text and len(response.text.strip()) > 100:
-                cover_letter_text = response.text.strip()
-                print(f"[Cover Letter] Generated successfully ({len(cover_letter_text)} chars)")
-                break
-        except Exception as e:
-            print(f"[Cover Letter] Model {model} note: {e}")
+    try:
+        cover_letter_text = execute_with_failover(_call_gemini)
+    except Exception as e:
+        print(f"[Cover Letter] Generation failed across all keys: {e}")
+        cover_letter_text = ""
 
     if not cover_letter_text:
         # Fallback template if all Gemini calls fail

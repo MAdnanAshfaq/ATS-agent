@@ -13,16 +13,9 @@ from google.genai import types
 
 
 def _get_gemini_client():
-    """Initialize and return the Gemini client."""
-    from google import genai
-    from dotenv import load_dotenv
-    load_dotenv()
-
-    api_key = os.getenv("GEMINI_API_KEY", "")
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY not found in .env file.")
-
-    return genai.Client(api_key=api_key)
+    """Initialize and return the Gemini client from key pool."""
+    from gemini_client import get_gemini_client
+    return get_gemini_client()
 
 
 def _clean_json_response(text: str) -> str:

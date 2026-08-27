@@ -105,9 +105,10 @@ def analyze_jd_and_resume_with_gemini(jd_text: str, base_resume: dict) -> dict:
     """
     from dotenv import load_dotenv
     load_dotenv()
+    from gemini_client import get_gemini_client, execute_with_failover, get_all_gemini_keys
 
-    api_key = os.getenv("GEMINI_API_KEY", "")
-    if not api_key:
+    keys = get_all_gemini_keys()
+    if not keys:
         print("[LLM Matcher] Warning: GEMINI_API_KEY missing — returning empty keyword set")
         return {"score": 70, "matching_keywords": [], "missing_keywords": [], "total_keywords": 0}
 
@@ -133,7 +134,6 @@ def analyze_jd_and_resume_with_gemini(jd_text: str, base_resume: dict) -> dict:
                     "total_keywords": 0, "error": "jd_is_bot_page"}
 
     try:
-        client = genai.Client(api_key=api_key)
         prompt = f"""You are an expert ATS (Applicant Tracking System) recruiter and resume architect.
 Analyze the following Job Description against the Candidate's Master Resume.
 
@@ -189,51 +189,46 @@ Return ONLY a valid JSON object matching this schema:
   "summary_match": false
 }}"""
 
-        models = [
-            "gemini-2.5-flash",
-            "gemini-3.1-flash-lite",
-            "gemini-3.5-flash",
-            "gemini-3.1-pro-preview",
-        ]
-        response = None
-
-        # Pass 1: try with JSON mode (cleanest output)
-        for m in models:
-            try:
-                response = client.models.generate_content(
-                    model=m,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        temperature=0.1,
-                        response_mime_type="application/json",
-                    ),
-                )
-                if response and response.text:
-                    print(f"[LLM Matcher] Using model: {m} (JSON mode)")
-                    break
-                response = None
-            except Exception as model_err:
-                print(f"[LLM Matcher] {m} JSON mode error: {model_err}")
-                response = None
-                continue
-
-        # Pass 2: plain text retry
-        if not response or not response.text:
-            print("[LLM Matcher] JSON mode returned None — retrying in plain text mode...")
+        def _call_gemini(client):
+            models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+            resp = None
             for m in models:
                 try:
-                    response = client.models.generate_content(
+                    resp = client.models.generate_content(
+                        model=m,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            temperature=0.1,
+                            response_mime_type="application/json",
+                        ),
+                    )
+                    if resp and resp.text:
+                        print(f"[LLM Matcher] Using model: {m} (JSON mode)")
+                        return resp
+                except Exception as model_err:
+                    print(f"[LLM Matcher] {m} JSON mode error: {model_err}")
+                    if "429" in str(model_err) or "RESOURCE_EXHAUSTED" in str(model_err):
+                        raise model_err
+                    continue
+
+            # Fallback to plain text mode
+            for m in models:
+                try:
+                    resp = client.models.generate_content(
                         model=m,
                         contents=prompt,
                     )
-                    if response and response.text:
+                    if resp and resp.text:
                         print(f"[LLM Matcher] Using model: {m} (Plain text mode)")
-                        break
-                    response = None
+                        return resp
                 except Exception as model_err:
                     print(f"[LLM Matcher] {m} plain text error: {model_err}")
-                    response = None
+                    if "429" in str(model_err) or "RESOURCE_EXHAUSTED" in str(model_err):
+                        raise model_err
                     continue
+            return resp
+
+        response = execute_with_failover(_call_gemini)
 
         if not response or not response.text:
             return {"score": 70, "matching_keywords": [], "missing_keywords": [], "total_keywords": 0}

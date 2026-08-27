@@ -55,6 +55,7 @@ def get_env_vars() -> dict:
     """Read .env into dict safely."""
     env_vars = {
         "GEMINI_API_KEY": "",
+        "GEMINI_API_KEY_2": "",
         "SIMPLIFY_EMAIL": "",
         "SIMPLIFY_PASSWORD": "",
         "BASE_RESUME_PATH": "base_resume.json",
@@ -79,6 +80,7 @@ def write_env_vars(env_vars: dict):
     lines = []
     lines.append("# AI Job Application Agent Credentials")
     lines.append(f"GEMINI_API_KEY={env_vars.get('GEMINI_API_KEY', '')}")
+    lines.append(f"GEMINI_API_KEY_2={env_vars.get('GEMINI_API_KEY_2', '')}")
     lines.append(f"SIMPLIFY_EMAIL={env_vars.get('SIMPLIFY_EMAIL', '')}")
     lines.append(f"SIMPLIFY_PASSWORD={env_vars.get('SIMPLIFY_PASSWORD', '')}")
     lines.append(f"BASE_RESUME_PATH={env_vars.get('BASE_RESUME_PATH', 'base_resume.json')}")
@@ -320,17 +322,16 @@ def humanize_text():
             print(f"[Humanizer] Colab endpoint note: {colab_err} — falling back to Gemini Engine")
 
     # Mode 2: Built-in Gemini Anti-Detection Humanizer Engine
-    api_key = env.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY", "")
-    if not api_key:
+    from gemini_client import execute_with_failover, get_all_gemini_keys
+    keys = get_all_gemini_keys()
+    if not keys:
         return jsonify({
-            "error": "GEMINI_API_KEY is not configured in .env. Please add it to use the built-in Humanizer."
+            "error": "GEMINI_API_KEY is not configured in .env. Please add it in Settings to use the built-in Humanizer."
         }), 400
 
     try:
         from google import genai
         from google.genai import types
-
-        client = genai.Client(api_key=api_key)
 
         style_guidelines = {
             "professional": "Professional workplace & resume tone. Natural, crisp, direct, active voice.",
@@ -353,29 +354,27 @@ CRITICAL RULES FOR HUMANIZING:
 ORIGINAL TEXT:
 {text}"""
 
-        models = [
-            "gemini-3.1-flash-lite",
-            "gemini-2.5-flash",
-            "gemini-3.5-flash",
-        ]
+        def _call_humanizer(client):
+            for m in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
+                try:
+                    response = client.models.generate_content(
+                        model=m,
+                        contents=humanize_prompt,
+                        config=types.GenerateContentConfig(temperature=0.75),
+                    )
+                    if response and response.text:
+                        res_text = response.text.strip()
+                        if res_text.startswith(('"', "“")) and res_text.endswith(('"', "”")):
+                            res_text = res_text[1:-1].strip()
+                        return res_text
+                except Exception as model_err:
+                    print(f"[Humanizer] {m} note: {model_err}")
+                    if "429" in str(model_err) or "RESOURCE_EXHAUSTED" in str(model_err):
+                        raise model_err
+                    continue
+            return ""
 
-        humanized_result = ""
-        for m in models:
-            try:
-                response = client.models.generate_content(
-                    model=m,
-                    contents=humanize_prompt,
-                    config=types.GenerateContentConfig(temperature=0.75),
-                )
-                if response and response.text:
-                    humanized_result = response.text.strip()
-                    if humanized_result.startswith(('"', "“")) and humanized_result.endswith(('"', "”")):
-                        humanized_result = humanized_result[1:-1].strip()
-                    break
-            except Exception as model_err:
-                print(f"[Humanizer] {m} note: {model_err}")
-                continue
-
+        humanized_result = execute_with_failover(_call_humanizer)
         if not humanized_result:
             raise RuntimeError("All Gemini models exhausted for humanizing.")
 
@@ -401,10 +400,11 @@ def health():
     """Check all prerequisites needed to run the agent."""
     env_vars = get_env_vars()
 
-    has_gemini_key = bool(env_vars.get("GEMINI_API_KEY"))
+    has_gemini_key = bool(env_vars.get("GEMINI_API_KEY") or env_vars.get("GEMINI_API_KEY_2"))
+    has_gemini_backup = bool(env_vars.get("GEMINI_API_KEY_2"))
+    has_base_resume = RESUME_PATH.exists()
     has_simplify_email = bool(env_vars.get("SIMPLIFY_EMAIL"))
     has_simplify_password = bool(env_vars.get("SIMPLIFY_PASSWORD"))
-    has_base_resume = RESUME_PATH.exists()
 
     resume_summary = {}
     if has_base_resume:
@@ -424,6 +424,7 @@ def health():
         "status": "ready" if (has_gemini_key and has_base_resume) else "config_required",
         "checks": {
             "gemini_api_key": has_gemini_key,
+            "gemini_api_key_backup": has_gemini_backup,
             "base_resume_exists": has_base_resume,
             "simplify_email": has_simplify_email,
             "simplify_password": has_simplify_password,
@@ -441,6 +442,7 @@ def settings():
         data = request.json or {}
         env_vars = get_env_vars()
         env_vars["GEMINI_API_KEY"] = data.get("GEMINI_API_KEY", env_vars.get("GEMINI_API_KEY", ""))
+        env_vars["GEMINI_API_KEY_2"] = data.get("GEMINI_API_KEY_2", env_vars.get("GEMINI_API_KEY_2", ""))
         env_vars["SIMPLIFY_EMAIL"] = data.get("SIMPLIFY_EMAIL", env_vars.get("SIMPLIFY_EMAIL", ""))
         env_vars["SIMPLIFY_PASSWORD"] = data.get("SIMPLIFY_PASSWORD", env_vars.get("SIMPLIFY_PASSWORD", ""))
         if data.get("OUTPUT_DIR"):
@@ -454,9 +456,14 @@ def settings():
     raw_key = env_vars.get("GEMINI_API_KEY", "")
     masked_key = (raw_key[:6] + "..." + raw_key[-4:]) if len(raw_key) > 10 else raw_key
 
+    raw_key_2 = env_vars.get("GEMINI_API_KEY_2", "")
+    masked_key_2 = (raw_key_2[:6] + "..." + raw_key_2[-4:]) if len(raw_key_2) > 10 else raw_key_2
+
     return jsonify({
         "GEMINI_API_KEY": raw_key,
         "GEMINI_API_KEY_MASKED": masked_key,
+        "GEMINI_API_KEY_2": raw_key_2,
+        "GEMINI_API_KEY_2_MASKED": masked_key_2,
         "SIMPLIFY_EMAIL": env_vars.get("SIMPLIFY_EMAIL", ""),
         "SIMPLIFY_PASSWORD": env_vars.get("SIMPLIFY_PASSWORD", ""),
         "OUTPUT_DIR": env_vars.get("OUTPUT_DIR", str(OUTPUT_DIR)),

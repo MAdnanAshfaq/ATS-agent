@@ -595,9 +595,18 @@
           </div>
           <form id="settings-form">
             <div class="form-group">
-              <label for="gemini-key-input">Gemini 2.5 Flash API Key</label>
+              <label for="gemini-key-input">Primary Gemini API Key</label>
               <input type="password" id="gemini-key-input" class="form-input" placeholder="AIzaSy..." required>
-              <span class="input-help">Get your key for free at <a href="https://aistudio.google.com/" target="_blank">aistudio.google.com</a></span>
+              <span class="input-help">Get your primary key at <a href="https://aistudio.google.com/" target="_blank">aistudio.google.com</a></span>
+            </div>
+
+            <div class="form-group">
+              <label for="gemini-key-2-input" style="display:flex; align-items:center; justify-content:space-between;">
+                <span>Backup Gemini API Key</span>
+                <span class="badge badge-info" style="font-size:11px; padding:2px 8px;"><i class="fa-solid fa-rotate"></i> Auto-Failover</span>
+              </label>
+              <input type="password" id="gemini-key-2-input" class="form-input" placeholder="AIzaSy... (Secondary key for automatic quota failover)">
+              <span class="input-help">If your primary key hits a rate limit or 429 quota exhaustion, the agent rotates to this backup key instantly!</span>
             </div>
 
             <div class="form-group">

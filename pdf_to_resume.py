@@ -20,14 +20,8 @@ if __name__ == "__main__" and hasattr(sys.stdout, 'buffer'):
 
 def parse_with_gemini(raw_text: str) -> dict:
     """Use Gemini to parse raw resume text into structured JSON."""
-    from dotenv import load_dotenv
-    load_dotenv()
-    api_key = os.getenv("GEMINI_API_KEY", "")
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY not set")
-
-    from google import genai
-    client = genai.Client(api_key=api_key)
+    from gemini_client import get_gemini_client
+    client = get_gemini_client()
 
     prompt = f"""You are an expert resume parser. Parse the following resume text into a clean, structured JSON object.
 

@@ -542,41 +542,54 @@ async function loadSettings() {
     const res = await fetch("/api/settings");
     const data = await res.json();
 
-    document.getElementById("gemini-key-input").value = data.GEMINI_API_KEY || "";
-    document.getElementById("simplify-email-input").value = data.SIMPLIFY_EMAIL || "";
-    document.getElementById("simplify-pass-input").value = data.SIMPLIFY_PASSWORD || "";
-    document.getElementById("custom-output-dir").value = data.OUTPUT_DIR || "";
+    const geminiInput = document.getElementById("gemini-key-input");
+    const gemini2Input = document.getElementById("gemini-key-2-input");
+    const emailInput = document.getElementById("simplify-email-input");
+    const passInput = document.getElementById("simplify-pass-input");
+    const outDirInput = document.getElementById("custom-output-dir");
+
+    if (geminiInput) geminiInput.value = data.GEMINI_API_KEY || "";
+    if (gemini2Input) gemini2Input.value = data.GEMINI_API_KEY_2 || "";
+    if (emailInput) emailInput.value = data.SIMPLIFY_EMAIL || "";
+    if (passInput) passInput.value = data.SIMPLIFY_PASSWORD || "";
+    if (outDirInput) outDirInput.value = data.OUTPUT_DIR || "";
   } catch (err) {
     console.error("Failed to load settings", err);
   }
 
-  document.getElementById("settings-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const key = document.getElementById("gemini-key-input").value.trim();
-    const email = document.getElementById("simplify-email-input").value.trim();
-    const pass = document.getElementById("simplify-pass-input").value.trim();
+  const form = document.getElementById("settings-form");
+  if (form && !form.dataset.bound) {
+    form.dataset.bound = "true";
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const key = document.getElementById("gemini-key-input")?.value.trim() || "";
+      const key2 = document.getElementById("gemini-key-2-input")?.value.trim() || "";
+      const email = document.getElementById("simplify-email-input")?.value.trim() || "";
+      const pass = document.getElementById("simplify-pass-input")?.value.trim() || "";
 
-    try {
-      const res = await fetch("/api/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          GEMINI_API_KEY: key,
-          SIMPLIFY_EMAIL: email,
-          SIMPLIFY_PASSWORD: pass,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        showToast("Settings saved successfully!", "success");
-        checkSystemHealth();
-      } else {
-        showToast("Failed to save settings", "error");
+      try {
+        const res = await fetch("/api/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            GEMINI_API_KEY: key,
+            GEMINI_API_KEY_2: key2,
+            SIMPLIFY_EMAIL: email,
+            SIMPLIFY_PASSWORD: pass,
+          }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast("Settings saved successfully! Multi-key failover active.", "success");
+          checkSystemHealth();
+        } else {
+          showToast("Failed to save settings", "error");
+        }
+      } catch (err) {
+        showToast(`Error saving settings: ${err.message}`, "error");
       }
-    } catch (err) {
-      showToast(`Error saving settings: ${err.message}`, "error");
-    }
-  });
+    });
+  }
 }
 
 let currentMasterResumeData = null;
