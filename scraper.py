@@ -168,6 +168,33 @@ def clean_role_title(role: str, company: str = "") -> str:
     return role or "Software Engineer"
 
 
+def validate_jd_extraction(text: str) -> tuple[bool, str]:
+    """
+    Gate that catches bot-block/error pages masquerading as JD content.
+    Returns (is_valid, reason).
+    A 403 error page is typically 200-600 chars; a real JD is almost always 800+.
+    """
+    ERROR_SIGNATURES = [
+        "403 forbidden", "access denied", "just a moment",
+        "enable javascript", "captcha", "robot",
+        "checking your browser", "attention required", "error 403",
+        "you have been blocked", "security check", "cloudflare",
+        "verify you are human", "ddos protection", "please wait",
+        "browser check", "your request has been blocked",
+    ]
+    stripped = text.strip()
+    if len(stripped) < 800:
+        return False, (
+            f"Extracted only {len(stripped)} characters — suspiciously short for a real JD. "
+            "The site likely returned a bot-block or error page instead of the job description."
+        )
+    text_lower = stripped.lower()
+    for sig in ERROR_SIGNATURES:
+        if sig in text_lower:
+            return False, f"Content matches a known error/bot-block pattern: '{sig}'"
+    return True, "OK"
+
+
 
 def extract_company_from_url(url: str) -> str:
     """Try to extract company name from URL."""
@@ -299,10 +326,29 @@ async def scrape_jd(url: str) -> dict:
             args=[
                 '--no-sandbox',
                 '--disable-blink-features=AutomationControlled',
+                '--disable-dev-shm-usage',
             ]
         )
-        page = await browser.new_page()
-        
+        # Use a realistic browser context to avoid bot-detection fingerprinting
+        context = await browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/125.0.0.0 Safari/537.36"
+            ),
+            locale="en-US",
+            timezone_id="America/New_York",
+            viewport={"width": 1280, "height": 800},
+            java_script_enabled=True,
+            extra_http_headers={
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Upgrade-Insecure-Requests": "1",
+            },
+        )
+        page = await context.new_page()
+
         # Smart navigation using wait_until="domcontentloaded"
         try:
             await page.goto(scrape_url, wait_until="domcontentloaded", timeout=15000)
@@ -335,6 +381,7 @@ async def scrape_jd(url: str) -> dict:
                 pass
 
         print(f"[Scraper DEBUG] Raw HTML fetched len: {len(html)}")
+        await context.close()
         await browser.close()
     
     # Parse with BeautifulSoup
@@ -416,22 +463,29 @@ async def scrape_jd(url: str) -> dict:
         except Exception as http_err:
             print(f"[Scraper] HTTP fallback note: {http_err}")
             
-    # Ultimate Fallback: Jina Reader API for heavy JS or bot-protected pages
-    if not jd_text or len(jd_text) < 100:
+    # Jina Reader API fallback — bypasses bot-protection via Jina's rendering proxy
+    # Trigger threshold raised to 800: anything shorter is likely a bot-block page, not a partial JD
+    if not jd_text or len(jd_text) < 800:
         try:
             import urllib.request
-            print("[Scraper] Both fallbacks failed — trying Jina Reader API (Bot bypass)...")
+            print(f"[Scraper] Extracted only {len(jd_text)} chars — trying Jina Reader API (bot-bypass)...")
             jina_url = "https://r.jina.ai/" + url
             req = urllib.request.Request(
                 jina_url,
-                headers={'User-Agent': 'Mozilla/5.0'}
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/125.0.0.0 Safari/537.36',
+                    'Accept': 'text/plain,text/html,*/*',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                }
             )
-            with urllib.request.urlopen(req, timeout=20) as resp:
+            with urllib.request.urlopen(req, timeout=25) as resp:
                 raw_markdown = resp.read().decode('utf-8', errors='ignore')
                 txt = clean_text(raw_markdown)
-                if len(txt) >= 100:
+                if len(txt) >= 800:
                     jd_text = txt
                     print(f"[Scraper] ✅ Jina Reader extracted {len(jd_text)} chars")
+                else:
+                    print(f"[Scraper] Jina Reader also returned short content ({len(txt)} chars)")
         except Exception as jina_err:
             print(f"[Scraper] Jina Reader fallback note: {jina_err}")
     
@@ -460,17 +514,24 @@ async def scrape_jd(url: str) -> dict:
         company = extract_company_from_url(scrape_url)
 
     jd_text = clean_text(jd_text)
-    
-    # Safety check
-    if len(jd_text) < 100:
+
+    # ── Validation gate: reject bot-block pages that look like short content ──
+    is_valid, reason = validate_jd_extraction(jd_text)
+    if not is_valid:
         raise RuntimeError(
-            f"JD extraction failed — only {len(jd_text)} characters extracted. "
-            "The site may require login or use JavaScript rendering not supported."
+            f"JD validation failed: {reason}\n"
+            "The career site blocked the scraper or requires login.\n"
+            "Fix: Paste the job description text manually into the 'Missing Keywords' field, "
+            "or copy the JD text and re-run with --no-simplify."
         )
-    
+
+    # Warn on borderline-short JDs (may be partial capture)
+    if len(jd_text) < 1500:
+        print(f"[Scraper] ⚠ Short JD extracted ({len(jd_text)} chars) — may be partial. Continuing.")
+
     # Build safe folder name
     folder_name = f"{slugify(company)}_{slugify(role)}"[:80]
-    
+
     result = {
         "url": url,
         "company": company,
@@ -478,11 +539,11 @@ async def scrape_jd(url: str) -> dict:
         "jd_text": jd_text,
         "folder_name": folder_name,
     }
-    
+
     print(f"[Scraper] [OK] Company: {company}")
     print(f"[Scraper] [OK] Role: {role}")
     print(f"[Scraper] [OK] JD text: {len(jd_text)} characters")
-    
+
     return result
 
 

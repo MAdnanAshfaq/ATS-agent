@@ -774,11 +774,34 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
         from scraper import clean_role_title
         role = clean_role_title(jd_data["role"])
         jd_text = jd_data["jd_text"]
-        send_log(2, "Scrape JD", f"Extracted {len(jd_text):,} chars for {role} at {company}", data={
+
+        # ── Validation gate ──
+        # scrape_jd already raises RuntimeError on bad JD, but log it clearly
+        # for the UI before it propagates. Extra check on char count as a safety net.
+        jd_chars = len(jd_text)
+        if jd_chars < 800:
+            send_log(2, "Scrape JD",
+                     f"❌ JD validation FAILED: Only {jd_chars} chars extracted — likely a bot-block page. "
+                     "Halting pipeline. Please paste the job description text manually into the "
+                     "'Missing Keywords' field and retry.",
+                     data={"jd_length": jd_chars, "company": company, "role": role},
+                     status="error")
+            raise RuntimeError(
+                f"JD validation failed: only {jd_chars} chars extracted — "
+                "the site likely returned a 403/bot-block page. Paste the JD text manually."
+            )
+
+        jd_status = "success"
+        jd_msg = f"Extracted {jd_chars:,} chars for {role} at {company}"
+        if jd_chars < 1500:
+            jd_status = "warning"
+            jd_msg += f" (⚠ short extract — may be partial)"
+
+        send_log(2, "Scrape JD", jd_msg, data={
             "company": company,
             "role": role,
-            "jd_length": len(jd_text),
-        }, status="success")
+            "jd_length": jd_chars,
+        }, status=jd_status)
 
         # Step 3: Parse custom keywords OR Simplify ATS score OR local keyword extraction
         missing_keywords = []
@@ -855,7 +878,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
         cleaned_resume = run_ai_detection_loop(rewritten_resume, num_passes=passes)
         send_log(5, "AI Detector", f"AI writing cleanup complete ({passes} passes)", status="success")
 
-        # Step 6: Keyword Coverage Report (real injection verification)
+        # Step 6a: Keyword Coverage (injection verification)
         send_log(6, "Coverage Check", "Verifying keyword injection coverage...", status="working")
         embedded_keywords, still_missing = _check_keyword_coverage(cleaned_resume, missing_keywords)
         coverage_pct = (
@@ -872,6 +895,30 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                      "source": "real_extension" if (simplify_data and simplify_data.get("success")) else "jd_extraction",
                  },
                  status="success" if coverage_pct >= 90 else "warning")
+
+        # Step 6b: Real ATS rescore — Gemini re-evaluates the rewritten resume vs JD
+        # This replaces the hardcoded "score + 10" formula with a real measurement.
+        score_after_real = None
+        try:
+            send_log(6, "Score Analysis", "Re-scoring rewritten resume against JD (Gemini)...", status="working")
+            from llm_matcher import analyze_jd_and_resume_with_gemini
+            rescore_result = analyze_jd_and_resume_with_gemini(jd_text, cleaned_resume)
+            score_after_real = rescore_result.get("score")
+            if score_after_real is not None:
+                score_before_display = analyze_score_before if analyze_score_before is not None else simplify_score_before
+                delta = (score_after_real - score_before_display) if score_before_display is not None else None
+                delta_str = f" (+{delta}pts)" if delta is not None and delta > 0 else (f" ({delta}pts)" if delta is not None else "")
+                send_log(6, "Score Analysis",
+                         f"ATS Match Score: {score_before_display}% → {score_after_real}%{delta_str}",
+                         data={
+                             "score_before": score_before_display,
+                             "score_after": score_after_real,
+                             "delta": delta,
+                         },
+                         status="success")
+        except Exception as rescore_err:
+            print(f"[Pipeline] Rescore note: {rescore_err}")
+            send_log(6, "Score Analysis", f"Rescore skipped: {rescore_err}", status="warning")
 
         # Step 7: Build Word Doc (patch original Canva DOCX if available, else build fresh)
         send_log(7, "Word Document", "Generating Word document...", status="working")
@@ -944,7 +991,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
             simplify_data, doc_path, 0
         )
 
-        # Calculate scores for dashboard rendering
+        # Determine final score values for dashboard:
         # Priority: 1. analyze_score_before from Analyze step  2. simplify_score_before from pipeline  3. default 75
         if analyze_score_before is not None:
             score_before_val = analyze_score_before
@@ -952,7 +999,12 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
             score_before_val = simplify_score_before
         else:
             score_before_val = 75
-        score_after_val = 90 if score_before_val < 90 else min(98, score_before_val + 10)
+
+        # Use real rescore if available; fall back to conservative estimate only as last resort
+        if score_after_real is not None:
+            score_after_val = score_after_real
+        else:
+            score_after_val = 90 if score_before_val < 90 else min(98, score_before_val + 10)
         score_delta_val = score_after_val - score_before_val
 
         # Final complete message
