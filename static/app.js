@@ -1616,10 +1616,36 @@ function closeCoverLetterModal() {
 
 
 /* ══════════════════════════════════════════════════════════════════════════
-   AI LAB — HuggingFace Detector  (completely isolated from ATS pipeline)
+   AI LAB — Multi-Signal Detector & Humanizer Studio
    ══════════════════════════════════════════════════════════════════════════ */
 
-// Live character counter
+let _currentAiLabData = null;
+
+// Sub-mode switching between Detector & Humanizer
+function switchAiLabMode(mode) {
+  const detectView = document.getElementById("ai-lab-detect-view");
+  const humanizeView = document.getElementById("ai-lab-humanize-view");
+  const detectBtn = document.getElementById("ai-lab-tab-detect-btn");
+  const humanizeBtn = document.getElementById("ai-lab-tab-humanize-btn");
+
+  if (mode === "detect") {
+    detectView?.classList.remove("hidden");
+    humanizeView?.classList.add("hidden");
+    detectBtn?.classList.add("btn-primary");
+    detectBtn?.classList.remove("btn-outline");
+    humanizeBtn?.classList.add("btn-outline");
+    humanizeBtn?.classList.remove("btn-primary");
+  } else {
+    humanizeView?.classList.remove("hidden");
+    detectView?.classList.add("hidden");
+    humanizeBtn?.classList.add("btn-primary");
+    humanizeBtn?.classList.remove("btn-outline");
+    detectBtn?.classList.add("btn-outline");
+    detectBtn?.classList.remove("btn-primary");
+  }
+}
+
+// Live character counter for detector
 document.addEventListener("DOMContentLoaded", () => {
   const inp = document.getElementById("ai-lab-input");
   if (inp) {
@@ -1645,15 +1671,74 @@ function aiLabClear() {
   const inp = document.getElementById("ai-lab-input");
   if (inp) { inp.value = ""; inp.dispatchEvent(new Event("input")); }
   _aiLabShowState("ai-lab-idle");
+  _currentAiLabData = null;
 }
 
 function aiLabReset() {
   _aiLabShowState("ai-lab-idle");
 }
 
+function applySignalFilter() {
+  if (!_currentAiLabData) return;
+  const mode = document.getElementById("ai-lab-signal-mode")?.value || "combined";
+
+  let aiProb = _currentAiLabData.ai_probability;
+  let humanProb = _currentAiLabData.human_probability;
+  let signalTitle = "Combined Multi-Signal (Hybrid)";
+
+  if (mode === "classifier") {
+    aiProb = typeof _currentAiLabData.classifier_prob === "number" ? _currentAiLabData.classifier_prob : _currentAiLabData.ai_probability;
+    humanProb = Math.round((100 - aiProb) * 10) / 10;
+    signalTitle = "Classifier Head Only (RoBERTa / TMR)";
+  } else if (mode === "perplexity") {
+    const ppl = _currentAiLabData.perplexity || 25;
+    // Lower perplexity = higher AI probability
+    aiProb = Math.max(5, Math.min(98, Math.round(100 - (ppl - 12) * 2.2)));
+    humanProb = Math.round((100 - aiProb) * 10) / 10;
+    signalTitle = `Perplexity Signal (Score: ${ppl})`;
+  } else if (mode === "burstiness") {
+    const burst = _currentAiLabData.burstiness || 10;
+    // Lower burstiness = higher AI probability
+    aiProb = Math.max(5, Math.min(98, Math.round(100 - (burst - 4) * 5)));
+    humanProb = Math.round((100 - aiProb) * 10) / 10;
+    signalTitle = `Burstiness / Sentence Rhythm (Score: ${burst})`;
+  }
+
+  aiProb = Math.round(aiProb * 10) / 10;
+  humanProb = Math.round(humanProb * 10) / 10;
+  const verdict = aiProb >= 50 ? "AI" : "Human";
+
+  // Update verdict badge
+  const badge = document.getElementById("ai-lab-verdict-badge");
+  if (badge) {
+    badge.textContent = verdict === "AI" ? "AI-Generated" : "Human-Written";
+    badge.className = "ai-verdict-badge " + (verdict === "AI" ? "verdict-ai" : "verdict-human");
+  }
+
+  // Update label
+  const labelEl = document.getElementById("ai-lab-label");
+  if (labelEl) {
+    labelEl.innerHTML = (verdict === "AI"
+      ? `AI text detected with <strong>${aiProb}%</strong> probability`
+      : `Likely human-written with <strong>${humanProb}%</strong> probability`)
+      + `<br><span style="font-size:11px;opacity:0.75;margin-top:4px;display:block;">[${signalTitle}]</span>`;
+  }
+
+  // Update percentages & bars
+  const aiPct = document.getElementById("ai-lab-ai-pct");
+  const humanPct = document.getElementById("ai-lab-human-pct");
+  if (aiPct) aiPct.textContent = `${aiProb}%`;
+  if (humanPct) humanPct.textContent = `${humanProb}%`;
+
+  const aiBar = document.getElementById("ai-lab-ai-bar");
+  const hBar = document.getElementById("ai-lab-human-bar");
+  if (aiBar) aiBar.style.width = `${aiProb}%`;
+  if (hBar) hBar.style.width = `${humanProb}%`;
+}
+
 async function runHfDetect() {
-  const text     = (document.getElementById("ai-lab-input")?.value || "").trim();
-  const hfKey    = (document.getElementById("ai-lab-hf-key")?.value || "").trim();
+  const text = (document.getElementById("ai-lab-input")?.value || "").trim();
+  const hfKey = (document.getElementById("ai-lab-hf-key")?.value || "").trim();
   const colabUrl = (document.getElementById("ai-lab-colab-url")?.value || "").trim();
 
   if (!text) { showToast("Please paste some text first.", "error"); return; }
@@ -1665,13 +1750,13 @@ async function runHfDetect() {
 
   try {
     const payload = { text };
-    if (hfKey)    payload.hf_key    = hfKey;
-    if (colabUrl) payload.colab_url = colabUrl;   // UI override (server ignores this — .env takes priority)
+    if (hfKey) payload.hf_key = hfKey;
+    if (colabUrl) payload.colab_url = colabUrl;
 
-    const res  = await fetch("/api/hf-detect", {
-      method:  "POST",
+    const res = await fetch("/api/hf-detect", {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify(payload),
+      body: JSON.stringify(payload),
     });
     const data = await res.json();
 
@@ -1682,30 +1767,19 @@ async function runHfDetect() {
       return;
     }
 
-    // Verdict badge
-    const badge = document.getElementById("ai-lab-verdict-badge");
-    badge.textContent = data.verdict === "AI" ? "AI-Generated" : "Human";
-    badge.className   = "ai-verdict-badge " + (data.verdict === "AI" ? "verdict-ai" : "verdict-human");
+    _currentAiLabData = data;
 
-    // Label + model source
-    const modelName = data.model || "AI Detector";
-    document.getElementById("ai-lab-label").innerHTML =
-      (data.verdict === "AI"
-        ? `AI text detected with <strong>${data.ai_probability}%</strong> confidence`
-        : `Likely human-written with <strong>${data.human_probability}%</strong> confidence`)
-      + `<br><span style="font-size:11px;opacity:0.6;margin-top:4px;display:block;">via ${modelName}</span>`;
+    // Update signal breakdown cards
+    const classVal = document.getElementById("signal-val-classifier");
+    const pplVal = document.getElementById("signal-val-ppl");
+    const burstVal = document.getElementById("signal-val-burst");
 
-    // Probability numbers
-    document.getElementById("ai-lab-ai-pct").textContent    = `${data.ai_probability}%`;
-    document.getElementById("ai-lab-human-pct").textContent = `${data.human_probability}%`;
+    if (classVal) classVal.textContent = typeof data.classifier_prob === "number" ? `${data.classifier_prob}% AI` : `${data.ai_probability}% AI`;
+    if (pplVal) pplVal.textContent = data.perplexity != null ? `${data.perplexity}` : "N/A";
+    if (burstVal) burstVal.textContent = data.burstiness != null ? `${data.burstiness}` : "N/A";
 
-    // Animate bars
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      const aiBar = document.getElementById("ai-lab-ai-bar");
-      const hBar  = document.getElementById("ai-lab-human-bar");
-      if (aiBar) aiBar.style.width = `${data.ai_probability}%`;
-      if (hBar)  hBar.style.width  = `${data.human_probability}%`;
-    }));
+    // Apply the active signal view
+    applySignalFilter();
 
     document.getElementById("ai-lab-raw").textContent = JSON.stringify(data.raw, null, 2);
     _aiLabShowState("ai-lab-results");
@@ -1716,4 +1790,93 @@ async function runHfDetect() {
   } finally {
     if (btn) btn.disabled = false;
   }
+}
+
+// Transfer text from Detector -> Humanizer
+function sendToHumanizer() {
+  const txt = document.getElementById("ai-lab-input")?.value || "";
+  const humInput = document.getElementById("humanize-input-text");
+  if (humInput) humInput.value = txt;
+  switchAiLabMode("humanize");
+  showToast("Transferred text to Humanizer Studio!", "info");
+}
+
+// ── Text Humanizer Execution ────────────────────────────────────────────────
+async function runHumanizer() {
+  const text = (document.getElementById("humanize-input-text")?.value || "").trim();
+  const style = document.getElementById("humanize-style-select")?.value || "professional";
+
+  if (!text) {
+    showToast("Please paste or type text to humanize.", "error");
+    return;
+  }
+  if (text.length < 30) {
+    showToast("Text is too short to humanize (minimum 30 characters).", "error");
+    return;
+  }
+
+  const btn = document.getElementById("humanize-run-btn");
+  const idle = document.getElementById("humanize-idle");
+  const loading = document.getElementById("humanize-loading");
+  const resultBox = document.getElementById("humanize-result-box");
+
+  if (btn) btn.disabled = true;
+  idle?.classList.add("hidden");
+  loading?.classList.remove("hidden");
+  resultBox?.classList.add("hidden");
+
+  try {
+    const res = await fetch("/api/humanize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, style }),
+    });
+    const data = await res.json();
+
+    loading?.classList.add("hidden");
+
+    if (!res.ok || !data.success) {
+      idle?.classList.remove("hidden");
+      showToast(data.error || "Humanizing failed.", "error");
+      return;
+    }
+
+    const outArea = document.getElementById("humanize-output-text");
+    if (outArea) outArea.value = data.humanized_text;
+
+    const badge = document.getElementById("humanize-engine-badge");
+    if (badge) badge.textContent = `Engine: ${data.engine || "Gemini Anti-Detection"}`;
+
+    resultBox?.classList.remove("hidden");
+    showToast("✨ Text humanized with high structural burstiness!", "success");
+
+  } catch (err) {
+    loading?.classList.add("hidden");
+    idle?.classList.remove("hidden");
+    showToast(`Humanizer error: ${err.message}`, "error");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function copyHumanizedText() {
+  const outArea = document.getElementById("humanize-output-text");
+  if (!outArea || !outArea.value) return;
+  navigator.clipboard.writeText(outArea.value);
+  showToast("Humanized text copied to clipboard!", "success");
+}
+
+function testHumanizedInDetector() {
+  const outArea = document.getElementById("humanize-output-text");
+  if (!outArea || !outArea.value) return;
+
+  const detInp = document.getElementById("ai-lab-input");
+  if (detInp) {
+    detInp.value = outArea.value;
+    detInp.dispatchEvent(new Event("input"));
+  }
+
+  switchAiLabMode("detect");
+  showToast("Loaded humanized text into detector — analyzing...", "info");
+  runHfDetect();
 }

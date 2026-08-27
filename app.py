@@ -187,7 +187,12 @@ def hf_detect():
         human_prob = float(payload.get("human_probability", payload.get("human_prob", payload.get("human", round(100.0 - ai_prob, 1)))))
         verdict    = payload.get("verdict", "AI" if ai_prob >= 50 else "Human")
         label      = payload.get("label",   "AI-Generated" if verdict == "AI" else "Likely Human")
-        model_name = payload.get("model",   "TMR AI Text Detector (Colab)")
+        model_name = payload.get("model",   "TMR Multi-Signal Detector (Colab)")
+
+        # Detailed signals if provided by hybrid server
+        perplexity = payload.get("perplexity")
+        burstiness = payload.get("burstiness")
+        classifier_prob = payload.get("classifier_prob", ai_prob)
 
         return jsonify({
             "ai_probability":    round(ai_prob, 1),
@@ -195,6 +200,9 @@ def hf_detect():
             "verdict":  verdict,
             "label":    label,
             "model":    model_name,
+            "perplexity": perplexity,
+            "burstiness": burstiness,
+            "classifier_prob": classifier_prob,
             "raw":      payload,
         })
 
@@ -231,30 +239,153 @@ def hf_detect():
     except Exception:
         return jsonify({"error": "Invalid JSON from HuggingFace", "raw_text": resp.text}), 502
 
-    scores = raw
-    if isinstance(scores, list) and scores and isinstance(scores[0], list):
-        scores = scores[0]
-    if not isinstance(scores, list):
-        return jsonify({"error": "Unexpected response shape", "raw": raw}), 502
+    # PirateXX returns [[{"label": "LABEL_0", "score": 0.12}, {"label": "LABEL_1", "score": 0.88}]]
+    # LABEL_1 = AI-Generated (Fake), LABEL_0 = Human-Written (Real)
+    ai_score = 50.0
+    try:
+        items = raw[0] if (isinstance(raw, list) and raw and isinstance(raw[0], list)) else (raw if isinstance(raw, list) else [])
+        for item in items:
+            lbl = (item.get("label") or "").upper()
+            sc  = float(item.get("score", 0.5)) * 100
+            if lbl in ("LABEL_1", "FAKE", "AI", "GENERATED"):
+                ai_score = sc
+            elif lbl in ("LABEL_0", "REAL", "HUMAN", "ORIGINAL"):
+                ai_score = 100.0 - sc
+    except Exception:
+        ai_score = 50.0
 
-    label_map = {(item.get("label") or "").strip().lower(): item.get("score", 0.0) for item in scores}
-    ai_prob    = label_map.get("fake",  label_map.get("label_1", label_map.get("ai",    0.0)))
-    human_prob = label_map.get("real",  label_map.get("label_0", label_map.get("human", 0.0)))
-    if ai_prob + human_prob == 0:
-        ai_prob = human_prob = 0.5
-
-    verdict = "AI"    if ai_prob >= 0.5 else "Human"
-    label   = "AI-Generated" if verdict == "AI" else "Likely Human"
+    human_score = round(100.0 - ai_score, 1)
+    ai_score    = round(ai_score, 1)
+    verdict     = "AI" if ai_score >= 50.0 else "Human"
+    label       = "AI-Generated" if verdict == "AI" else "Likely Human"
 
     return jsonify({
-        "ai_probability":    round(ai_prob * 100, 1),
-        "human_probability": round(human_prob * 100, 1),
+        "ai_probability":    ai_score,
+        "human_probability": human_score,
         "verdict":  verdict,
         "label":    label,
         "model":    "PirateXX/AI-Content-Detector (HuggingFace)",
+        "classifier_prob": ai_score,
         "raw":      raw,
     })
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  AI LAB — Humanizer Engine (Llama-3 / Gemini Anti-Detection Humanizer)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/humanize", methods=["POST"])
+def humanize_text():
+    """
+    AI Lab Humanizer — rewrites AI-generated text to bypass AI detectors:
+    - High sentence-length variance (high burstiness)
+    - Replaces formulaic AI vocabulary and robotic transitions
+    - Natural idiomatic rhythm while strictly preserving all facts, numbers, and meaning
+    """
+    import httpx
+
+    body  = request.get_json(silent=True) or {}
+    text  = (body.get("text") or "").strip()
+    style = (body.get("style") or "professional").lower()
+
+    if not text:
+        return jsonify({"error": "No text provided to humanize."}), 400
+    if len(text) < 30:
+        return jsonify({"error": "Text is too short to humanize (minimum 30 characters)."}), 400
+
+    env = get_env_vars()
+    colab_humanizer_url = (env.get("COLAB_HUMANIZER_URL") or os.environ.get("COLAB_HUMANIZER_URL", "")).strip().rstrip("/")
+
+    # Mode 1: If Colab Llama 3 8B Humanizer server is configured
+    if colab_humanizer_url:
+        try:
+            resp = httpx.post(
+                f"{colab_humanizer_url}/humanize",
+                json={"text": text, "style": style},
+                timeout=60.0,
+            )
+            if resp.status_code == 200:
+                res_data = resp.json()
+                return jsonify({
+                    "success": True,
+                    "humanized_text": res_data.get("humanized_text", res_data.get("text", "")),
+                    "original_text": text,
+                    "engine": "Llama-3-8B Humanizer (Colab)",
+                    "style": style,
+                })
+        except Exception as colab_err:
+            print(f"[Humanizer] Colab endpoint note: {colab_err} — falling back to Gemini Engine")
+
+    # Mode 2: Built-in Gemini Anti-Detection Humanizer Engine
+    api_key = env.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        return jsonify({
+            "error": "GEMINI_API_KEY is not configured in .env. Please add it to use the built-in Humanizer."
+        }), 400
+
+    try:
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=api_key)
+
+        style_guidelines = {
+            "professional": "Professional workplace & resume tone. Natural, crisp, direct, active voice.",
+            "conversational": "Casual, authentic, conversational human tone with natural everyday flow.",
+            "academic": "Scholarly, precise, thoughtful analytical tone with rigorous human cadence.",
+        }.get(style, "Natural human tone.")
+
+        humanize_prompt = f"""You are a master human writer and anti-AI detection linguist.
+Your task is to completely rewrite and humanize the following text so it reads 100% like a genuine human and bypasses all AI detectors (GPTZero, Turnitin, Copyleaks, RoBERTa).
+
+TARGET STYLE: {style_guidelines}
+
+CRITICAL RULES FOR HUMANIZING:
+1. MAXIMIZE BURSTINESS: Dramatically vary your sentence lengths. Alternate between short punchy sentences (3-6 words) and longer descriptive compound sentences (18-25 words).
+2. ELIMINATE AI VOCABULARY & CRUTCH PHRASES: Strictly NEVER use words like "testament to", "delve", "pivotal", "transformative", "tapestry", "seamlessly", "furthermore", "moreover", "in conclusion", "harness", "beacon", "foster", "synergy", "underscores", "spearheaded", "dynamic landscape".
+3. NATURAL IDIOMATIC CADENCE: Use natural human phrasing, occasional contractions (when natural), authentic flow, and active verbs.
+4. PRESERVE 100% OF FACTS, DATA & MEANING: Keep every specific skill, metric, percentage, date, tool name, and factual claim intact. Do NOT invent new facts.
+5. NO EXPLANATIONS: Output ONLY the humanized rewritten text. Do NOT add preamble, quotes, markdown wrappers, or explanations.
+
+ORIGINAL TEXT:
+{text}"""
+
+        models = [
+            "gemini-3.1-flash-lite",
+            "gemini-2.5-flash",
+            "gemini-3.5-flash",
+        ]
+
+        humanized_result = ""
+        for m in models:
+            try:
+                response = client.models.generate_content(
+                    model=m,
+                    contents=humanize_prompt,
+                    config=types.GenerateContentConfig(temperature=0.75),
+                )
+                if response and response.text:
+                    humanized_result = response.text.strip()
+                    if humanized_result.startswith(('"', "“")) and humanized_result.endswith(('"', "”")):
+                        humanized_result = humanized_result[1:-1].strip()
+                    break
+            except Exception as model_err:
+                print(f"[Humanizer] {m} note: {model_err}")
+                continue
+
+        if not humanized_result:
+            raise RuntimeError("All Gemini models exhausted for humanizing.")
+
+        return jsonify({
+            "success": True,
+            "humanized_text": humanized_result,
+            "original_text": text,
+            "engine": "Gemini Anti-Detection Humanizer Engine",
+            "style": style,
+        })
+
+    except Exception as e:
+        return jsonify({"error": f"Humanizing failed: {str(e)}"}), 500
 
 
 @app.route("/")
