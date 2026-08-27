@@ -15,26 +15,64 @@ from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
 
-# ─── Paths ──────────────────────────────────────────────────────────────────
+# ─── Paths & Dynamic Discovery ───────────────────────────────────────────────
 
 BASE_DIR = Path(__file__).parent
-CHROME_USER_DATA = r"C:\Users\Dell\AppData\Local\Google\Chrome\User Data"
-SIMPLIFY_PROFILE = "Profile 8"
-SIMPLIFY_PROFILE_DIR = rf"{CHROME_USER_DATA}\{SIMPLIFY_PROFILE}"
 SIMPLIFY_EXT_ID = "pbanhockgagggenencehbnadejlgchfc"
-
-def get_simplify_ext_path() -> str:
-    """Find the latest Simplify extension directory dynamically (e.g., 3.0.5_0)."""
-    ext_dir = Path(CHROME_USER_DATA) / SIMPLIFY_PROFILE / "Extensions" / SIMPLIFY_EXT_ID
-    if ext_dir.exists():
-        subdirs = [d for d in ext_dir.iterdir() if d.is_dir()]
-        if subdirs:
-            latest = sorted(subdirs, key=lambda p: p.stat().st_mtime, reverse=True)[0]
-            return str(latest).replace("\\", "/")
-    return f"C:/Users/Dell/AppData/Local/Google/Chrome/User Data/{SIMPLIFY_PROFILE}/Extensions/{SIMPLIFY_EXT_ID}/3.0.5_0"
-
-SIMPLIFY_EXT_PATH = get_simplify_ext_path()
 TEMP_PROFILE_DIR = str(BASE_DIR / "chrome_profile_simplify")
+
+def get_chrome_user_data_dir() -> Path:
+    """Dynamically get the Chrome User Data directory for the current OS/user."""
+    user_home = Path(os.environ.get("USERPROFILE", str(Path.home())))
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        candidate = Path(local_app_data) / "Google" / "Chrome" / "User Data"
+        if candidate.exists():
+            return candidate
+    candidate = user_home / "AppData" / "Local" / "Google" / "Chrome" / "User Data"
+    if candidate.exists():
+        return candidate
+    return candidate
+
+
+def find_simplify_installation() -> dict:
+    """
+    Search all Chrome profiles (Default, Profile 1..N) in Chrome User Data to find
+    where the Simplify extension is installed and its latest version.
+    Can be overridden by SIMPLIFY_PROFILE in .env.
+    """
+    load_dotenv()
+    chrome_data = get_chrome_user_data_dir()
+    env_profile = os.getenv("SIMPLIFY_PROFILE", "").strip()
+
+    if not chrome_data.exists():
+        return {"profile_dir": None, "profile_name": None, "ext_path": None, "error": f"Chrome User Data not found at {chrome_data}"}
+
+    # If specific profile requested in .env
+    profiles_to_check = []
+    if env_profile:
+        profiles_to_check.append(chrome_data / env_profile)
+
+    # Add all subdirectories that look like profiles
+    for item in chrome_data.iterdir():
+        if item.is_dir() and (item.name == "Default" or item.name.startswith("Profile")):
+            if item not in profiles_to_check:
+                profiles_to_check.append(item)
+
+    for prof_dir in profiles_to_check:
+        ext_dir = prof_dir / "Extensions" / SIMPLIFY_EXT_ID
+        if ext_dir.exists():
+            subdirs = [d for d in ext_dir.iterdir() if d.is_dir()]
+            if subdirs:
+                latest = sorted(subdirs, key=lambda p: p.stat().st_mtime, reverse=True)[0]
+                return {
+                    "profile_dir": str(prof_dir),
+                    "profile_name": prof_dir.name,
+                    "ext_path": str(latest).replace("\\", "/"),
+                    "error": None
+                }
+
+    return {"profile_dir": None, "profile_name": None, "ext_path": None, "error": f"Simplify extension ({SIMPLIFY_EXT_ID}) not found in any Chrome profile in {chrome_data}"}
 
 
 # ─── Temp Profile Builder ───────────────────────────────────────────────────
@@ -48,7 +86,7 @@ def _safe_copytree(src: Path, dst: Path):
         if item.is_dir():
             target.mkdir(parents=True, exist_ok=True)
         elif item.is_file():
-            if item.name.upper() == "LOCK":
+            if item.name.upper() in ("LOCK", "LOCKFILE", "LOG", "LOG.OLD"):
                 continue
             try:
                 shutil.copy2(item, target)
@@ -60,32 +98,44 @@ def _safe_copytree(src: Path, dst: Path):
                     pass
 
 
-def _create_temp_profile() -> str:
+def _create_temp_profile(profile_dir: Optional[str] = None) -> str:
     """
     Create a clean temp Chrome profile directory for Playwright.
-    Copies Simplify's extension storage (chrome.storage.local) which holds
-    user settings, token state, and extension data.
+    Copies Simplify's extension storage, IndexedDB, cookies (Network), and local storage
+    so Simplify's authenticated session and uploaded resume state are preserved.
     """
-    src = Path(SIMPLIFY_PROFILE_DIR)
     dst_root = Path(TEMP_PROFILE_DIR)
     dst_default = dst_root / "Default"
     dst_default.mkdir(parents=True, exist_ok=True)
 
-    # Copy Simplify extension local storage safely
-    ext_storage_src = src / "Local Extension Settings" / SIMPLIFY_EXT_ID
-    ext_storage_dst = dst_default / "Local Extension Settings" / SIMPLIFY_EXT_ID
-    if ext_storage_src.exists():
-        try:
-            if ext_storage_dst.exists():
-                shutil.rmtree(ext_storage_dst, ignore_errors=True)
-            _safe_copytree(ext_storage_src, ext_storage_dst)
-            size_kb = sum(f.stat().st_size for f in ext_storage_src.rglob("*") if f.is_file()) // 1024
-            print(f"  [Simplify] Copied extension storage ({size_kb}KB)")
-        except Exception as e:
-            print(f"  [Simplify] Warning copying extension storage: {e}")
+    if profile_dir and Path(profile_dir).exists():
+        src = Path(profile_dir)
+        # Copy storage directories
+        dirs_to_copy = [
+            ("Local Extension Settings", f"Local Extension Settings/{SIMPLIFY_EXT_ID}"),
+            ("IndexedDB", "IndexedDB"),
+            ("Local Storage", "Local Storage"),
+            ("Session Storage", "Session Storage"),
+            ("Network", "Network"),
+        ]
+
+        for dir_name, subpath in dirs_to_copy:
+            s = src / dir_name
+            d = dst_default / dir_name
+            if s.exists():
+                try:
+                    if d.exists():
+                        shutil.rmtree(d, ignore_errors=True)
+                    _safe_copytree(s, d)
+                except Exception as e:
+                    print(f"  [Simplify] Warning copying {dir_name}: {e}")
+
+        size_kb = sum(f.stat().st_size for f in dst_default.rglob("*") if f.is_file()) // 1024
+        print(f"  [Simplify] Cloned profile state from {src.name} ({size_kb}KB total)")
 
     # Copy Local State
-    local_state_src = Path(CHROME_USER_DATA) / "Local State"
+    chrome_data = get_chrome_user_data_dir()
+    local_state_src = chrome_data / "Local State"
     local_state_dst = dst_root / "Local State"
     if local_state_src.exists() and not local_state_dst.exists():
         try:
@@ -112,17 +162,21 @@ async def read_simplify_score(job_url: str, company: str = "", role: str = "") -
     email = os.getenv("SIMPLIFY_EMAIL", "")
     password = os.getenv("SIMPLIFY_PASSWORD", "")
 
-    ext_path = get_simplify_ext_path()
-    if not Path(ext_path).exists():
+    installation = find_simplify_installation()
+    if installation.get("error") or not installation.get("ext_path"):
         return {
             "success": False,
             "score": None,
             "missing_keywords": [],
             "matching_keywords": [],
-            "error": f"Simplify extension path not found: {ext_path}",
+            "error": installation.get("error") or "Simplify extension path not found",
         }
 
-    temp_profile = _create_temp_profile()
+    ext_path = installation["ext_path"]
+    profile_dir = installation["profile_dir"]
+    print(f"  [Simplify] Using profile '{installation.get('profile_name')}' ({ext_path})")
+
+    temp_profile = _create_temp_profile(profile_dir)
 
     # Standardize Ashby URLs to /application tab if not already specified
     target_url = job_url
