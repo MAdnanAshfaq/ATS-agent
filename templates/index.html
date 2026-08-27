@@ -292,15 +292,62 @@
             </div>
           </div>
 
-          <!-- Row 5: ATS Job Keywords -->
-          <div class="matrix-row">
-            <div class="matrix-cell-label">
-              <span>ATS Job Keywords (<span id="matrix-kw-matched-count">3</span>/<span id="matrix-kw-total-count">16</span>)</span>
-              <span class="matrix-status-dot dot-missing" id="matrix-kw-status"><i class="fa-solid fa-xmark"></i></span>
+          <!-- Row 5: ATS Job Keywords (Hybrid Interactive Matrix) -->
+          <div class="matrix-row matrix-row-keywords" style="align-items: flex-start;">
+            <div class="matrix-cell-label" style="align-self: flex-start; padding-top: 10px;">
+              <div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span>ATS Keywords</span>
+                  <span class="matrix-status-dot dot-missing" id="matrix-kw-status"><i class="fa-solid fa-xmark"></i></span>
+                </div>
+                <div style="font-size:12px; color:#64748b; margin-top:4px; font-weight:500;">
+                  (<span id="matrix-kw-matched-count">3</span> matched / <span id="matrix-kw-total-count">16</span> total)
+                </div>
+              </div>
             </div>
+            
             <div class="matrix-cell-jd matrix-cell-full">
-              <div class="matrix-keywords-chips" id="matrix-keywords-container">
-                <!-- Matched Chips with 👍 and Missing Chips -->
+              <!-- Matched Skills Group -->
+              <div class="matrix-kw-group">
+                <div class="matrix-kw-group-title">
+                  <i class="fa-solid fa-circle-check" style="color:#10b981;"></i> 
+                  <span>Already Matched in Resume</span> 
+                  <span style="font-size:12px; color:#64748b; font-weight:normal;">(Found in master resume)</span>
+                </div>
+                <div class="matrix-keywords-chips" id="matrix-matched-container">
+                  <!-- Matched chips: 👍 Python, 👍 PySpark, etc. -->
+                </div>
+              </div>
+
+              <!-- Missing Skills Group (Selectable + Addable) -->
+              <div class="matrix-kw-group" style="margin-top:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+                  <div class="matrix-kw-group-title" style="margin:0;">
+                    <i class="fa-solid fa-circle-plus" style="color:#f59e0b;"></i> 
+                    <span>Missing from Resume</span> 
+                    <span style="font-size:12px; color:#64748b; font-weight:normal;">(Click any chip to toggle AI injection)</span>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span id="matrix-selected-count-badge" class="matrix-count-badge">0 selected</span>
+                    <button type="button" class="btn-micro" onclick="selectAllMatrixChips(true)">Select All</button>
+                    <button type="button" class="btn-micro" onclick="selectAllMatrixChips(false)">Clear</button>
+                  </div>
+                </div>
+
+                <div class="matrix-keywords-chips" id="matrix-missing-container">
+                  <!-- Interactive selectable chips -->
+                </div>
+
+                <!-- Add Custom Keyword Bar -->
+                <div class="matrix-add-keyword-bar">
+                  <div style="position:relative; flex:1; max-width:360px;">
+                    <i class="fa-solid fa-plus" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#94a3b8; font-size:12px;"></i>
+                    <input type="text" id="matrix-manual-kw-input" class="matrix-manual-input" placeholder="Add custom missing skill or tool..." onkeydown="if(event.key==='Enter'){event.preventDefault();addMatrixManualChip();}">
+                  </div>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="addMatrixManualChip()" style="border-radius:8px; font-weight:600; padding:7px 16px;">
+                    + Add to Injection List
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -322,8 +369,8 @@
 
         <!-- Primary Action Row -->
         <div class="matrix-action-bar">
-          <button type="button" class="btn btn-primary btn-lg" onclick="generateWithSelectedKeywords()" style="font-size:15px; padding:14px 28px; border-radius:30px; box-shadow:0 8px 24px rgba(6,182,212,0.35);">
-            <i class="fa-solid fa-bolt"></i> Auto-Tailor Resume with Injected Keywords (1-Click)
+          <button type="button" class="btn btn-primary btn-lg" id="matrix-generate-btn" onclick="generateWithSelectedKeywords()" style="font-size:15px; padding:14px 28px; border-radius:30px; box-shadow:0 8px 24px rgba(6,182,212,0.35);">
+            <i class="fa-solid fa-bolt"></i> Auto-Tailor Resume with Injected (<span id="matrix-btn-kw-count">0</span>) Keywords (1-Click)
           </button>
           <button type="button" class="btn btn-outline btn-lg" onclick="openCoverLetterFromAnalyze()" style="font-size:15px; padding:14px 24px; border-radius:30px; color:#0f172a; border-color:#cbd5e1;">
             <i class="fa-solid fa-file-pen"></i> Generate Recruiter Cover Letter

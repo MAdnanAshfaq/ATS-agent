@@ -1158,6 +1158,50 @@ input:checked + .slider:before { transform: translateX(20px); }
   font-weight: 600;
 }
 
+.matrix-kw-group {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px 18px;
+}
+
+.matrix-kw-group-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.matrix-count-badge {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0369a1;
+  background: #e0f2fe;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  border: 1px solid #bae6fd;
+}
+
+.btn-micro {
+  background: transparent;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-micro:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
 .chip-matched-thumb {
   display: inline-flex;
   align-items: center;
@@ -1165,23 +1209,70 @@ input:checked + .slider:before { transform: translateX(20px); }
   padding: 6px 14px;
   border-radius: 9999px;
   background: #d1fae5;
-  border: 1px solid #a7f3d0;
+  border: 1.5px solid #a7f3d0;
   color: #065f46;
   font-size: 13px;
   font-weight: 700;
+  box-shadow: 0 1px 3px rgba(16, 185, 129, 0.1);
 }
 
-.chip-missing-neutral {
+.chip-missing-selectable {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   padding: 6px 14px;
   border-radius: 9999px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  color: #1e293b;
+  background: #ffffff;
+  border: 1.5px solid #0284c7;
+  color: #0f172a;
   font-size: 13px;
   font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.chip-missing-selectable:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(2, 132, 199, 0.15);
+}
+
+.chip-missing-selectable.deselected {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #94a3b8;
+  opacity: 0.75;
+}
+
+.chip-missing-selectable.deselected:hover {
+  opacity: 1;
+  background: #ffffff;
+  color: #334155;
+}
+
+.matrix-add-keyword-bar {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.matrix-manual-input {
+  width: 100%;
+  padding: 7px 12px 7px 32px;
+  font-size: 13px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.matrix-manual-input:focus {
+  border-color: #0284c7;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.12);
 }
 
 .matrix-summary-text {

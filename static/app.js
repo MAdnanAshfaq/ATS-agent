@@ -1484,7 +1484,8 @@ function renderSimplifyCard(data) {
   }
 
   // 6. ATS Job Keywords Row
-  const kwContainer = document.getElementById("matrix-keywords-container");
+  const matchedContainer = document.getElementById("matrix-matched-container");
+  const missingContainer = document.getElementById("matrix-missing-container");
   const matched = data.matching_keywords || [];
   const missing = data.missing_keywords || [];
   const totalKw = data.total_keywords || (matched.length + missing.length);
@@ -1508,28 +1509,37 @@ function renderSimplifyCard(data) {
     }
   }
 
-  if (kwContainer) {
-    kwContainer.innerHTML = "";
-
-    // Matched chips with 👍
-    matched.forEach(kw => {
-      const chip = document.createElement("span");
-      chip.className = "chip-matched-thumb";
-      chip.innerHTML = `👍 ${kw}`;
-      kwContainer.appendChild(chip);
-    });
-
-    // Missing chips
-    analyzedMissingKeywords = missing;
-    selectedMissingKeywords = new Set(missing);
-
-    missing.forEach(kw => {
-      const chip = document.createElement("span");
-      chip.className = "chip-missing-neutral";
-      chip.innerText = kw;
-      kwContainer.appendChild(chip);
-    });
+  // Matched chips (👍)
+  if (matchedContainer) {
+    matchedContainer.innerHTML = "";
+    if (matched.length === 0) {
+      matchedContainer.innerHTML = `<span style="font-size:13px; color:#94a3b8; font-style:italic;">None identified yet</span>`;
+    } else {
+      matched.forEach(kw => {
+        const chip = document.createElement("span");
+        chip.className = "chip-matched-thumb";
+        chip.innerHTML = `👍 ${kw}`;
+        matchedContainer.appendChild(chip);
+      });
+    }
   }
+
+  // Missing chips (Interactive Selectable + Addable)
+  analyzedMissingKeywords = missing;
+  selectedMissingKeywords = new Set(missing);
+
+  if (missingContainer) {
+    missingContainer.innerHTML = "";
+    if (missing.length === 0) {
+      missingContainer.innerHTML = `<span style="font-size:13px; color:#10b981; font-weight:600;">🎉 Master resume matches all required job skills!</span>`;
+    } else {
+      missing.forEach(kw => {
+        renderMatrixMissingChip(kw, missingContainer);
+      });
+    }
+  }
+
+  updateMatrixSelectionCounters();
 
   // 7. Summary Row
   const sumFeedback = document.getElementById("matrix-summary-feedback");
@@ -1544,6 +1554,78 @@ function renderSimplifyCard(data) {
 
   // Scroll smoothly to Matrix Card
   card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function renderMatrixMissingChip(kw, container) {
+  const chip = document.createElement("div");
+  const isSelected = selectedMissingKeywords.has(kw);
+  chip.className = "chip-missing-selectable " + (isSelected ? "" : "deselected");
+  chip.dataset.keyword = kw;
+  chip.innerHTML = `<i class="fa-solid ${isSelected ? 'fa-circle-check text-emerald' : 'fa-circle text-muted'} icon-state"></i> <span>${kw}</span>`;
+
+  chip.addEventListener("click", () => {
+    if (selectedMissingKeywords.has(kw)) {
+      selectedMissingKeywords.delete(kw);
+      chip.classList.add("deselected");
+      chip.querySelector(".icon-state").className = "fa-regular fa-circle text-muted icon-state";
+    } else {
+      selectedMissingKeywords.add(kw);
+      chip.classList.remove("deselected");
+      chip.querySelector(".icon-state").className = "fa-solid fa-circle-check text-emerald icon-state";
+    }
+    updateMatrixSelectionCounters();
+  });
+
+  container.appendChild(chip);
+}
+
+function updateMatrixSelectionCounters() {
+  const count = selectedMissingKeywords.size;
+  const badge = document.getElementById("matrix-selected-count-badge");
+  const btnCount = document.getElementById("matrix-btn-kw-count");
+  if (badge) badge.innerText = `${count} selected`;
+  if (btnCount) btnCount.innerText = `${count}`;
+}
+
+function selectAllMatrixChips(state) {
+  const container = document.getElementById("matrix-missing-container");
+  if (!container) return;
+
+  const chips = container.querySelectorAll(".chip-missing-selectable");
+  chips.forEach(chip => {
+    const kw = chip.dataset.keyword;
+    if (state) {
+      selectedMissingKeywords.add(kw);
+      chip.classList.remove("deselected");
+      const icon = chip.querySelector(".icon-state");
+      if (icon) icon.className = "fa-solid fa-circle-check text-emerald icon-state";
+    } else {
+      selectedMissingKeywords.delete(kw);
+      chip.classList.add("deselected");
+      const icon = chip.querySelector(".icon-state");
+      if (icon) icon.className = "fa-regular fa-circle text-muted icon-state";
+    }
+  });
+
+  updateMatrixSelectionCounters();
+}
+
+function addMatrixManualChip() {
+  const input = document.getElementById("matrix-manual-kw-input");
+  if (!input) return;
+  const val = input.value.trim();
+  if (!val) return;
+
+  const container = document.getElementById("matrix-missing-container");
+  if (!container) return;
+
+  if (!selectedMissingKeywords.has(val)) {
+    selectedMissingKeywords.add(val);
+    renderMatrixMissingChip(val, container);
+    updateMatrixSelectionCounters();
+    showToast(`Added '${val}' to keyword injection list!`, "success");
+  }
+  input.value = "";
 }
 
 function openCoverLetterFromAnalyze() {
@@ -1562,51 +1644,6 @@ function generateWithSelectedKeywords() {
   startGeneration({
     scoreBefore: analyzeScoreBefore
   });
-}
-
-function renderMissingChip(kw, container) {
-  const chip = document.createElement("div");
-  chip.className = "chip-white-selectable selected";
-  chip.dataset.keyword = kw;
-  chip.innerHTML = `<i class="fa-solid fa-circle-check text-emerald icon-state"></i> <span>${kw}</span>`;
-
-  chip.addEventListener("click", () => {
-    if (selectedMissingKeywords.has(kw)) {
-      selectedMissingKeywords.delete(kw);
-      chip.classList.remove("selected");
-      chip.querySelector(".icon-state").className = "fa-regular fa-circle text-dim icon-state";
-    } else {
-      selectedMissingKeywords.add(kw);
-      chip.classList.add("selected");
-      chip.querySelector(".icon-state").className = "fa-solid fa-circle-check text-emerald icon-state";
-    }
-  });
-
-  container.appendChild(chip);
-}
-
-function addManualChip() {
-  const input = document.getElementById("manual-add-kw-input");
-  const val = input.value.trim();
-  if (!val) return;
-
-  if (!selectedMissingKeywords.has(val)) {
-    selectedMissingKeywords.add(val);
-    const container = document.getElementById("missing-chips-container");
-    renderMissingChip(val, container);
-  }
-  input.value = "";
-}
-
-function generateWithSelectedKeywords() {
-  const keywordsList = Array.from(selectedMissingKeywords);
-  const kwInput = document.getElementById("custom-keywords-input");
-  if (kwInput) {
-    kwInput.value = keywordsList.join(", ");
-  }
-
-  // Pass the score captured from the Analyze step into the generation run
-  startGeneration({ scoreBefore: analyzeScoreBefore });
 }
 
 /* ── Cover Letter Modal Handlers ────────────────────────────────────────── */
