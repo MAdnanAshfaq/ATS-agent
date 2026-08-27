@@ -562,7 +562,7 @@ def analyze_job():
     try:
         import asyncio
         from agent import load_base_resume, extract_keywords_from_jd
-        from scraper import scrape_jd
+        from scraper import scrape_jd, sanitize_jd_url
         from simplify_reader import read_simplify_score
 
         base_resume = load_base_resume()
@@ -571,13 +571,37 @@ def analyze_job():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-        print(f"[Analyze] Scraping JD from {url}...")
-        jd_data = loop.run_until_complete(scrape_jd(url))
+        # Show the sanitized URL in logs so user can see what's being scraped
+        sanitized_url = sanitize_jd_url(url.rstrip("/"))
+        print(f"[Analyze] Scraping JD from {sanitized_url}...")
+
+        try:
+            jd_data = loop.run_until_complete(scrape_jd(url))
+        except RuntimeError as scrape_err:
+            # Known scraper failure: bot-block, login-required, CAPTCHA, bad URL
+            err_str = str(scrape_err)
+            user_msg = (
+                "⚠️ Could not extract the job description from this URL.\n\n"
+                + err_str.split("\n")[0]  # first line of the RuntimeError
+                + "\n\nWhat to do:\n"
+                "1. Open the job in your browser and copy the direct URL (no /candidate or ?from=login)\n"
+                "2. Or paste the full JD text manually into the 'Missing Keywords' box and run Generate directly\n"
+                "3. Or use the Simplify Chrome extension and paste keywords manually"
+            )
+            print(f"[Analyze] Scrape validation failed: {scrape_err}")
+            return jsonify({
+                "success": False,
+                "error": user_msg,
+                "error_type": "scrape_blocked",
+                "jd_length": 0,
+            }), 422
+
         company = jd_data["company"]
         from scraper import clean_role_title
         role = clean_role_title(jd_data["role"])
         jd_text = jd_data["jd_text"]
-        print(f"[Analyze] Scraped {len(jd_text)} chars for {role} at {company}")
+        jd_len  = len(jd_text)
+        print(f"[Analyze] Scraped {jd_len} chars for {role} at {company}")
 
         missing_keywords = []
         matching_keywords = []
@@ -608,16 +632,33 @@ def analyze_job():
             from llm_matcher import analyze_jd_and_resume_with_gemini
             llm_res = analyze_jd_and_resume_with_gemini(jd_text, base_resume)
             matching_keywords = llm_res.get("matching_keywords", [])
-            missing_keywords = llm_res.get("missing_keywords", [])
-            score = llm_res.get("score", 70)
+            missing_keywords  = llm_res.get("missing_keywords", [])
+            score  = llm_res.get("score", 70)
             source = "llm_matcher"
 
+            # If LLM quality gate rejected the JD, surface a degraded warning
+            if llm_res.get("error") in ("jd_too_short", "jd_is_bot_page"):
+                return jsonify({
+                    "success": False,
+                    "error": (
+                        f"⚠️ Could not analyze this URL — the page returned only {jd_len} characters "
+                        "of content (likely a login wall, CAPTCHA, or bot-block page).\n\n"
+                        "What to do:\n"
+                        "1. Make sure you're using the direct job posting URL, not a /candidate or ?from=login link\n"
+                        "2. Or paste the full JD text manually into the 'Missing Keywords' box\n"
+                        "3. Or log in on the career site, then copy the URL from the job page itself"
+                    ),
+                    "error_type": "jd_blocked",
+                    "jd_length": jd_len,
+                    "company": company,
+                    "role": role,
+                }), 422
 
         return jsonify({
             "success": True,
             "company": company,
             "role": role,
-            "jd_length": len(jd_text),
+            "jd_length": jd_len,
             "score": score,
             "matching_keywords": matching_keywords,
             "missing_keywords": missing_keywords,
@@ -628,9 +669,13 @@ def analyze_job():
     except Exception as e:
         import traceback
         err_msg = traceback.format_exc()
-        with open("debug_analyze.log", "w", encoding="utf-8") as f:
-            f.write(err_msg)
+        try:
+            with open("debug_analyze.log", "w", encoding="utf-8") as f:
+                f.write(err_msg)
+        except Exception:
+            pass
         return jsonify({"success": False, "error": str(e)}), 500
+
 
 
 @app.route("/api/open-folder", methods=["POST"])

@@ -1309,6 +1309,9 @@ async function analyzeJobKeywords() {
   analyzeBtn.disabled = true;
   analyzeBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Analyzing...`;
 
+  // Clear any previous inline error
+  _analyzeHideError();
+
   try {
     const res = await fetch("/api/analyze", {
       method: "POST",
@@ -1324,7 +1327,12 @@ async function analyzeJobKeywords() {
     analyzeBtn.innerHTML = `<i class="fa-solid fa-magnifying-glass"></i> Analyze & Cross-Check`;
 
     if (!data.success) {
-      showToast(data.error || "Analysis failed", "error");
+      const isBlockError = data.error_type === "scrape_blocked" || data.error_type === "jd_blocked";
+      if (isBlockError) {
+        _analyzeShowError(data.error || "Could not extract job description from this URL.");
+      } else {
+        showToast(data.error || "Analysis failed", "error");
+      }
       return;
     }
 
@@ -1340,6 +1348,31 @@ async function analyzeJobKeywords() {
     analyzeBtn.innerHTML = `<i class="fa-solid fa-magnifying-glass"></i> Analyze & Cross-Check`;
     showToast("Server connection error during analysis", "error");
   }
+}
+
+function _analyzeShowError(msg) {
+  let card = document.getElementById("analyze-error-card");
+  if (!card) {
+    card = document.createElement("div");
+    card.id = "analyze-error-card";
+    card.style.cssText = [
+      "margin-top:14px","padding:16px 18px","border-radius:10px",
+      "background:rgba(239,68,68,0.12)","border:1px solid rgba(239,68,68,0.35)",
+      "color:#fca5a5","font-size:13px","line-height:1.7","white-space:pre-wrap",
+      "word-break:break-word",
+    ].join(";");
+    const btn = document.getElementById("analyze-btn");
+    if (btn && btn.parentNode) btn.parentNode.insertBefore(card, btn.nextSibling);
+  }
+  card.innerHTML = `<strong style="color:#f87171;display:block;margin-bottom:8px;">
+    <i class="fa-solid fa-triangle-exclamation"></i>&nbsp;Scrape Blocked
+  </strong>${msg.replace(/\n/g, "<br>")}`;
+  card.style.display = "block";
+}
+
+function _analyzeHideError() {
+  const card = document.getElementById("analyze-error-card");
+  if (card) card.style.display = "none";
 }
 
 function renderSimplifyCard(data) {
