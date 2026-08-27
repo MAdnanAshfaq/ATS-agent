@@ -9,11 +9,20 @@ strictness if keywords remain missing after the first attempt.
 import json
 import os
 import re
+import sys
 import time
 from typing import Optional
 from google import genai
 from google.genai import types
 from gemini_client import get_gemini_client, is_quota_error, rotate_key, get_all_gemini_keys
+
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 
 def _get_gemini_client():
@@ -222,7 +231,7 @@ def rewrite_resume(
         print("[Rewriter] No missing keywords — returning base resume unchanged")
         return base_resume
 
-    models = ["gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.6-flash"]
+    models = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash"]
     still_missing = None
     last_valid_resume = None
 

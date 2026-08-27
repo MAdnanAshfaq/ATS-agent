@@ -12,12 +12,22 @@ healthy API key, and transparently retries requests so your application never st
 """
 
 import os
+import sys
 import time
 import logging
 from typing import List, Callable, Any
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+
+# Ensure Windows stdout never crashes on unicode characters
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 logger = logging.getLogger("gemini_client")
 
@@ -74,7 +84,7 @@ def rotate_key(reason: str = "quota") -> str:
     masked_old = (keys[old_idx][:6] + "..." + keys[old_idx][-4:]) if len(keys[old_idx]) > 10 else f"Key #{old_idx+1}"
     masked_new = (new_key[:6] + "..." + new_key[-4:]) if len(new_key) > 10 else f"Key #{new_idx+1}"
 
-    print(f"\n[Gemini Pool] 🔄 {reason.upper()}: Rotating from Key #{old_idx+1} ({masked_old}) to Key #{new_idx+1} ({masked_new})...")
+    print(f"\n[Gemini Pool] [ROTATING] {reason.upper()}: Rotating from Key #{old_idx+1} ({masked_old}) to Key #{new_idx+1} ({masked_new})...")
     return new_key
 
 
@@ -127,7 +137,7 @@ def execute_with_failover(fn: Callable[[genai.Client], Any], max_rotations: int 
                     time.sleep(1)
                     continue
                 else:
-                    print(f"[Gemini Pool] ⚠️ Single API key hit rate limit: {e}. Waiting 8s...")
+                    print(f"[Gemini Pool] [WARN] Single API key hit rate limit: {e}. Waiting 8s...")
                     time.sleep(8)
                     continue
             else:

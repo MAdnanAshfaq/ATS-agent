@@ -11,8 +11,17 @@ Gemini semantically compares them and returns:
 import json
 import os
 import re
+import sys
 from google import genai
 from google.genai import types
+
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 GENERIC_FILLER_WORDS = {
     "responsiveness", "knowledge", "leading", "work", "code", "ensure", "ensuring",
@@ -190,8 +199,9 @@ Return ONLY a valid JSON object matching this schema:
 }}"""
 
         def _call_gemini(client):
-            models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+            models = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash"]
             resp = None
+            last_err = None
             for m in models:
                 try:
                     resp = client.models.generate_content(
@@ -203,12 +213,11 @@ Return ONLY a valid JSON object matching this schema:
                         ),
                     )
                     if resp and resp.text:
-                        print(f"[LLM Matcher] Using model: {m} (JSON mode)")
+                        print(f"[LLM Matcher] [OK] Extracted ATS matrix with {m} (JSON mode)")
                         return resp
                 except Exception as model_err:
-                    print(f"[LLM Matcher] {m} JSON mode error: {model_err}")
-                    if "429" in str(model_err) or "RESOURCE_EXHAUSTED" in str(model_err):
-                        raise model_err
+                    print(f"[LLM Matcher] {m} JSON mode note: {str(model_err)[:120]}")
+                    last_err = model_err
                     continue
 
             # Fallback to plain text mode
@@ -219,13 +228,16 @@ Return ONLY a valid JSON object matching this schema:
                         contents=prompt,
                     )
                     if resp and resp.text:
-                        print(f"[LLM Matcher] Using model: {m} (Plain text mode)")
+                        print(f"[LLM Matcher] [OK] Extracted ATS matrix with {m} (Plain text mode)")
                         return resp
                 except Exception as model_err:
-                    print(f"[LLM Matcher] {m} plain text error: {model_err}")
-                    if "429" in str(model_err) or "RESOURCE_EXHAUSTED" in str(model_err):
-                        raise model_err
+                    print(f"[LLM Matcher] {m} plain text note: {str(model_err)[:120]}")
+                    last_err = model_err
                     continue
+
+            if last_err and ("429" in str(last_err) or "RESOURCE_EXHAUSTED" in str(last_err)):
+                raise last_err
+
             return resp
 
         response = execute_with_failover(_call_gemini)
