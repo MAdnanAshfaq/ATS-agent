@@ -92,6 +92,54 @@ def detect_platform(url: str) -> Optional[str]:
     return None
 
 
+def sanitize_jd_url(url: str) -> str:
+    """
+    Strip login-redirect segments and auth/tracking query params from ATS URLs
+    so the scraper hits the actual job posting, not a login or application form.
+
+    Examples fixed:
+      iCIMS:  /jobs/9070/data-analytics-engineer/candidate?from=login&csrf=... → /jobs/9070/data-analytics-engineer
+      Generic: ?from=login&token=xxx&redirect=... → base URL only
+    """
+    from urllib.parse import urlparse, urlencode, parse_qs
+
+    # Path segments that indicate an application/login page, not the JD itself
+    PATH_JUNK_SEGMENTS = (
+        "/candidate", "/apply", "/application", "/login", "/submit",
+        "/confirm", "/register", "/auth",
+    )
+    # Query params that signal a redirect/session, not the JD content
+    AUTH_PARAMS = {
+        "from", "csrf", "hashed", "uploadresume", "token", "redirect",
+        "session", "returnurl", "returnto", "state", "nonce", "code",
+    }
+
+    parsed = urlparse(url)
+    path = parsed.path
+
+    # Strip trailing junk path segments (e.g. /candidate, /apply)
+    for seg in PATH_JUNK_SEGMENTS:
+        if path.lower().endswith(seg):
+            path = path[: -len(seg)]
+            break  # Only strip one segment at a time; re-check iteratively
+        # Also handle mid-path: /jobs/123/title/candidate → /jobs/123/title
+        idx = path.lower().find(seg + "/")
+        if idx >= 0:
+            path = path[:idx]
+            break
+
+    # Strip auth/tracking query params
+    qs = parse_qs(parsed.query, keep_blank_values=False)
+    clean_qs = {k: v for k, v in qs.items() if k.lower() not in AUTH_PARAMS}
+    clean_query = urlencode(clean_qs, doseq=True)
+
+    # Rebuild URL
+    clean_url = parsed._replace(path=path, query=clean_query).geturl()
+    if clean_url != url:
+        print(f"[Scraper] URL sanitized: {url} → {clean_url}")
+    return clean_url
+
+
 def clean_text(text: str) -> str:
     """Remove excess whitespace, unicode artifacts, and normalize text."""
     if not text:
@@ -179,9 +227,19 @@ def validate_jd_extraction(text: str) -> tuple[bool, str]:
         "enable javascript", "captcha", "robot",
         "checking your browser", "attention required", "error 403",
         "you have been blocked", "security check", "cloudflare",
-        "verify you are human", "ddos protection", "please wait",
+        "verify you are human", "ddos protection",
         "browser check", "your request has been blocked",
+        "human verification", "please verify", "are you a human",
+        "temporary unavailable", "service unavailable", "502 bad gateway",
+        "page not found", "404 not found",
     ]
+    # Role titles that indicate we scraped a CAPTCHA or error page, not a job posting
+    BOT_ROLE_TITLES = {
+        "human verification", "access denied", "just a moment",
+        "403 forbidden", "error", "captcha", "attention required",
+        "security check", "checking your browser", "please wait",
+        "page not found", "404", "502",
+    }
     stripped = text.strip()
     if len(stripped) < 800:
         return False, (
@@ -192,6 +250,22 @@ def validate_jd_extraction(text: str) -> tuple[bool, str]:
     for sig in ERROR_SIGNATURES:
         if sig in text_lower:
             return False, f"Content matches a known error/bot-block pattern: '{sig}'"
+    return True, "OK"
+
+
+def validate_role_title(role: str) -> tuple[bool, str]:
+    """Check if the extracted role title looks like a real job title, not a CAPTCHA/error page."""
+    BOT_ROLE_TITLES = {
+        "human verification", "access denied", "just a moment",
+        "403 forbidden", "error", "captcha", "attention required",
+        "security check", "checking your browser", "please wait",
+        "page not found", "404", "502", "loading", "redirecting",
+        "verification required", "login", "sign in", "signin",
+    }
+    role_lower = role.strip().lower()
+    for bad in BOT_ROLE_TITLES:
+        if bad in role_lower:
+            return False, f"Role title '{role}' looks like a bot-block page, not a real job title."
     return True, "OK"
 
 
@@ -304,6 +378,10 @@ async def scrape_jd(url: str) -> dict:
     from playwright.async_api import async_playwright
     
     scrape_url = url.rstrip("/")
+
+    # ── Sanitize URL first: strip login-redirect params and /candidate path segments ──
+    scrape_url = sanitize_jd_url(scrape_url)
+
     if "ashbyhq.com" in scrape_url and scrape_url.endswith("/application"):
         scrape_url = scrape_url[:-12]
 
@@ -515,7 +593,7 @@ async def scrape_jd(url: str) -> dict:
 
     jd_text = clean_text(jd_text)
 
-    # ── Validation gate: reject bot-block pages that look like short content ──
+    # ── Validation gate 1: reject bot-block pages ──
     is_valid, reason = validate_jd_extraction(jd_text)
     if not is_valid:
         raise RuntimeError(
@@ -523,6 +601,16 @@ async def scrape_jd(url: str) -> dict:
             "The career site blocked the scraper or requires login.\n"
             "Fix: Paste the job description text manually into the 'Missing Keywords' field, "
             "or copy the JD text and re-run with --no-simplify."
+        )
+
+    # ── Validation gate 2: reject CAPTCHA/error page role titles ──
+    role_ok, role_reason = validate_role_title(role)
+    if not role_ok:
+        raise RuntimeError(
+            f"JD validation failed: {role_reason}\n"
+            "The URL appears to point to a login/CAPTCHA page, not the job posting.\n"
+            "Fix: Open the job in your browser, copy the direct job posting URL "
+            "(without /candidate or ?from=login), and paste that instead."
         )
 
     # Warn on borderline-short JDs (may be partial capture)

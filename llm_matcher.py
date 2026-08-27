@@ -111,6 +111,27 @@ def analyze_jd_and_resume_with_gemini(jd_text: str, base_resume: dict) -> dict:
         print("[LLM Matcher] Warning: GEMINI_API_KEY missing — returning empty keyword set")
         return {"score": 70, "matching_keywords": [], "missing_keywords": [], "total_keywords": 0}
 
+    # ── JD quality gate ──
+    # If the JD text is too thin or looks like a bot page, bail immediately.
+    # This prevents Gemini from hallucinating keyword matches against garbage content.
+    JD_BOT_SIGNATURES = [
+        "human verification", "verify you are human", "just a moment",
+        "access denied", "403 forbidden", "captcha", "checking your browser",
+        "security check", "cloudflare", "enable javascript", "are you a human",
+        "please wait", "ddos protection",
+    ]
+    jd_stripped = (jd_text or "").strip()
+    jd_lower = jd_stripped.lower()
+    if len(jd_stripped) < 800:
+        print(f"[LLM Matcher] ❌ JD too short ({len(jd_stripped)} chars) — refusing to analyze; would produce hallucinated keywords.")
+        return {"score": 0, "matching_keywords": [], "missing_keywords": [],
+                "total_keywords": 0, "error": "jd_too_short"}
+    for sig in JD_BOT_SIGNATURES:
+        if sig in jd_lower:
+            print(f"[LLM Matcher] ❌ JD matches bot-block pattern '{sig}' — refusing to analyze.")
+            return {"score": 0, "matching_keywords": [], "missing_keywords": [],
+                    "total_keywords": 0, "error": "jd_is_bot_page"}
+
     try:
         client = genai.Client(api_key=api_key)
 
@@ -118,14 +139,16 @@ def analyze_jd_and_resume_with_gemini(jd_text: str, base_resume: dict) -> dict:
 Analyze the following Job Description against the Candidate's Master Resume.
 
 YOUR TASK:
-1. Extract 15-30 HIGH-VALUE HARD TECHNICAL SKILLS, programming languages, databases, cloud tools, frameworks, architectures, and job role qualifications required by the Job Description.
+1. Extract 15-30 HIGH-VALUE HARD TECHNICAL SKILLS, programming languages, databases, cloud tools, frameworks, architectures, and job role qualifications THAT ARE EXPLICITLY PRESENT IN THE JOB DESCRIPTION BELOW.
 2. Extract clean, ATOMIC tools (e.g. "Databricks", "PySpark", "Delta Lake", "dbt", "Azure DevOps", "SQL", "Power BI", "Docker", "AWS", "Kafka", "Snowflake") rather than long descriptions.
 3. Categorize them into "matching_keywords" (present in candidate resume) and "missing_keywords" (missing from candidate resume).
 4. Calculate an accurate ATS Match Score (0-100%) based on how well candidate's experience covers the core requirements.
 
-CRITICAL EXCLUSION RULES:
+CRITICAL RULES:
+- ONLY extract skills/tools that are EXPLICITLY STATED in the Job Description text provided. Do NOT infer, guess, or add skills from the resume that aren't in the JD.
 - ONLY HARD TECHNICAL SKILLS, TOOLS, FRAMEWORKS & ROLE TITLES.
 - STRICTLY EXCLUDE legal disclaimers, EEOC text, veteran disclosures, disability forms, paperwork reduction act, executive orders, locations (e.g. San Francisco, United States), application form fields, and soft skill filler words.
+- If the Job Description does not contain recognizable technical requirements (e.g. it is a bot-block page, login form, or error page), return empty lists and score 0.
 
 JOB DESCRIPTION:
 {jd_text[:6000]}
