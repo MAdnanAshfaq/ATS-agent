@@ -120,48 +120,75 @@ def hf_detect():
     env = get_env_vars()
     colab_url = (env.get("COLAB_DETECTOR_URL") or os.environ.get("COLAB_DETECTOR_URL", "")).strip().rstrip("/")
 
-    # ── MODE A: Colab Gradio endpoint (Oxidane/tmr-ai-text-detector) ──────────
+    # ── MODE A: Colab endpoint (TMR AI Text Detector) ───────────────────────
     if colab_url:
-        # Gradio exposes the fn at /run/predict  (fn_index=0 = first Interface)
-        predict_url = f"{colab_url}/run/predict"
-        try:
-            resp = httpx.post(
-                predict_url,
-                json={"data": [text]},
-                timeout=60.0,
-            )
-        except Exception as exc:
+        # Try multiple endpoint paths to support Gradio 4/5, Gradio 3, and direct REST APIs:
+        candidate_endpoints = [
+            f"{colab_url}/detect",
+            f"{colab_url}/api/predict",
+            f"{colab_url}/run/predict",
+            f"{colab_url}/predict",
+        ]
+
+        resp = None
+        last_error = None
+
+        for endpoint in candidate_endpoints:
+            try:
+                # Format payload based on endpoint type
+                if endpoint.endswith("/detect"):
+                    payload_data = {"text": text}
+                else:
+                    payload_data = {"data": [text]}
+
+                test_resp = httpx.post(endpoint, json=payload_data, timeout=45.0)
+                if test_resp.status_code == 200:
+                    resp = test_resp
+                    break
+                elif test_resp.status_code != 404:
+                    resp = test_resp
+                    break
+            except Exception as exc:
+                last_error = exc
+                continue
+
+        if resp is None:
             return jsonify({
-                "error": f"Cannot reach Colab server at {colab_url}. Is the notebook still running? ({exc})"
+                "error": f"Cannot reach Colab detector at {colab_url}. Make sure the Colab cell is running and the public URL is active. ({last_error})"
             }), 500
 
         if resp.status_code != 200:
             return jsonify({
-                "error": f"Colab server error {resp.status_code}",
-                "detail": resp.text,
+                "error": f"Colab server error ({resp.status_code})",
+                "detail": resp.text[:400],
             }), resp.status_code
 
         try:
             result = resp.json()
-            # Gradio wraps output as {"data": [...]}
-            payload = result.get("data", [result])[0]
+            # If wrapped in Gradio's {"data": [...]}, unwrap it
+            if isinstance(result, dict) and "data" in result and isinstance(result["data"], list) and len(result["data"]) > 0:
+                payload = result["data"][0]
+            else:
+                payload = result
+
             if isinstance(payload, str):
                 import json as _json
                 payload = _json.loads(payload)
-        except Exception:
-            return jsonify({"error": "Bad response from Colab server", "raw_text": resp.text}), 502
+        except Exception as json_err:
+            return jsonify({"error": "Failed to parse response from Colab server", "raw_text": resp.text[:400]}), 502
 
-        ai_prob    = float(payload.get("ai_probability",    50.0))
-        human_prob = float(payload.get("human_probability", 50.0))
+        ai_prob    = float(payload.get("ai_probability", payload.get("ai_prob", 50.0)))
+        human_prob = float(payload.get("human_probability", payload.get("human_prob", round(100.0 - ai_prob, 1))))
         verdict    = payload.get("verdict", "AI" if ai_prob >= 50 else "Human")
         label      = payload.get("label",   "AI-Generated" if verdict == "AI" else "Likely Human")
+        model_name = payload.get("model",   "TMR AI Text Detector (Colab)")
 
         return jsonify({
             "ai_probability":    round(ai_prob, 1),
             "human_probability": round(human_prob, 1),
             "verdict":  verdict,
             "label":    label,
-            "model":    "Oxidane/tmr-ai-text-detector (Colab)",
+            "model":    model_name,
             "raw":      payload,
         })
 
