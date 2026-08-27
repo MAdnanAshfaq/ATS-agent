@@ -84,6 +84,7 @@ if exist "requirements.txt" (
         pypdf ^
         pywin32 ^
         docx2pdf ^
+        nest_asyncio ^
         --quiet 2>&1
 )
 
