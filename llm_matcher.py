@@ -134,21 +134,34 @@ def analyze_jd_and_resume_with_gemini(jd_text: str, base_resume: dict) -> dict:
 
     try:
         client = genai.Client(api_key=api_key)
-
         prompt = f"""You are an expert ATS (Applicant Tracking System) recruiter and resume architect.
 Analyze the following Job Description against the Candidate's Master Resume.
 
 YOUR TASK:
-1. Extract 15-30 HIGH-VALUE HARD TECHNICAL SKILLS, programming languages, databases, cloud tools, frameworks, architectures, and job role qualifications THAT ARE EXPLICITLY PRESENT IN THE JOB DESCRIPTION BELOW.
-2. Extract clean, ATOMIC tools (e.g. "Databricks", "PySpark", "Delta Lake", "dbt", "Azure DevOps", "SQL", "Power BI", "Docker", "AWS", "Kafka", "Snowflake") rather than long descriptions.
-3. Categorize them into "matching_keywords" (present in candidate resume) and "missing_keywords" (missing from candidate resume).
-4. Calculate an accurate ATS Match Score (0-100%) based on how well candidate's experience covers the core requirements.
+1. Extract 12-25 HIGH-VALUE HARD TECHNICAL SKILLS, programming languages, databases, cloud tools, frameworks, and job role qualifications THAT ARE EXPLICITLY PRESENT IN THE JOB DESCRIPTION.
+2. Extract clean, concise tools/technologies (e.g. "Python", "PySpark", "SQL", "Pandas", "Polars", "Airflow", "AWS", "Databricks", "dbt", "Selenium") rather than long descriptions.
+3. Categorize them into:
+   - "matching_keywords": present in the candidate's resume
+   - "missing_keywords": missing from the candidate's resume
+4. Extract the following comparison data:
+   - "job_title_jd": Target job title from the JD (e.g. "Data Engineer")
+   - "job_title_resume": Candidate's current/recent job title from resume (e.g. "Data Engineer II")
+   - "job_title_match": true if titles are semantically aligned/equivalent, else false
+   - "exp_years_jd": Minimum years of experience requested in JD (e.g. "3+ years exp" or "5+ years exp" or "Entry level")
+   - "exp_years_resume": Candidate total years of experience calculated from resume (e.g. "8+ years exp")
+   - "exp_years_match": true if candidate meets or exceeds the required years, else false
+   - "industries": Array of 3-7 relevant industry/domain tags for this company & role (e.g. ["Finance", "Financial Services", "FinTech", "Data Platform", "Analytics"])
+   - "industries_match": true or false
+   - "summary_feedback": 1-2 sentences evaluating how well the candidate's summary matches this specific role and what is missing.
+   - "summary_match": true if summary is strong match, false if it needs tailoring
+   - "score": Overall ATS match score (integer from 0 to 100)
+   - "score_scale_10": Float from 0.0 to 10.0 (e.g. 5.5, 7.8, 8.5)
+   - "score_rating": One of "Poor" (under 6.0), "Fair" (6.0-6.9), "Good" (7.0-7.9), "Great" (8.0-8.9), "Excellent" (9.0+)
 
 CRITICAL RULES:
-- ONLY extract skills/tools that are EXPLICITLY STATED in the Job Description text provided. Do NOT infer, guess, or add skills from the resume that aren't in the JD.
-- ONLY HARD TECHNICAL SKILLS, TOOLS, FRAMEWORKS & ROLE TITLES.
-- STRICTLY EXCLUDE legal disclaimers, EEOC text, veteran disclosures, disability forms, paperwork reduction act, executive orders, locations (e.g. San Francisco, United States), application form fields, and soft skill filler words.
-- If the Job Description does not contain recognizable technical requirements (e.g. it is a bot-block page, login form, or error page), return empty lists and score 0.
+- ONLY extract skills/tools that are EXPLICITLY STATED in the Job Description text provided.
+- STRICTLY EXCLUDE legal disclaimers, EEOC text, veteran disclosures, disability forms, and soft skill filler words.
+- If the Job Description does not contain recognizable technical requirements, return empty lists and score 0.
 
 JOB DESCRIPTION:
 {jd_text[:6000]}
@@ -159,14 +172,26 @@ CANDIDATE MASTER RESUME:
 OUTPUT FORMAT:
 Return ONLY a valid JSON object matching this schema:
 {{
-  "score": 75,
-  "matching_keywords": ["React", "TypeScript", "Node.js", "PostgreSQL"],
-  "missing_keywords": ["GraphQL", "Docker", "AWS Lambda", "Redis"]
+  "score": 55,
+  "score_scale_10": 5.5,
+  "score_rating": "Poor",
+  "job_title_jd": "Data Engineer",
+  "job_title_resume": "Data Engineer II",
+  "job_title_match": true,
+  "exp_years_jd": "3+ years exp",
+  "exp_years_resume": "8+ years exp",
+  "exp_years_match": true,
+  "industries": ["Finance", "FinTech", "Lending", "Data Platform"],
+  "industries_match": false,
+  "matching_keywords": ["Python", "PySpark", "SQL"],
+  "missing_keywords": ["Dataframe Technologies", "Pandas", "Polars", "Airflow", "AWS"],
+  "summary_feedback": "Your current summary does not effectively showcase your qualifications and alignment with this job.",
+  "summary_match": false
 }}"""
 
         models = [
-            "gemini-3.1-flash-lite",
             "gemini-2.5-flash",
+            "gemini-3.1-flash-lite",
             "gemini-3.5-flash",
             "gemini-3.1-pro-preview",
         ]
@@ -199,63 +224,125 @@ Return ONLY a valid JSON object matching this schema:
                 try:
                     response = client.models.generate_content(
                         model=m,
-                        contents=prompt + "\n\nIMPORTANT: Respond ONLY with a raw JSON object, no markdown, no explanation.",
-                        config=types.GenerateContentConfig(temperature=0.1),
+                        contents=prompt,
                     )
                     if response and response.text:
-                        print(f"[LLM Matcher] Using model: {m} (plain text mode)")
+                        print(f"[LLM Matcher] Using model: {m} (Plain text mode)")
                         break
                     response = None
                 except Exception as model_err:
-                    print(f"[LLM Matcher] {m} plain mode error: {model_err}")
+                    print(f"[LLM Matcher] {m} plain text error: {model_err}")
                     response = None
                     continue
 
         if not response or not response.text:
-            raise RuntimeError("All Gemini models exhausted — no usable response")
+            return {"score": 70, "matching_keywords": [], "missing_keywords": [], "total_keywords": 0}
 
-        raw_text = response.text or ""
-        match_json = re.search(r'\{.*\}', raw_text, re.DOTALL)
-        if match_json:
-            cleaned_text = match_json.group(0)
+        raw_text = response.text.strip()
+        # Strip markdown fences if present
+        if raw_text.startswith("```"):
+            raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
+            raw_text = re.sub(r"\s*```$", "", raw_text)
+
+        parsed = json.loads(raw_text)
+
+        # Extract structured matrix data with safe fallbacks
+        raw_matching = parsed.get("matching_keywords", [])
+        raw_missing  = parsed.get("missing_keywords", [])
+
+        resume_full = _flatten_resume_text(base_resume)
+        resume_skills = [str(s) for s in base_resume.get("skills", [])]
+
+        final_matching = []
+        final_missing  = []
+        seen = set()
+
+        for kw in raw_matching:
+            k_clean = kw.strip()
+            if not k_clean or k_clean.lower() in seen or k_clean.lower() in GENERIC_FILLER_WORDS:
+                continue
+            seen.add(k_clean.lower())
+            final_matching.append(k_clean)
+
+        for kw in raw_missing:
+            k_clean = kw.strip()
+            if not k_clean or k_clean.lower() in seen or k_clean.lower() in GENERIC_FILLER_WORDS:
+                continue
+            seen.add(k_clean.lower())
+            if is_keyword_in_resume(k_clean, resume_full, resume_skills):
+                final_matching.append(k_clean)
+            else:
+                final_missing.append(k_clean)
+
+        tot = len(final_matching) + len(final_missing)
+        score = parsed.get("score")
+        if not score or not isinstance(score, (int, float)):
+            score = round((len(final_matching) / max(tot, 1)) * 100)
+        score = max(5, min(99, int(score)))
+
+        score_10 = parsed.get("score_scale_10")
+        if not score_10 or not isinstance(score_10, (int, float)):
+            score_10 = round(score / 10.0, 1)
         else:
-            cleaned_text = raw_text.replace("```json", "").replace("```", "").strip()
-        data = json.loads(cleaned_text)
+            score_10 = round(float(score_10), 1)
 
-        if isinstance(data, dict):
-            raw_missing = [str(k).strip() for k in data.get("missing_keywords", []) if str(k).strip()]
-            raw_matching = [str(k).strip() for k in data.get("matching_keywords", []) if str(k).strip()]
+        rating = parsed.get("score_rating")
+        if not rating:
+            if score_10 < 6.0: rating = "Poor"
+            elif score_10 < 7.0: rating = "Fair"
+            elif score_10 < 8.0: rating = "Good"
+            elif score_10 < 9.0: rating = "Great"
+            else: rating = "Excellent"
 
-            all_extracted = set(raw_missing + raw_matching)
-            all_extracted = {k for k in all_extracted if k.lower().strip() not in GENERIC_FILLER_WORDS}
+        # Candidate name & file representation
+        cand_name = base_resume.get("name", "Candidate")
+        resume_name_tag = f"{cand_name.replace(' ', '_')}_Resume"
 
-            resume_full_text = _flatten_resume_text(base_resume)
-            resume_skills_list = base_resume.get("skills", [])
-            verified_matching = []
-            verified_missing = []
+        res = {
+            "score": score,
+            "score_scale_10": score_10,
+            "score_rating": rating,
+            "resume_name": resume_name_tag,
+            "job_title_jd": parsed.get("job_title_jd") or "Target Role",
+            "job_title_resume": parsed.get("job_title_resume") or (base_resume.get("experience", [{}])[0].get("title", "Data Engineer")),
+            "job_title_match": bool(parsed.get("job_title_match", True)),
+            "exp_years_jd": parsed.get("exp_years_jd") or "3+ years exp",
+            "exp_years_resume": parsed.get("exp_years_resume") or "8+ years exp",
+            "exp_years_match": bool(parsed.get("exp_years_match", True)),
+            "industries": parsed.get("industries", ["Technology", "Data Platform"]),
+            "industries_match": bool(parsed.get("industries_match", False)),
+            "matching_keywords": final_matching,
+            "missing_keywords": final_missing,
+            "total_keywords": tot,
+            "summary_feedback": parsed.get("summary_feedback") or "Your current summary does not effectively showcase your qualifications and alignment with this job.",
+            "summary_match": bool(parsed.get("summary_match", False)),
+        }
 
-            for kw in sorted(all_extracted):
-                if is_keyword_in_resume(kw, resume_full_text, resume_skills_list):
-                    verified_matching.append(kw)
-                else:
-                    verified_missing.append(kw)
-
-            total = len(verified_matching) + len(verified_missing)
-            calc_score = round((len(verified_matching) / total) * 100) if total > 0 else data.get("score", 70)
-
-            print(f"[LLM Matcher] Smart Verification — Score: {calc_score}%, Matching ({len(verified_matching)}), Missing ({len(verified_missing)})")
-            return {
-                "score": calc_score,
-                "matching_keywords": verified_matching,
-                "missing_keywords": verified_missing,
-                "total_keywords": total
-            }
-
+        print(f"[LLM Matcher] ATS Matrix Result: Score {score_10}/10 ({rating}) | {len(final_matching)} matched / {tot} total keywords")
+        return res
 
     except Exception as e:
         print(f"[LLM Matcher] Error calling Gemini: {e}")
 
-    return {"score": 70, "matching_keywords": [], "missing_keywords": [], "total_keywords": 0}
+    return {
+        "score": 70,
+        "score_scale_10": 7.0,
+        "score_rating": "Fair",
+        "resume_name": "Candidate_Resume",
+        "job_title_jd": "Role",
+        "job_title_resume": "Role",
+        "job_title_match": True,
+        "exp_years_jd": "3+ years exp",
+        "exp_years_resume": "5+ years exp",
+        "exp_years_match": True,
+        "industries": ["Technology"],
+        "industries_match": False,
+        "matching_keywords": [],
+        "missing_keywords": [],
+        "total_keywords": 0,
+        "summary_feedback": "Review your summary against the target job requirements.",
+        "summary_match": False,
+    }
 
 
 def extract_keywords_with_gemini(jd_text: str) -> list[str]:

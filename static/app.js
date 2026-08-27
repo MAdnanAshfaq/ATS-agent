@@ -1379,53 +1379,189 @@ function renderSimplifyCard(data) {
   const card = document.getElementById("simplify-card");
   card.classList.remove("hidden");
 
-  // Render score badge
-  const score = data.score || 75;
-  document.getElementById("simplify-score-num").innerText = score;
-  document.getElementById("matched-count").innerText = data.matching_keywords.length;
-  document.getElementById("total-count").innerText = data.total_keywords;
+  // 1. Score & Rating
+  const score10 = data.score_scale_10 || (Math.round((data.score || 55) / 10 * 10) / 10);
+  const rating = data.score_rating || (score10 < 6.0 ? "Poor" : score10 < 7.0 ? "Fair" : score10 < 8.0 ? "Good" : score10 < 9.0 ? "Great" : "Excellent");
 
-  const scorePath = document.getElementById("score-circle-path");
-  // Calculate dash offset for circle (264 is perimeter)
-  const offset = 264 - (264 * (score / 100));
-  scorePath.style.strokeDashoffset = offset;
+  const scoreEl = document.getElementById("matrix-gauge-score");
+  const ratingEl = document.getElementById("matrix-rating-text");
+  if (scoreEl) scoreEl.innerText = score10.toFixed(1);
+  if (ratingEl) ratingEl.innerText = rating;
 
-  let verdict = "Strong Resume Match";
-  if (score < 60) verdict = "Low Resume Match — Keyword Injection Recommended";
-  else if (score >= 85) verdict = "Excellent Resume Match!";
+  // Arc Gauge Animation (perimeter = 142)
+  const arcFill = document.getElementById("matrix-gauge-fill");
+  const pct = Math.min(1.0, Math.max(0.0, score10 / 10.0));
+  const offset = 142 - (142 * pct);
+  if (arcFill) arcFill.style.strokeDashoffset = offset;
 
-  const sourceBadge = data.source === "simplify_extension"
-    ? `<span class="badge badge-success"><i class="fa-solid fa-bolt text-cyan"></i> Real Simplify Extension Keywords</span>`
-    : `<span class="badge badge-warning"><i class="fa-solid fa-robot"></i> Estimated LLM Keywords (Simplify overlay unavailable on this page)</span>`;
+  // Match Title & Alert Banner
+  const verdictWord = document.getElementById("matrix-verdict-word");
+  const alertPill = document.getElementById("matrix-alert-pill");
+  const alertText = document.getElementById("matrix-alert-text");
 
-  document.getElementById("simplify-score-verdict").innerHTML = `${verdict} ${sourceBadge}`;
+  if (verdictWord && alertPill && alertText) {
+    if (score10 < 6.0) {
+      verdictWord.innerText = "Low Match";
+      verdictWord.style.color = "#ef4444";
+      alertPill.style.background = "#ffe4e6";
+      alertPill.style.borderColor = "#fecdd3";
+      alertPill.style.color = "#9f1239";
+      alertText.innerText = "Resumes under 6.0 are likely to be filtered out by ATS — we'll help you fix it fast.";
+    } else if (score10 < 7.5) {
+      verdictWord.innerText = "Moderate Match";
+      verdictWord.style.color = "#f59e0b";
+      alertPill.style.background = "#fef3c7";
+      alertPill.style.borderColor = "#fde68a";
+      alertPill.style.color = "#92400e";
+      alertText.innerText = "Resumes between 6.0 and 7.5 can be improved with targeted missing keywords.";
+    } else {
+      verdictWord.innerText = "Strong Match";
+      verdictWord.style.color = "#10b981";
+      alertPill.style.background = "#d1fae5";
+      alertPill.style.borderColor = "#a7f3d0";
+      alertPill.style.color = "#065f46";
+      alertText.innerText = "Great alignment! Ready for submission or light tailoring.";
+    }
+  }
 
-  // Render Matched (Cyan) Chips
-  const matchedContainer = document.getElementById("matched-chips-container");
-  matchedContainer.innerHTML = "";
-  data.matching_keywords.forEach(kw => {
-    const chip = document.createElement("span");
-    chip.className = "chip-cyan";
-    chip.innerHTML = `<i class="fa-solid fa-check margin-right-xs"></i> ${kw}`;
-    matchedContainer.appendChild(chip);
-  });
+  // 2. Overview Row
+  const compAvatar = document.getElementById("matrix-company-avatar");
+  const compName = document.getElementById("matrix-company-name");
+  const roleName = document.getElementById("matrix-role-name");
+  const resumeFile = document.getElementById("matrix-resume-filename");
 
-  // Render Missing (Interactive White) Chips
-  const missingContainer = document.getElementById("missing-chips-container");
-  missingContainer.innerHTML = "";
-  analyzedMissingKeywords = data.missing_keywords || [];
-  selectedMissingKeywords = new Set(analyzedMissingKeywords);
+  const cName = data.company || "Company";
+  if (compName) compName.innerText = cName;
+  if (compAvatar) compAvatar.innerText = cName.substring(0, 3).toUpperCase();
+  if (roleName) roleName.innerText = data.role || "Job Role";
+  if (resumeFile) resumeFile.innerText = data.resume_name || "Haseeb_Khan_Resume";
 
-  if (analyzedMissingKeywords.length === 0) {
-    missingContainer.innerHTML = `<span class="text-emerald font-semibold">🎉 Master resume already matched all keywords for this job!</span>`;
-  } else {
-    analyzedMissingKeywords.forEach(kw => {
-      renderMissingChip(kw, missingContainer);
+  // 3. Job Title Row
+  const titleJd = document.getElementById("matrix-title-jd");
+  const titleResume = document.getElementById("matrix-title-resume");
+  const titleStatus = document.getElementById("matrix-title-status");
+
+  if (titleJd) titleJd.innerText = data.job_title_jd || data.role;
+  if (titleResume) titleResume.innerText = data.job_title_resume || "Data Engineer II";
+  if (titleStatus) {
+    if (data.job_title_match) {
+      titleStatus.className = "matrix-status-dot dot-match";
+      titleStatus.innerHTML = `<i class="fa-solid fa-check"></i>`;
+    } else {
+      titleStatus.className = "matrix-status-dot dot-warn";
+      titleStatus.innerHTML = `<i class="fa-solid fa-exclamation"></i>`;
+    }
+  }
+
+  // 4. Years of Experience Row
+  const expJd = document.getElementById("matrix-exp-jd");
+  const expResume = document.getElementById("matrix-exp-resume");
+  const expStatus = document.getElementById("matrix-exp-status");
+
+  if (expJd) expJd.innerHTML = `${(data.exp_years_jd || "3+ years exp").replace(/years/gi, "<mark class='matrix-hl'>years</mark>")}`;
+  if (expResume) expResume.innerHTML = `${(data.exp_years_resume || "8+ years exp").replace(/years/gi, "<mark class='matrix-hl'>years</mark>")}`;
+  if (expStatus) {
+    expStatus.className = data.exp_years_match ? "matrix-status-dot dot-match" : "matrix-status-dot dot-warn";
+    expStatus.innerHTML = data.exp_years_match ? `<i class="fa-solid fa-check"></i>` : `<i class="fa-solid fa-exclamation"></i>`;
+  }
+
+  // 5. Industry Experience Row
+  const indContainer = document.getElementById("matrix-industries-container");
+  if (indContainer) {
+    indContainer.innerHTML = "";
+    const industries = data.industries || ["Collectibles", "Finance", "Financial Services", "FinTech", "Lending", "Marketplace"];
+    industries.forEach(ind => {
+      const pill = document.createElement("span");
+      pill.className = "matrix-industry-pill";
+      pill.innerText = ind;
+      indContainer.appendChild(pill);
+    });
+  }
+  const indStatus = document.getElementById("matrix-industry-status");
+  if (indStatus) {
+    indStatus.className = data.industries_match ? "matrix-status-dot dot-match" : "matrix-status-dot dot-warn";
+    indStatus.innerHTML = data.industries_match ? `<i class="fa-solid fa-check"></i>` : `<i class="fa-solid fa-exclamation"></i>`;
+  }
+
+  // 6. ATS Job Keywords Row
+  const kwContainer = document.getElementById("matrix-keywords-container");
+  const matched = data.matching_keywords || [];
+  const missing = data.missing_keywords || [];
+  const totalKw = data.total_keywords || (matched.length + missing.length);
+
+  const matchedCountEl = document.getElementById("matrix-kw-matched-count");
+  const totalCountEl = document.getElementById("matrix-kw-total-count");
+  if (matchedCountEl) matchedCountEl.innerText = matched.length;
+  if (totalCountEl) totalCountEl.innerText = totalKw;
+
+  const kwStatus = document.getElementById("matrix-kw-status");
+  if (kwStatus) {
+    if (matched.length >= totalKw * 0.7) {
+      kwStatus.className = "matrix-status-dot dot-match";
+      kwStatus.innerHTML = `<i class="fa-solid fa-check"></i>`;
+    } else if (matched.length >= totalKw * 0.4) {
+      kwStatus.className = "matrix-status-dot dot-warn";
+      kwStatus.innerHTML = `<i class="fa-solid fa-exclamation"></i>`;
+    } else {
+      kwStatus.className = "matrix-status-dot dot-missing";
+      kwStatus.innerHTML = `<i class="fa-solid fa-xmark"></i>`;
+    }
+  }
+
+  if (kwContainer) {
+    kwContainer.innerHTML = "";
+
+    // Matched chips with 👍
+    matched.forEach(kw => {
+      const chip = document.createElement("span");
+      chip.className = "chip-matched-thumb";
+      chip.innerHTML = `👍 ${kw}`;
+      kwContainer.appendChild(chip);
+    });
+
+    // Missing chips
+    analyzedMissingKeywords = missing;
+    selectedMissingKeywords = new Set(missing);
+
+    missing.forEach(kw => {
+      const chip = document.createElement("span");
+      chip.className = "chip-missing-neutral";
+      chip.innerText = kw;
+      kwContainer.appendChild(chip);
     });
   }
 
-  // Scroll smoothly to Simplify Card
+  // 7. Summary Row
+  const sumFeedback = document.getElementById("matrix-summary-feedback");
+  if (sumFeedback) {
+    sumFeedback.innerText = data.summary_feedback || "Your current summary does not effectively showcase your qualifications and alignment with this job.";
+  }
+  const sumStatus = document.getElementById("matrix-summary-status");
+  if (sumStatus) {
+    sumStatus.className = data.summary_match ? "matrix-status-dot dot-match" : "matrix-status-dot dot-warn";
+    sumStatus.innerHTML = data.summary_match ? `<i class="fa-solid fa-check"></i>` : `<i class="fa-solid fa-exclamation"></i>`;
+  }
+
+  // Scroll smoothly to Matrix Card
   card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function openCoverLetterFromAnalyze() {
+  const comp = analyzeCompany || document.getElementById("matrix-company-name")?.innerText || "";
+  const role = analyzeRole || document.getElementById("matrix-role-name")?.innerText || "";
+  const url = document.getElementById("jd-url")?.value.trim() || "";
+  generateOrViewHistoryCoverLetter(comp, role, "", url);
+}
+
+function generateWithSelectedKeywords() {
+  const kwList = Array.from(selectedMissingKeywords);
+  const kwString = kwList.join(", ");
+  const customKwInput = document.getElementById("custom-keywords-input");
+  if (customKwInput) customKwInput.value = kwString;
+
+  startGeneration({
+    scoreBefore: analyzeScoreBefore
+  });
 }
 
 function renderMissingChip(kw, container) {

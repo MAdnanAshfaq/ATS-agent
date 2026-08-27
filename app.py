@@ -791,6 +791,7 @@ def analyze_job():
         source = "simplify_extension"
         simplify_has_keywords = (len(missing_keywords) + len(matching_keywords)) >= 5
 
+        matrix_data = {}
         # Fallback to LLM if:
         # - Simplify explicitly failed (no success), OR
         # - Simplify returned fewer than 5 keywords (overlay unavailable or incomplete on this page)
@@ -802,6 +803,7 @@ def analyze_job():
             missing_keywords  = llm_res.get("missing_keywords", [])
             score  = llm_res.get("score", 70)
             source = "llm_matcher"
+            matrix_data = llm_res
 
             # If LLM quality gate rejected the JD, surface a degraded warning
             if llm_res.get("error") in ("jd_too_short", "jd_is_bot_page"):
@@ -820,6 +822,52 @@ def analyze_job():
                     "company": company,
                     "role": role,
                 }), 422
+        else:
+            # If Simplify provided keywords, do a quick semantic enrichment for title, exp, and industry
+            from llm_matcher import analyze_jd_and_resume_with_gemini
+            try:
+                matrix_data = analyze_jd_and_resume_with_gemini(jd_text, base_resume)
+            except Exception:
+                matrix_data = {}
+
+        # Safe defaults for matrix fields
+        cand_name = base_resume.get("name", "Candidate")
+        resume_name_tag = f"{cand_name.replace(' ', '_')}_Resume"
+        cand_title = base_resume.get("experience", [{}])[0].get("title", "Data Engineer")
+        score_10 = matrix_data.get("score_scale_10", round(score / 10.0, 1))
+        
+        rating = matrix_data.get("score_rating")
+        if not rating:
+            if score_10 < 6.0: rating = "Poor"
+            elif score_10 < 7.0: rating = "Fair"
+            elif score_10 < 8.0: rating = "Good"
+            elif score_10 < 9.0: rating = "Great"
+            else: rating = "Excellent"
+
+        res_payload = {
+            "success": True,
+            "company": company,
+            "role": role,
+            "jd_length": jd_len,
+            "score": score,
+            "score_scale_10": score_10,
+            "score_rating": rating,
+            "resume_name": resume_name_tag,
+            "job_title_jd": matrix_data.get("job_title_jd") or role,
+            "job_title_resume": matrix_data.get("job_title_resume") or cand_title,
+            "job_title_match": matrix_data.get("job_title_match", True),
+            "exp_years_jd": matrix_data.get("exp_years_jd", "3+ years exp"),
+            "exp_years_resume": matrix_data.get("exp_years_resume", "8+ years exp"),
+            "exp_years_match": matrix_data.get("exp_years_match", True),
+            "industries": matrix_data.get("industries", ["Technology", "Data Platform"]),
+            "industries_match": matrix_data.get("industries_match", False),
+            "matching_keywords": matching_keywords,
+            "missing_keywords": missing_keywords,
+            "total_keywords": len(matching_keywords) + len(missing_keywords),
+            "summary_feedback": matrix_data.get("summary_feedback", "Your current summary does not effectively showcase your qualifications and alignment with this job."),
+            "summary_match": matrix_data.get("summary_match", False),
+            "source": source
+        }
 
         # Store in global memory cache so Generate step reuses this extract with 0 browser launches
         GLOBAL_ANALYSIS_CACHE[url] = {
@@ -831,19 +879,10 @@ def analyze_job():
             "missing_keywords": missing_keywords,
             "source": source,
             "jd_data": jd_data,
+            "matrix": res_payload,
         }
 
-        return jsonify({
-            "success": True,
-            "company": company,
-            "role": role,
-            "jd_length": jd_len,
-            "score": score,
-            "matching_keywords": matching_keywords,
-            "missing_keywords": missing_keywords,
-            "total_keywords": len(matching_keywords) + len(missing_keywords),
-            "source": source
-        })
+        return jsonify(res_payload)
 
     except Exception as e:
         import traceback

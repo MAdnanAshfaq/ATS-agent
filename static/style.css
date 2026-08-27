@@ -913,140 +913,291 @@ input:checked + .slider:before { transform: translateX(20px); }
 
 .hidden { display: none !important; }
 
-/* Simplify-Style Interactive Keyword Analysis Card */
-.simplify-score-card {
+/* ══════════════════════════════════════════════════════════════════════════
+   SIMPLIFY ATS MATCH MATRIX CARD (Side-by-Side Comparison UI)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.ats-match-matrix-card {
   margin-top: 24px;
-  padding: 28px;
-  background: rgba(15, 23, 42, 0.85);
-  border: 1px solid rgba(56, 189, 248, 0.25);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4), 0 0 30px rgba(6, 182, 212, 0.1);
-  border-radius: 16px;
+  padding: 32px;
+  background: #ffffff;
+  color: #0f172a;
+  border-radius: 18px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(226, 232, 240, 0.9);
+  animation: fadeIn 0.4s ease;
 }
 
-.simplify-header {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  padding-bottom: 20px;
-  margin-bottom: 20px;
-}
-
-.simplify-title-row {
+.matrix-header {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 16px;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid #e2e8f0;
 }
 
-.simplify-menu-icon {
-  font-size: 18px;
-  color: var(--cyan);
+.matrix-title-col {
+  flex: 1;
 }
 
-.simplify-card-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-main);
-  margin: 0;
-}
-
-.simplify-score-badge-row {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-
-.score-circle-container {
-  position: relative;
-  width: 72px;
-  height: 72px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.score-circle-svg {
-  width: 100%;
-  height: 100%;
-  transform: rotate(-90deg);
-}
-
-.score-circle-svg .circle-bg {
-  fill: none;
-  stroke: rgba(255, 255, 255, 0.1);
-  stroke-width: 8;
-}
-
-.score-circle-svg .circle-fill {
-  fill: none;
-  stroke: var(--cyan);
-  stroke-width: 8;
-  stroke-linecap: round;
-  transition: stroke-dashoffset 1s ease;
-}
-
-.score-number {
-  position: absolute;
-  font-size: 22px;
+.matrix-main-title {
+  font-size: 24px;
   font-weight: 800;
-  color: #ffffff;
+  color: #0f172a;
+  margin: 0 0 10px 0;
+  letter-spacing: -0.02em;
 }
 
-.simplify-score-text .score-verdict {
-  font-size: 18px;
-  font-weight: 700;
-  color: #ffffff;
-  margin: 0 0 4px 0;
-}
-
-.simplify-score-text .score-subtext {
-  font-size: 14px;
-  color: var(--text-dim);
-  margin: 0;
-}
-
-/* Keyword Chips Grid */
-.group-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-muted);
-  margin-bottom: 12px;
-  display: block;
-}
-
-.chips-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-/* Simplify Cyan Pill (Matching Keywords) */
-.chip-cyan {
-  display: inline-flex;
-  align-items: center;
-  padding: 8px 18px;
-  border-radius: 9999px;
-  border: 1.5px solid #12a1c0;
-  background: rgba(18, 161, 192, 0.12);
-  color: #38bdf8;
-  font-size: 14px;
-  font-weight: 600;
-  box-shadow: 0 2px 8px rgba(18, 161, 192, 0.15);
-}
-
-/* Simplify White Pill with Border (Missing Keywords - Interactive) */
-.chip-white-selectable {
+.matrix-alert-pill {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 18px;
+  padding: 7px 16px;
   border-radius: 9999px;
-  border: 1.5px solid rgba(226, 232, 240, 0.35);
-  background: rgba(255, 255, 255, 0.95);
-  color: #1e293b;
-  font-size: 14px;
+  background: #ffe4e6;
+  border: 1px solid #fecdd3;
+  color: #9f1239;
+  font-size: 13px;
   font-weight: 600;
-  cursor: pointer;
-  user-select: none;
-  transition: all 0.2s ease;
+}
+
+.matrix-gauge-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 140px;
+}
+
+.arc-gauge-wrapper {
+  position: relative;
+  width: 130px;
+  height: 70px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.arc-gauge-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.arc-gauge-score {
+  position: absolute;
+  bottom: 0px;
+  font-size: 32px;
+  font-weight: 900;
+  color: #0f172a;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.arc-gauge-badge {
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 12px;
+  border-radius: 9999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* Comparison Table Grid */
+.matrix-table {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+}
+
+.matrix-row {
+  display: grid;
+  grid-template-columns: 220px 1fr 1fr;
+  align-items: center;
+  padding: 16px 8px;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 14px;
+}
+
+.matrix-row:last-child {
+  border-bottom: none;
+}
+
+.matrix-cell-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.matrix-cell-jd {
+  color: #0f172a;
+  padding-right: 16px;
+}
+
+.matrix-cell-resume {
+  color: #475569;
+  padding-left: 16px;
+}
+
+.matrix-cell-full {
+  grid-column: 2 / -1;
+  padding-left: 0;
+}
+
+/* Status dots */
+.matrix-status-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
+.dot-match { background: #10b981; }
+.dot-warn { background: #f59e0b; }
+.dot-missing { background: #ef4444; }
+
+/* Highlights */
+.matrix-hl {
+  background: #a5f3fc;
+  color: #083344;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-weight: 700;
+}
+
+.matrix-text-strong {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.matrix-text-secondary {
+  color: #475569;
+  font-weight: 500;
+}
+
+/* Overview Cards */
+.matrix-job-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.matrix-company-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: #000000;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+}
+
+.matrix-company-name {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.matrix-role-name {
+  font-size: 15px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.matrix-resume-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.matrix-select-pill {
+  font-size: 12px;
+  font-weight: 600;
+  color: #059669;
+  background: #ecfdf5;
+  padding: 4px 10px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Industry & Keyword Chips */
+.matrix-industry-chips,
+.matrix-keywords-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.matrix-industry-pill {
+  padding: 6px 14px;
+  border-radius: 9999px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.chip-matched-thumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  background: #d1fae5;
+  border: 1px solid #a7f3d0;
+  color: #065f46;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.chip-missing-neutral {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #1e293b;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.matrix-summary-text {
+  margin: 0;
+  color: #334155;
+  line-height: 1.6;
+  font-weight: 500;
+}
+
+.matrix-action-bar {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
 }
 
 .chip-white-selectable.selected {

@@ -184,56 +184,152 @@
         </form>
       </div>
 
-      <!-- Simplify-Style Interactive Keyword Analysis Card -->
-      <div class="glass-card simplify-score-card hidden" id="simplify-card">
-        <div class="simplify-header">
-          <div class="simplify-title-row">
-            <div class="simplify-menu-icon"><i class="fa-solid fa-bars-staggered"></i></div>
-            <h3 class="simplify-card-title">Resume Score & Keyword Cross-Check</h3>
+      <!-- Simplify ATS Match Matrix Card (Side-by-Side Comparison UI) -->
+      <div class="ats-match-matrix-card hidden" id="simplify-card">
+
+        <!-- Top Header with Score Gauge -->
+        <div class="matrix-header">
+          <div class="matrix-title-col">
+            <h2 class="matrix-main-title" id="matrix-match-title">Your Resume is a <span id="matrix-verdict-word" style="color:#ef4444;">Low Match</span> for This Job</h2>
+            <div class="matrix-alert-pill" id="matrix-alert-pill">
+              <i class="fa-solid fa-circle-info text-rose"></i>
+              <span id="matrix-alert-text">Resumes under 6.0 are likely to be filtered out by ATS — we'll help you fix it fast.</span>
+            </div>
           </div>
-          <div class="simplify-score-badge-row">
-            <div class="score-circle-container">
-              <svg class="score-circle-svg" viewBox="0 0 100 100">
-                <circle class="circle-bg" cx="50" cy="50" r="42"></circle>
-                <circle class="circle-fill" id="score-circle-path" cx="50" cy="50" r="42" stroke-dasharray="264" stroke-dashoffset="40"></circle>
+
+          <!-- Semi-Circular Arc Gauge -->
+          <div class="matrix-gauge-box">
+            <div class="arc-gauge-wrapper">
+              <svg viewBox="0 0 120 70" class="arc-gauge-svg">
+                <!-- Background arc -->
+                <path d="M 15 60 A 45 45 0 0 1 105 60" fill="none" stroke="#e2e8f0" stroke-width="9" stroke-linecap="round"/>
+                <!-- Gradient arc -->
+                <defs>
+                  <linearGradient id="scoreGaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stop-color="#ef4444" />
+                    <stop offset="40%" stop-color="#f59e0b" />
+                    <stop offset="70%" stop-color="#10b981" />
+                    <stop offset="100%" stop-color="#06b6d4" />
+                  </linearGradient>
+                </defs>
+                <path id="matrix-gauge-fill" d="M 15 60 A 45 45 0 0 1 105 60" fill="none" stroke="url(#scoreGaugeGrad)" stroke-width="9" stroke-linecap="round" stroke-dasharray="142" stroke-dashoffset="65" style="transition: stroke-dashoffset 1s cubic-bezier(0.4, 0, 0.2, 1);"/>
               </svg>
-              <span class="score-number" id="simplify-score-num">85</span>
+              <div class="arc-gauge-score" id="matrix-gauge-score">5.5</div>
             </div>
-            <div class="simplify-score-text">
-              <h4 class="score-verdict" id="simplify-score-verdict">Strong Resume Match</h4>
-              <p class="score-subtext" id="simplify-score-subtext">Only Matches <strong id="matched-count">11</strong> out of <strong id="total-count">13</strong> keywords.</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="simplify-keywords-section">
-          <!-- Matched Keywords (Cyan Pills) -->
-          <div class="keywords-group">
-            <label class="group-label"><i class="fa-solid fa-circle-check text-cyan"></i> Found in Resume (Matching Keywords)</label>
-            <div class="chips-grid" id="matched-chips-container">
-              <!-- Dynamically rendered cyan pills -->
-            </div>
-          </div>
-
-          <!-- Missing Keywords (Interactive White Pills) -->
-          <div class="keywords-group margin-top-md">
-            <label class="group-label"><i class="fa-solid fa-circle-plus text-warning"></i> Missing from Resume (Click to Select / Deselect for AI Injection)</label>
-            <div class="chips-grid" id="missing-chips-container">
-              <!-- Dynamically rendered white pills with checkboxes -->
-            </div>
-            <div class="add-keyword-row margin-top-sm">
-              <input type="text" id="manual-add-kw-input" class="form-input form-input-sm" placeholder="Add extra missing keyword...">
-              <button type="button" class="btn btn-secondary btn-sm" onclick="addManualChip()">+ Add Keyword</button>
+            <div class="arc-gauge-badge" id="matrix-gauge-badge">
+              <span id="matrix-rating-text">Poor</span> <i class="fa-solid fa-circle-info" style="font-size:11px;opacity:0.6;"></i>
             </div>
           </div>
         </div>
 
-        <!-- Action Row -->
-        <div class="simplify-action-row margin-top-lg">
-          <button type="button" class="btn btn-cyan btn-block btn-lg" onclick="generateWithSelectedKeywords()">
-            <i class="fa-solid fa-wand-magic-sparkles"></i> Inject Selected Keywords & Generate Resume
+        <!-- Comparison Matrix Table -->
+        <div class="matrix-table">
+
+          <!-- Row 1: Overview -->
+          <div class="matrix-row matrix-row-overview">
+            <div class="matrix-cell-label">
+              <span>Overview</span>
+            </div>
+            <div class="matrix-cell-jd">
+              <div class="matrix-job-card">
+                <div class="matrix-company-avatar" id="matrix-company-avatar">ALT</div>
+                <div>
+                  <div class="matrix-company-name" id="matrix-company-name">Alt</div>
+                  <div class="matrix-role-name" id="matrix-role-name">Data Engineer</div>
+                </div>
+              </div>
+            </div>
+            <div class="matrix-cell-resume">
+              <div class="matrix-resume-card">
+                <i class="fa-regular fa-file-lines text-muted" style="font-size:18px;"></i>
+                <div style="flex:1;">
+                  <div style="font-size:11px; color:#64748b;">Your resume</div>
+                  <div style="font-weight:700; color:#0f172a; font-size:13px;" id="matrix-resume-filename">Haseeb_Khan_Resume</div>
+                </div>
+                <span class="matrix-select-pill">Select <i class="fa-solid fa-caret-down"></i></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Row 2: Job Title -->
+          <div class="matrix-row">
+            <div class="matrix-cell-label">
+              <span>Job Title <i class="fa-regular fa-circle-question text-muted" style="font-size:12px;"></i></span>
+              <span class="matrix-status-dot dot-match" id="matrix-title-status"><i class="fa-solid fa-check"></i></span>
+            </div>
+            <div class="matrix-cell-jd">
+              <span id="matrix-title-jd" class="matrix-text-strong">Data Engineer</span>
+            </div>
+            <div class="matrix-cell-resume">
+              <span id="matrix-title-resume" class="matrix-text-secondary">Data Engineer II</span>
+            </div>
+          </div>
+
+          <!-- Row 3: Years of Experience -->
+          <div class="matrix-row">
+            <div class="matrix-cell-label">
+              <span><mark class="matrix-hl">Years</mark> of Experience</span>
+              <span class="matrix-status-dot dot-match" id="matrix-exp-status"><i class="fa-solid fa-check"></i></span>
+            </div>
+            <div class="matrix-cell-jd">
+              <span id="matrix-exp-jd" class="matrix-text-strong">3+ <mark class="matrix-hl">years</mark> exp</span>
+            </div>
+            <div class="matrix-cell-resume">
+              <span id="matrix-exp-resume" class="matrix-text-secondary">8+ <mark class="matrix-hl">years</mark> exp</span>
+            </div>
+          </div>
+
+          <!-- Row 4: Industry Experience -->
+          <div class="matrix-row">
+            <div class="matrix-cell-label">
+              <span>Industry Experience</span>
+              <span class="matrix-status-dot dot-warn" id="matrix-industry-status"><i class="fa-solid fa-exclamation"></i></span>
+            </div>
+            <div class="matrix-cell-jd matrix-cell-full">
+              <div class="matrix-industry-chips" id="matrix-industries-container">
+                <!-- Dynamic Industry Chips -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Row 5: ATS Job Keywords -->
+          <div class="matrix-row">
+            <div class="matrix-cell-label">
+              <span>ATS Job Keywords (<span id="matrix-kw-matched-count">3</span>/<span id="matrix-kw-total-count">16</span>)</span>
+              <span class="matrix-status-dot dot-missing" id="matrix-kw-status"><i class="fa-solid fa-xmark"></i></span>
+            </div>
+            <div class="matrix-cell-jd matrix-cell-full">
+              <div class="matrix-keywords-chips" id="matrix-keywords-container">
+                <!-- Matched Chips with 👍 and Missing Chips -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Row 6: Summary -->
+          <div class="matrix-row">
+            <div class="matrix-cell-label">
+              <span>Summary</span>
+              <span class="matrix-status-dot dot-warn" id="matrix-summary-status"><i class="fa-solid fa-exclamation"></i></span>
+            </div>
+            <div class="matrix-cell-jd matrix-cell-full">
+              <p class="matrix-summary-text" id="matrix-summary-feedback">
+                Your current summary does not effectively showcase your qualifications and alignment with this job.
+              </p>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Primary Action Row -->
+        <div class="matrix-action-bar">
+          <button type="button" class="btn btn-primary btn-lg" onclick="generateWithSelectedKeywords()" style="font-size:15px; padding:14px 28px; border-radius:30px; box-shadow:0 8px 24px rgba(6,182,212,0.35);">
+            <i class="fa-solid fa-bolt"></i> Auto-Tailor Resume with Injected Keywords (1-Click)
+          </button>
+          <button type="button" class="btn btn-outline btn-lg" onclick="openCoverLetterFromAnalyze()" style="font-size:15px; padding:14px 24px; border-radius:30px; color:#0f172a; border-color:#cbd5e1;">
+            <i class="fa-solid fa-file-pen"></i> Generate Recruiter Cover Letter
           </button>
         </div>
+
       </div>
 
       <!-- Live Execution Visualizer (Visible during execution & results) -->
