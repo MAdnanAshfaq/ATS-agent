@@ -364,6 +364,65 @@ def fetch_notion_via_api(url: str) -> Optional[dict]:
     return None
 
 
+# ─── Intelligent Job Description Cache ───────────────────────────────────────
+import json
+import time
+from pathlib import Path
+
+CACHE_FILE = Path(__file__).parent / "jd_cache.json"
+_MEM_CACHE = {}
+
+def get_cached_jd(url: str, max_age_hours: float = 24.0) -> Optional[dict]:
+    """Retrieve verified cached JD data for a URL if available and fresh."""
+    clean_url = sanitize_jd_url(url.rstrip("/"))
+    now = time.time()
+
+    # 1. Memory cache
+    if clean_url in _MEM_CACHE:
+        entry = _MEM_CACHE[clean_url]
+        if now - entry.get("timestamp", 0) < max_age_hours * 3600:
+            return entry.get("data")
+
+    # 2. Disk cache
+    if CACHE_FILE.exists():
+        try:
+            with open(CACHE_FILE, "r", encoding="utf-8") as f:
+                disk_data = json.load(f)
+                if clean_url in disk_data:
+                    entry = disk_data[clean_url]
+                    if now - entry.get("timestamp", 0) < max_age_hours * 3600:
+                        _MEM_CACHE[clean_url] = entry
+                        return entry.get("data")
+        except Exception:
+            pass
+    return None
+
+def save_cached_jd(url: str, data: dict):
+    """Save verified clean JD data to memory and disk cache."""
+    if not data or len(data.get("jd_text", "")) < 800:
+        return
+    clean_url = sanitize_jd_url(url.rstrip("/"))
+    entry = {
+        "timestamp": time.time(),
+        "data": data
+    }
+    _MEM_CACHE[clean_url] = entry
+    try:
+        disk_data = {}
+        if CACHE_FILE.exists():
+            with open(CACHE_FILE, "r", encoding="utf-8") as f:
+                disk_data = json.load(f)
+        disk_data[clean_url] = entry
+        # Keep newest 100 entries
+        if len(disk_data) > 100:
+            sorted_items = sorted(disk_data.items(), key=lambda x: x[1].get("timestamp", 0), reverse=True)
+            disk_data = dict(sorted_items[:100])
+        with open(CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(disk_data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"[Scraper Cache] Note saving cache: {e}")
+
+
 def slugify(text: str) -> str:
     """Convert text to a safe folder name."""
     text = re.sub(r'[^\w\s-]', '', text)
@@ -371,12 +430,13 @@ def slugify(text: str) -> str:
     return text.strip('_')
 
 
-async def scrape_jd(url: str) -> dict:
+async def scrape_jd(url: str, force_refresh: bool = False) -> dict:
     """
-    Main scraping function.
+    Main scraping function with intelligent caching.
+    Reuses verified scraped JDs to avoid launching redundant browser sessions.
     """
     from playwright.async_api import async_playwright
-    
+
     scrape_url = url.rstrip("/")
 
     # ── Sanitize URL first: strip login-redirect params and /candidate path segments ──
@@ -385,10 +445,18 @@ async def scrape_jd(url: str) -> dict:
     if "ashbyhq.com" in scrape_url and scrape_url.endswith("/application"):
         scrape_url = scrape_url[:-12]
 
+    # ── Check Cache First ──
+    if not force_refresh:
+        cached = get_cached_jd(scrape_url)
+        if cached and len(cached.get("jd_text", "")) >= 800:
+            print(f"[Scraper Cache] ⚡ Reusing cached JD for {cached.get('role')} at {cached.get('company')} (Zero network delay, no browser popup)")
+            return cached
+
     # Fast path for Notion pages via Notion REST API
     if "notion.site" in scrape_url or "notion.so" in scrape_url:
         notion_data = fetch_notion_via_api(scrape_url)
         if notion_data:
+            save_cached_jd(scrape_url, notion_data)
             return notion_data
 
     print(f"[Scraper] Opening: {scrape_url}")
@@ -627,6 +695,10 @@ async def scrape_jd(url: str) -> dict:
         "jd_text": jd_text,
         "folder_name": folder_name,
     }
+
+    # Save to persistent cache so future runs reuse this verified extract
+    save_cached_jd(scrape_url, result)
+    save_cached_jd(url, result)
 
     print(f"[Scraper] [OK] Company: {company}")
     print(f"[Scraper] [OK] Role: {role}")

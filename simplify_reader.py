@@ -146,17 +146,74 @@ def _create_temp_profile(profile_dir: Optional[str] = None) -> str:
     return str(dst_root)
 
 
+# ─── Simplify Cache ─────────────────────────────────────────────────────────
+import time
+
+SIMPLIFY_CACHE_FILE = BASE_DIR / "simplify_cache.json"
+_SIMPLIFY_MEM_CACHE = {}
+
+def get_cached_simplify_score(url: str, max_age_hours: float = 24.0) -> Optional[dict]:
+    """Retrieve verified cached Simplify ATS score if available."""
+    clean_url = url.rstrip("/")
+    now = time.time()
+    if clean_url in _SIMPLIFY_MEM_CACHE:
+        entry = _SIMPLIFY_MEM_CACHE[clean_url]
+        if now - entry.get("timestamp", 0) < max_age_hours * 3600:
+            return entry.get("data")
+    if SIMPLIFY_CACHE_FILE.exists():
+        try:
+            with open(SIMPLIFY_CACHE_FILE, "r", encoding="utf-8") as f:
+                disk_data = json.load(f)
+                if clean_url in disk_data:
+                    entry = disk_data[clean_url]
+                    if now - entry.get("timestamp", 0) < max_age_hours * 3600:
+                        _SIMPLIFY_MEM_CACHE[clean_url] = entry
+                        return entry.get("data")
+        except Exception:
+            pass
+    return None
+
+def save_cached_simplify_score(url: str, data: dict):
+    """Save verified Simplify score & keywords to memory and disk cache."""
+    if not data or not data.get("success"):
+        return
+    clean_url = url.rstrip("/")
+    entry = {
+        "timestamp": time.time(),
+        "data": data
+    }
+    _SIMPLIFY_MEM_CACHE[clean_url] = entry
+    try:
+        disk_data = {}
+        if SIMPLIFY_CACHE_FILE.exists():
+            with open(SIMPLIFY_CACHE_FILE, "r", encoding="utf-8") as f:
+                disk_data = json.load(f)
+        disk_data[clean_url] = entry
+        if len(disk_data) > 100:
+            sorted_items = sorted(disk_data.items(), key=lambda x: x[1].get("timestamp", 0), reverse=True)
+            disk_data = dict(sorted_items[:100])
+        with open(SIMPLIFY_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(disk_data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"[Simplify Cache] Note saving cache: {e}")
+
+
 # ─── Main Reader ────────────────────────────────────────────────────────────
 
-async def read_simplify_score(job_url: str, company: str = "", role: str = "") -> dict:
+async def read_simplify_score(job_url: str, company: str = "", role: str = "", force_refresh: bool = False) -> dict:
     """
-    Reads Simplify ATS match score and missing keywords:
-    1. Launches Playwright Chromium with Simplify extension.
-    2. Opens job application page.
-    3. Clicks top 'Resume Score' tab in Simplify extension sidebar.
-    4. Parses exact matching and missing keyword chips directly from shadow DOM CSS classes.
+    Reads Simplify ATS match score and missing keywords with intelligent caching:
+    1. Checks cache first to avoid redundant browser launches.
+    2. Launches Playwright Chromium with Simplify extension only when necessary.
     """
     from playwright.async_api import async_playwright
+
+    # ── Check Cache First ──
+    if not force_refresh:
+        cached = get_cached_simplify_score(job_url)
+        if cached and cached.get("success"):
+            print(f"  [Simplify Cache] ⚡ Reusing verified Simplify score ({cached.get('score')}%) for {job_url} (No browser launch)")
+            return cached
 
     load_dotenv()
     email = os.getenv("SIMPLIFY_EMAIL", "")
@@ -374,13 +431,18 @@ async def read_simplify_score(job_url: str, company: str = "", role: str = "") -
             print(f"  [Simplify] Missing Keywords ({len(missing_keywords)}): {missing_keywords}")
             print(f"  [Simplify] Matching Keywords ({len(matching_keywords)}): {matching_keywords}")
 
-            return {
+            result = {
                 "success": True,
                 "score": score,
                 "missing_keywords": missing_keywords,
                 "matching_keywords": matching_keywords,
                 "error": None,
             }
+
+            # Save to persistent cache so future runs reuse this score without browser popups
+            save_cached_simplify_score(job_url, result)
+
+            return result
 
         finally:
             await context.close()

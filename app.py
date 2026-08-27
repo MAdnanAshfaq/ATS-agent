@@ -47,6 +47,9 @@ CORS(app)
 # Active background runs & message queues for SSE
 active_runs = {}
 
+# In-memory intelligence cache for parsed ATS jobs & Simplify scores
+GLOBAL_ANALYSIS_CACHE = {}
+
 
 def get_env_vars() -> dict:
     """Read .env into dict safely."""
@@ -818,6 +821,18 @@ def analyze_job():
                     "role": role,
                 }), 422
 
+        # Store in global memory cache so Generate step reuses this extract with 0 browser launches
+        GLOBAL_ANALYSIS_CACHE[url] = {
+            "company": company,
+            "role": role,
+            "jd_text": jd_text,
+            "score": score,
+            "matching_keywords": matching_keywords,
+            "missing_keywords": missing_keywords,
+            "source": source,
+            "jd_data": jd_data,
+        }
+
         return jsonify({
             "success": True,
             "company": company,
@@ -885,10 +900,17 @@ def generate_cover_letter_api():
         base_resume = load_base_resume()
 
         if url:
-            jd_data = scrape_jd_sync(url)
-            company = company or jd_data["company"]
-            role = role or jd_data["role"]
-            jd_text = jd_data["jd_text"]
+            # Check cache or scrape
+            cached = GLOBAL_ANALYSIS_CACHE.get(url)
+            if cached:
+                company = company or cached["company"]
+                role = role or cached["role"]
+                jd_text = cached["jd_text"]
+            else:
+                jd_data = scrape_jd_sync(url)
+                company = company or jd_data["company"]
+                role = role or jd_data["role"]
+                jd_text = jd_data["jd_text"]
         else:
             jd_text = f"Role: {role} at {company}"
 
@@ -968,7 +990,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
 
         send_log(1, "Initialize", "Loading base resume...", status="working")
         from agent import load_base_resume, extract_keywords_from_jd, _save_run_log
-        from scraper import scrape_jd_sync
+        from scraper import scrape_jd_sync, clean_role_title, get_cached_jd
         from rewriter import rewrite_resume, _check_keyword_coverage
         from ai_detector import run_ai_detection_loop
         from resume_builder import build_resume_docx
@@ -976,41 +998,49 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
         base_resume = load_base_resume()
         send_log(1, "Base Resume", f"Loaded master resume for {base_resume.get('name')}", status="success")
 
-        # Step 2: Scrape JD
+        # Step 2: Scrape JD (checks memory & disk cache first)
         send_log(2, "Scrape JD", f"Extracting job description from {url}...", status="working")
-        jd_data = scrape_jd_sync(url)
-        company = jd_data["company"]
-        from scraper import clean_role_title
-        role = clean_role_title(jd_data["role"])
-        jd_text = jd_data["jd_text"]
 
-        # ── Validation gate ──
-        # scrape_jd already raises RuntimeError on bad JD, but log it clearly
-        # for the UI before it propagates. Extra check on char count as a safety net.
-        jd_chars = len(jd_text)
-        if jd_chars < 800:
+        cached_analysis = GLOBAL_ANALYSIS_CACHE.get(url)
+        if cached_analysis and len(cached_analysis.get("jd_text", "")) >= 800:
+            company = cached_analysis["company"]
+            role = clean_role_title(cached_analysis["role"])
+            jd_text = cached_analysis["jd_text"]
+            jd_chars = len(jd_text)
             send_log(2, "Scrape JD",
-                     f"❌ JD validation FAILED: Only {jd_chars} chars extracted — likely a bot-block page. "
-                     "Halting pipeline. Please paste the job description text manually into the "
-                     "'Missing Keywords' field and retry.",
-                     data={"jd_length": jd_chars, "company": company, "role": role},
-                     status="error")
-            raise RuntimeError(
-                f"JD validation failed: only {jd_chars} chars extracted — "
-                "the site likely returned a 403/bot-block page. Paste the JD text manually."
-            )
+                     f"⚡ Reused verified JD for {role} at {company} ({jd_chars:,} chars, 0 browser popups)",
+                     data={"company": company, "role": role, "jd_length": jd_chars},
+                     status="success")
+        else:
+            jd_data = scrape_jd_sync(url)
+            company = jd_data["company"]
+            role = clean_role_title(jd_data["role"])
+            jd_text = jd_data["jd_text"]
+            jd_chars = len(jd_text)
 
-        jd_status = "success"
-        jd_msg = f"Extracted {jd_chars:,} chars for {role} at {company}"
-        if jd_chars < 1500:
-            jd_status = "warning"
-            jd_msg += f" (⚠ short extract — may be partial)"
+            if jd_chars < 800:
+                send_log(2, "Scrape JD",
+                         f"❌ JD validation FAILED: Only {jd_chars} chars extracted — likely a bot-block page. "
+                         "Halting pipeline. Please paste the job description text manually into the "
+                         "'Missing Keywords' field and retry.",
+                         data={"jd_length": jd_chars, "company": company, "role": role},
+                         status="error")
+                raise RuntimeError(
+                    f"JD validation failed: only {jd_chars} chars extracted — "
+                    "the site likely returned a 403/bot-block page. Paste the JD text manually."
+                )
 
-        send_log(2, "Scrape JD", jd_msg, data={
-            "company": company,
-            "role": role,
-            "jd_length": jd_chars,
-        }, status=jd_status)
+            jd_status = "success"
+            jd_msg = f"Extracted {jd_chars:,} chars for {role} at {company}"
+            if jd_chars < 1500:
+                jd_status = "warning"
+                jd_msg += f" (⚠ short extract — may be partial)"
+
+            send_log(2, "Scrape JD", jd_msg, data={
+                "company": company,
+                "role": role,
+                "jd_length": jd_chars,
+            }, status=jd_status)
 
         # Step 3: Parse custom keywords OR Simplify ATS score OR local keyword extraction
         missing_keywords = []
@@ -1028,6 +1058,21 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                      f"Using {len(user_keywords)} user-specified missing keywords from Simplify: {user_keywords}",
                      data={"missing_keywords": user_keywords, "source": "user_provided"},
                      status="success")
+        elif cached_analysis and cached_analysis.get("missing_keywords"):
+            # Instant memory reuse from Analyze step
+            missing_keywords = cached_analysis["missing_keywords"]
+            matching_keywords = cached_analysis.get("matching_keywords", [])
+            simplify_score_before = cached_analysis.get("score")
+            source_label = "Simplify extension (cached)" if cached_analysis.get("source") == "simplify_extension" else "LLM Cross-Check (cached)"
+            send_log(3, "Keyword Extraction",
+                     f"⚡ Reused verified {source_label}: {len(missing_keywords)} missing keywords (Score: {simplify_score_before}%, 0 browser popups)",
+                     data={
+                         "score": simplify_score_before,
+                         "missing_keywords": missing_keywords,
+                         "matching_keywords": matching_keywords,
+                         "source": cached_analysis.get("source", "cached"),
+                     },
+                     status="success")
         elif no_simplify:
             send_log(3, "Keyword Extraction", "Extracting missing keywords directly from JD (--no-simplify mode)...", status="working")
             missing_keywords = extract_keywords_from_jd(jd_text, base_resume)
@@ -1037,7 +1082,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                      status="success")
         else:
             send_log(3, "Simplify ATS Score",
-                     "Launching Chrome with Simplify extension to get real ATS score... (Chrome must be closed)",
+                     "Checking Simplify ATS score... (reusing cache if previously read)",
                      status="working")
             try:
                 from simplify_reader import read_simplify_score_sync
