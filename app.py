@@ -120,65 +120,71 @@ def hf_detect():
     env = get_env_vars()
     colab_url = (env.get("COLAB_DETECTOR_URL") or os.environ.get("COLAB_DETECTOR_URL", "")).strip().rstrip("/")
 
-    # ── MODE A: Colab endpoint (TMR AI Text Detector) ───────────────────────
+    # ── MODE A: Colab endpoint (TMR / Gradio AI Text Detector) ──────────────
     if colab_url:
-        # Try multiple endpoint paths to support Gradio 4/5, Gradio 3, and direct REST APIs:
-        candidate_endpoints = [
-            f"{colab_url}/detect",
-            f"{colab_url}/api/predict",
-            f"{colab_url}/run/predict",
-            f"{colab_url}/predict",
-        ]
-
-        resp = None
+        payload = None
         last_error = None
 
-        for endpoint in candidate_endpoints:
-            try:
-                # Format payload based on endpoint type
-                if endpoint.endswith("/detect"):
-                    payload_data = {"text": text}
-                else:
-                    payload_data = {"data": [text]}
+        # 1. Try Gradio 5 protocol (/gradio_api/call/predict)
+        try:
+            call_url = f"{colab_url}/gradio_api/call/predict"
+            init_resp = httpx.post(call_url, json={"data": [text]}, timeout=15.0)
+            if init_resp.status_code == 200 and "event_id" in init_resp.json():
+                event_id = init_resp.json()["event_id"]
+                stream_url = f"{call_url}/{event_id}"
+                with httpx.stream("GET", stream_url, timeout=45.0) as stream:
+                    for line in stream.iter_lines():
+                        if line.startswith("data:"):
+                            data_str = line[5:].strip()
+                            raw_parsed = json.loads(data_str)
+                            if isinstance(raw_parsed, list) and len(raw_parsed) > 0:
+                                payload = raw_parsed[0]
+                            else:
+                                payload = raw_parsed
+                            break
+        except Exception as g5_err:
+            last_error = g5_err
 
-                test_resp = httpx.post(endpoint, json=payload_data, timeout=45.0)
-                if test_resp.status_code == 200:
-                    resp = test_resp
-                    break
-                elif test_resp.status_code != 404:
-                    resp = test_resp
-                    break
-            except Exception as exc:
-                last_error = exc
-                continue
+        # 2. Fallback to standard Gradio 4 / REST endpoints if Gradio 5 wasn't used
+        if payload is None:
+            candidate_endpoints = [
+                f"{colab_url}/detect",
+                f"{colab_url}/api/predict",
+                f"{colab_url}/run/predict",
+                f"{colab_url}/predict",
+            ]
+            for endpoint in candidate_endpoints:
+                try:
+                    if endpoint.endswith("/detect"):
+                        body_data = {"text": text}
+                    else:
+                        body_data = {"data": [text]}
 
-        if resp is None:
+                    test_resp = httpx.post(endpoint, json=body_data, timeout=30.0)
+                    if test_resp.status_code == 200:
+                        res_json = test_resp.json()
+                        if isinstance(res_json, dict) and "data" in res_json and isinstance(res_json["data"], list) and len(res_json["data"]) > 0:
+                            payload = res_json["data"][0]
+                        else:
+                            payload = res_json
+                        break
+                except Exception as exc:
+                    last_error = exc
+                    continue
+
+        if payload is None:
             return jsonify({
                 "error": f"Cannot reach Colab detector at {colab_url}. Make sure the Colab cell is running and the public URL is active. ({last_error})"
             }), 500
 
-        if resp.status_code != 200:
-            return jsonify({
-                "error": f"Colab server error ({resp.status_code})",
-                "detail": resp.text[:400],
-            }), resp.status_code
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                pass
 
-        try:
-            result = resp.json()
-            # If wrapped in Gradio's {"data": [...]}, unwrap it
-            if isinstance(result, dict) and "data" in result and isinstance(result["data"], list) and len(result["data"]) > 0:
-                payload = result["data"][0]
-            else:
-                payload = result
-
-            if isinstance(payload, str):
-                import json as _json
-                payload = _json.loads(payload)
-        except Exception as json_err:
-            return jsonify({"error": "Failed to parse response from Colab server", "raw_text": resp.text[:400]}), 502
-
-        ai_prob    = float(payload.get("ai_probability", payload.get("ai_prob", 50.0)))
-        human_prob = float(payload.get("human_probability", payload.get("human_prob", round(100.0 - ai_prob, 1))))
+        ai_prob    = float(payload.get("ai_probability", payload.get("ai_prob", payload.get("ai", 50.0))))
+        human_prob = float(payload.get("human_probability", payload.get("human_prob", payload.get("human", round(100.0 - ai_prob, 1)))))
         verdict    = payload.get("verdict", "AI" if ai_prob >= 50 else "Human")
         label      = payload.get("label",   "AI-Generated" if verdict == "AI" else "Likely Human")
         model_name = payload.get("model",   "TMR AI Text Detector (Colab)")
