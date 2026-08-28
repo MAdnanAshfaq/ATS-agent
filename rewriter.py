@@ -202,7 +202,7 @@ You are allowed to rephrase or adjust terminology and weave in required tools na
 Do NOT use obvious AI buzzwords like "spearheaded", "leveraged", "dynamic", "testament", "transformative", "fostered", "pivotal", "groundbreaking", "innovative", "robust", or "seamless". Use clear, active human engineering language.
 
 5. OUTPUT SCHEMATIC
-Return the updated resume strictly as a valid JSON object matching the exact keys of the MASTER_PROFILE so the python-docx script runs smoothly.{urgency}
+Return the updated resume strictly as a valid JSON object matching the exact keys of the MASTER_PROFILE so the python-docx script runs smoothly.
 
 JSON OUTPUT FORMAT (return exactly this structure):
 {{
@@ -230,7 +230,9 @@ JSON OUTPUT FORMAT (return exactly this structure):
 
     user_prompt = f"""TARGET: {role} at {company}
 
-{keyword_block}
+{missing_instruction}
+
+{custom_bullets_section}
 
 JOB DESCRIPTION:
 {jd_text[:4000]}
