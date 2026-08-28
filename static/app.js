@@ -145,7 +145,8 @@ function detectPlatform(url) {
 async function startGeneration(opts = {}) {
   let url = document.getElementById("jd-url").value.trim();
 
-  if (url && !url.startsWith("http://") && !url.startsWith("https://")) {
+  const isDirectText = url.includes("\n") || (url.includes(" ") && url.split(" ").length > 3);
+  if (url && !isDirectText && !url.startsWith("http://") && !url.startsWith("https://")) {
     url = "https://" + url;
     document.getElementById("jd-url").value = url;
   }
@@ -1317,10 +1318,11 @@ let analyzeJdText = null;
 async function analyzeJobKeywords() {
   let url = document.getElementById("jd-url").value.trim();
   if (!url) {
-    showToast("Please enter a valid job posting URL first", "warning");
+    showToast("Please enter a job URL or paste the job description text", "warning");
     return;
   }
-  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+  const isDirectText = url.includes("\n") || (url.includes(" ") && url.split(" ").length > 3);
+  if (!isDirectText && !url.startsWith("http://") && !url.startsWith("https://")) {
     url = "https://" + url;
     document.getElementById("jd-url").value = url;
   }

@@ -761,52 +761,75 @@ def analyze_job():
     url = data.get("url", "").strip()
     no_simplify = data.get("no_simplify", False)
 
-    if not url or not url.startswith(("http://", "https://")):
-        return jsonify({"error": "Invalid URL. Please enter a valid job URL starting with http:// or https://"}), 400
+    if not url:
+        return jsonify({"error": "Please enter a job URL or paste the job description text."}), 400
+
+    # Detect if user pasted direct job description text instead of a URL
+    is_direct_text = ("\n" in url) or (" " in url and len(url.split()) > 5) or (not url.startswith(("http://", "https://")) and not ("." in url and "/" in url))
 
     try:
         import asyncio
         from agent import load_base_resume, extract_keywords_from_jd
-        from scraper import scrape_jd, sanitize_jd_url
+        from scraper import scrape_jd, sanitize_jd_url, clean_role_title
         from simplify_reader import read_simplify_score
 
         base_resume = load_base_resume()
 
-        # Dedicated asyncio loop for Flask thread
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        if is_direct_text:
+            print(f"[Analyze] Direct Job Description text detected ({len(url):,} chars). Skipping network scraper.")
+            jd_text = url
+            company = "Target Company"
+            role = "Data Engineer"
+            no_simplify = True  # Simplify extension requires a browser URL
 
-        # Show the sanitized URL in logs so user can see what's being scraped
-        sanitized_url = sanitize_jd_url(url.rstrip("/"))
-        print(f"[Analyze] Scraping JD from {sanitized_url}...")
+            # Try to infer company and role if present
+            first_line = jd_text.strip().split("\n")[0][:80]
+            if " at " in first_line:
+                parts = first_line.split(" at ", 1)
+                role = clean_role_title(parts[0].strip())
+                company = parts[1].strip()
+            elif " - " in first_line:
+                parts = first_line.split(" - ", 1)
+                role = clean_role_title(parts[0].strip())
+                company = parts[1].strip()
+            jd_data = {"company": company, "role": role, "jd_text": jd_text}
+            jd_len = len(jd_text)
+        else:
+            if not url.startswith(("http://", "https://")):
+                url = "https://" + url
 
-        try:
-            jd_data = loop.run_until_complete(scrape_jd(url))
-        except RuntimeError as scrape_err:
-            # Known scraper failure: bot-block, login-required, CAPTCHA, bad URL
-            err_str = str(scrape_err)
-            user_msg = (
-                "⚠️ Could not extract the job description from this URL.\n\n"
-                + err_str.split("\n")[0]  # first line of the RuntimeError
-                + "\n\nWhat to do:\n"
-                "1. Open the job in your browser and copy the direct URL (no /candidate or ?from=login)\n"
-                "2. Or paste the full JD text manually into the 'Missing Keywords' box and run Generate directly\n"
-                "3. Or use the Simplify Chrome extension and paste keywords manually"
-            )
-            print(f"[Analyze] Scrape validation failed: {scrape_err}")
-            return jsonify({
-                "success": False,
-                "error": user_msg,
-                "error_type": "scrape_blocked",
-                "jd_length": 0,
-            }), 422
+            # Dedicated asyncio loop for Flask thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
 
-        company = jd_data["company"]
-        from scraper import clean_role_title
-        role = clean_role_title(jd_data["role"])
-        jd_text = jd_data["jd_text"]
-        jd_len  = len(jd_text)
-        print(f"[Analyze] Scraped {jd_len} chars for {role} at {company}")
+            # Show the sanitized URL in logs so user can see what's being scraped
+            sanitized_url = sanitize_jd_url(url.rstrip("/"))
+            print(f"[Analyze] Scraping JD from {sanitized_url}...")
+
+            try:
+                jd_data = loop.run_until_complete(scrape_jd(url))
+            except RuntimeError as scrape_err:
+                err_str = str(scrape_err)
+                user_msg = (
+                    "⚠️ Could not extract the job description from this URL.\n\n"
+                    + err_str.split("\n")[0]
+                    + "\n\nWhat to do:\n"
+                    "1. Open the job in your browser and copy the direct URL\n"
+                    "2. Or paste the full JD text directly into the URL input box and click Analyze"
+                )
+                print(f"[Analyze] Scrape validation failed: {scrape_err}")
+                return jsonify({
+                    "success": False,
+                    "error": user_msg,
+                    "error_type": "scrape_blocked",
+                    "jd_length": 0,
+                }), 422
+
+            company = jd_data["company"]
+            role = clean_role_title(jd_data["role"])
+            jd_text = jd_data["jd_text"]
+            jd_len  = len(jd_text)
+            print(f"[Analyze] Scraped {jd_len} chars for {role} at {company}")
 
         missing_keywords = []
         matching_keywords = []
@@ -1030,8 +1053,8 @@ def start_run():
     custom_output = data.get("custom_output", "")
     score_before = data.get("score_before", None)
 
-    if not url or not url.startswith(("http://", "https://")):
-        return jsonify({"error": "Invalid URL. Please enter a valid job URL starting with http:// or https://"}), 400
+    if not url:
+        return jsonify({"error": "Please enter a job URL or paste the job description text."}), 400
 
     run_id = f"run_{int(time.time()*1000)}"
     msg_queue = queue.Queue()
@@ -1076,25 +1099,67 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
         base_resume = load_base_resume()
         send_log(1, "Base Resume", f"Loaded master resume for {base_resume.get('name')}", status="success")
 
-        # Step 2: Scrape JD (checks memory & disk cache first)
-        send_log(2, "Scrape JD", f"Extracting job description from {url}...", status="working")
-
-        cached_analysis = GLOBAL_ANALYSIS_CACHE.get(url)
-        if cached_analysis and len(cached_analysis.get("jd_text", "")) >= 800:
-            company = cached_analysis["company"]
-            role = clean_role_title(cached_analysis["role"])
-            jd_text = cached_analysis["jd_text"]
-            jd_chars = len(jd_text)
-            send_log(2, "Scrape JD",
-                     f"⚡ Reused verified JD for {role} at {company} ({jd_chars:,} chars, 0 browser popups)",
-                     data={"company": company, "role": role, "jd_length": jd_chars},
-                     status="success")
+        # Step 2: Scrape JD (checks memory & disk cache first, or uses direct text)
+        is_direct_text = ("\n" in url) or (" " in url and len(url.split()) > 5) or (not url.startswith(("http://", "https://")) and not ("." in url and "/" in url))
+        
+        if is_direct_text:
+            jd_text = url
+            company = "Target Company"
+            role = "Data Engineer"
+            first_line = jd_text.strip().split("\n")[0][:80]
+            if " at " in first_line:
+                parts = first_line.split(" at ", 1)
+                role = clean_role_title(parts[0].strip())
+                company = parts[1].strip()
+            elif " - " in first_line:
+                parts = first_line.split(" - ", 1)
+                role = clean_role_title(parts[0].strip())
+                company = parts[1].strip()
+            no_simplify = True
+            send_log(2, "Scrape JD", f"Using direct Job Description text ({len(jd_text):,} chars)",
+                     data={"company": company, "role": role, "jd_length": len(jd_text)}, status="success")
         else:
-            jd_data = scrape_jd_sync(url)
-            company = jd_data["company"]
-            role = clean_role_title(jd_data["role"])
-            jd_text = jd_data["jd_text"]
-            jd_chars = len(jd_text)
+            send_log(2, "Scrape JD", f"Extracting job description from {url}...", status="working")
+            cached_analysis = GLOBAL_ANALYSIS_CACHE.get(url)
+            if cached_analysis and len(cached_analysis.get("jd_text", "")) >= 800:
+                company = cached_analysis["company"]
+                role = clean_role_title(cached_analysis["role"])
+                jd_text = cached_analysis["jd_text"]
+                jd_chars = len(jd_text)
+                send_log(2, "Scrape JD",
+                         f"⚡ Reused verified JD for {role} at {company} ({jd_chars:,} chars, 0 browser popups)",
+                         data={"company": company, "role": role, "jd_length": jd_chars},
+                         status="success")
+            else:
+                jd_data = scrape_jd_sync(url)
+                company = jd_data["company"]
+                role = clean_role_title(jd_data["role"])
+                jd_text = jd_data["jd_text"]
+                jd_chars = len(jd_text)
+
+                if jd_chars < 800:
+                    send_log(2, "Scrape JD",
+                             f"❌ JD validation FAILED: Only {jd_chars} chars extracted — likely a bot-block page. "
+                             "Halting pipeline. Please paste the job description text manually into the "
+                             "'Missing Keywords' field and retry.",
+                             data={"jd_length": jd_chars, "company": company, "role": role},
+                             status="error")
+                    raise RuntimeError(
+                        f"JD validation failed: only {jd_chars} chars extracted — "
+                        "the site likely returned a 403/bot-block page. Paste the JD text manually."
+                    )
+
+                jd_status = "success"
+                jd_msg = f"Extracted {jd_chars:,} chars for {role} at {company}"
+                if jd_chars < 1500:
+                    jd_status = "warning"
+                    jd_msg += f" (⚠ short extract — may be partial)"
+
+                send_log(2, "Scrape JD", jd_msg, data={
+                    "company": company,
+                    "role": role,
+                    "jd_length": jd_chars,
+                }, status=jd_status)
 
             if jd_chars < 800:
                 send_log(2, "Scrape JD",
