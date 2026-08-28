@@ -1009,7 +1009,7 @@ def start_run():
     # Start background thread for execution
     thread = threading.Thread(
         target=_execute_agent_pipeline,
-        args=(run_id, url, custom_keywords, no_simplify, passes, custom_output, msg_queue, score_before),
+        args=(run_id, url, custom_keywords, no_simplify, passes, custom_output, msg_queue, score_before, custom_bullets),
         daemon=True,
     )
     thread.start()
@@ -1017,7 +1017,7 @@ def start_run():
     return jsonify({"run_id": run_id, "status": "started"})
 
 
-def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passes, custom_output, msg_queue, analyze_score_before=None):
+def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passes, custom_output, msg_queue, analyze_score_before=None, custom_bullets=""):
     """Execute pipeline in thread and push step logs to SSE queue."""
     # analyze_score_before: real score from Analyze step (Gemini/Simplify) — authoritative before score
     def send_log(step, stage, message, data=None, status="info"):
