@@ -1544,7 +1544,11 @@ function renderSimplifyCard(data) {
   if (missingContainer) {
     missingContainer.innerHTML = "";
     if (missing.length === 0) {
-      missingContainer.innerHTML = `<span style="font-size:13px; color:#10b981; font-weight:600;">🎉 Master resume matches all required job skills!</span>`;
+      if (matched.length > 0) {
+        missingContainer.innerHTML = `<span style="font-size:13px; color:#10b981; font-weight:600;">🎉 Master resume matches all required job skills!</span>`;
+      } else {
+        missingContainer.innerHTML = `<span style="font-size:13px; color:#94a3b8; font-style:italic;">No missing skills identified yet. Add custom keywords below to inject.</span>`;
+      }
     } else {
       missing.forEach(kw => {
         renderMatrixMissingChip(kw, missingContainer);
