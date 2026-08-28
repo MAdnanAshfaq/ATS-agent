@@ -4,8 +4,17 @@ Supports: LinkedIn, Lever, Greenhouse, Workday, Wellfound, and generic ATS porta
 """
 import asyncio
 import re
+import sys
 from typing import Optional
 from bs4 import BeautifulSoup
+
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 
 # Platform-specific selectors for clean JD extraction
@@ -301,8 +310,18 @@ def extract_company_from_url(url: str) -> str:
         if name and name.lower() != "www":
             return name
     
+    # adp: myjobs.adp.com/company/cx/...
+    adp = re.search(r'myjobs\.adp\.com/([^/]+)', url)
+    if adp:
+        c_slug = adp.group(1)
+        if "wwt" in c_slug.lower():
+            return "World Wide Technology (WWT)"
+        clean_name = re.sub(r'^confidential', '', c_slug, flags=re.I).replace('-', ' ').title().strip()
+        if clean_name:
+            return clean_name
+
     # generic: extract domain
-    domain = re.search(r'https?://(?:www\.|jobs\.)?([^./]+)', url)
+    domain = re.search(r'https?://(?:www\.|jobs\.|myjobs\.)?([^./]+)', url)
     if domain:
         return domain.group(1).replace('-', ' ').title()
     
@@ -448,8 +467,8 @@ async def scrape_jd(url: str, force_refresh: bool = False) -> dict:
     # ── Check Cache First ──
     if not force_refresh:
         cached = get_cached_jd(scrape_url)
-        if cached and len(cached.get("jd_text", "")) >= 800:
-            print(f"[Scraper Cache] ⚡ Reusing cached JD for {cached.get('role')} at {cached.get('company')} (Zero network delay, no browser popup)")
+        if cached and len(cached.get("jd_text", "")) >= 100:
+            print(f"[Scraper Cache] [CACHED] Reusing cached JD for {cached.get('role')} at {cached.get('company')} (Zero network delay, no browser popup)")
             return cached
 
     # Fast path for Notion pages via Notion REST API
@@ -629,7 +648,13 @@ async def scrape_jd(url: str, force_refresh: bool = False) -> dict:
                 txt = clean_text(raw_markdown)
                 if len(txt) >= 800:
                     jd_text = txt
-                    print(f"[Scraper] ✅ Jina Reader extracted {len(jd_text)} chars")
+                    print(f"[Scraper] [OK] Jina Reader extracted {len(jd_text)} chars")
+                    # Extract role title from Jina markdown header if available
+                    title_m = re.search(r'^Title:\s*(.+)$', raw_markdown, re.MULTILINE)
+                    if title_m:
+                        extracted_role = clean_role_title(title_m.group(1).strip())
+                        if extracted_role and extracted_role.lower() not in ("software engineer", "jobs", "careers", "apply"):
+                            role = extracted_role
                 else:
                     print(f"[Scraper] Jina Reader also returned short content ({len(txt)} chars)")
         except Exception as jina_err:
