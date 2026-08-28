@@ -370,18 +370,24 @@ def _categorize_skills(skills: list) -> dict:
     }
     
     for skill in skills:
-        skill_lower = skill.lower()
+        skill_clean = sanitize_text(skill)
+        words = skill_clean.split()
+        # Strictly skip sentences or duty descriptions (> 4 words or ends with period)
+        if len(words) > 4 or skill_clean.endswith(".") or len(skill_clean) > 35:
+            continue
+
+        skill_lower = skill_clean.lower()
         
         if any(kw in skill_lower for kw in lang_keywords):
-            categories["Languages"].append(skill)
+            categories["Languages"].append(skill_clean)
         elif any(kw in skill_lower for kw in framework_keywords):
-            categories["Frameworks & Libraries"].append(skill)
+            categories["Frameworks & Libraries"].append(skill_clean)
         elif any(kw in skill_lower for kw in db_keywords):
-            categories["Databases"].append(skill)
+            categories["Databases"].append(skill_clean)
         elif any(kw in skill_lower for kw in cloud_keywords):
-            categories["Cloud & DevOps"].append(skill)
-        elif len(skill) > 2:
-            categories["Tools & Platforms"].append(skill)
+            categories["Cloud & DevOps"].append(skill_clean)
+        elif len(skill_clean) > 1:
+            categories["Tools & Platforms"].append(skill_clean)
     
     # Remove empty categories
     return {k: v for k, v in categories.items() if v}
@@ -393,7 +399,7 @@ def convert_to_pdf(doc_path: str) -> str:
         return ""
 
     pdf_path = str(Path(doc_path).with_suffix(".pdf"))
-    if os.path.exists(pdf_path):
+    if os.path.exists(pdf_path) and os.path.getmtime(pdf_path) >= os.path.getmtime(doc_path):
         return pdf_path
 
     # Attempt 1: Native Windows Word COM Automation (Fastest, Pixel-Perfect)

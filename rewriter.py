@@ -186,35 +186,47 @@ DYNAMIC INPUT DATA:
 
 YOUR ARCHITECTURAL PROTOCOLS:
 
-1. MANDATORY DUAL-LAYER KEYWORD INJECTION (Skills List + Experience Bullets):
-Every missing keyword from MISSING_KEYWORDS_FROM_SIMPLIFY MUST be reflected in BOTH of the following places:
-- A) In "skills": Include the exact technical skill, framework, cloud service, or database in the skills array.
-- B) In "experience" BULLETS: Weave each new skill/tool into at least 1–2 bullet points in the candidate's recent experience. Explicitly state HOW the tool was applied, for what architecture or pipeline, and what business/technical result was achieved (e.g., "Designed scalable streaming ingestion using Apache Kafka and Databricks Delta Live Tables, ensuring 99.9% data delivery SLA.").
-- Never just dump keywords into the skills section alone. Hiring managers and ATS parsers require contextual proof of practical usage in bullet points.
+1. MANDATORY MULTI-ROLE PRESERVATION (DO NOT DELETE PREVIOUS JOBS):
+You MUST preserve ALL work experience entries present in MASTER_PROFILE.
+For example, if MASTER_PROFILE has 2 jobs (Strive Health AND Cornerstone OnDemand), your output "experience" array MUST contain BOTH jobs.
+Never drop, truncate, or omit past jobs from the candidate's history.
 
-2. IDENTIFY & PURGE (Remove Previous Job Stuffing)
-Start strictly from MASTER_PROFILE. If there are hyper-specific keywords from previous application runs that do NOT appear in the current missing keywords list or the master profile (e.g., niche competitor databases if this job doesn't use it), REMOVE or REPLACE them back to the clean master format. Do not carry over baggage from previous job scans.
+2. SKILLS LIST CONSTRAINTS (ATOMIC SKILLS ONLY):
+The "skills" array must ONLY contain concise technical tools, languages, frameworks, and databases (1 to 4 words each, e.g. "Python", "ANSI SQL", "PL/SQL", "Databricks", "Star Schema", "Apache Spark", "CI/CD").
+NEVER put full sentences, duties, paragraphs, or responsibility bullet points into the "skills" list!
 
-3. RESUME TRUTH CONSTRAINT & BULLET INTEGRITY
-You are allowed to rephrase or adjust terminology and weave in required tools naturally into candidate's experience. Maintain professional numbers, real company names, and dates. Ensure every bullet point starts with a strong action verb (e.g., "Architected", "Engineered", "Optimized", "Implemented", "Automated").
+3. MANDATORY BULLET INJECTION IN EXPERIENCE:
+Every missing skill/tool AND every user-specified responsibility point MUST be woven into the candidate's work experience bullets (primarily under the latest role).
+Write active, high-impact engineering bullets starting with strong action verbs (e.g., "Engineered", "Architected", "Optimized", "Implemented", "Automated", "Tuned").
+Explicitly state HOW the tool/concept was applied, for what architecture or pipeline, and what business/technical result was achieved.
 
-4. NO AI BUZZWORDS
+4. IDENTIFY & PURGE (Remove Previous Job Stuffing):
+Start strictly from MASTER_PROFILE. If there are hyper-specific keywords from previous application runs that do NOT appear in the current missing keywords list or the master profile, REMOVE or REPLACE them back to the clean master format.
+
+5. NO AI BUZZWORDS:
 Do NOT use obvious AI buzzwords like "spearheaded", "leveraged", "dynamic", "testament", "transformative", "fostered", "pivotal", "groundbreaking", "innovative", "robust", or "seamless". Use clear, active human engineering language.
 
-5. OUTPUT SCHEMATIC
-Return the updated resume strictly as a valid JSON object matching the exact keys of the MASTER_PROFILE so the python-docx script runs smoothly.
+6. OUTPUT SCHEMATIC:
+Return the updated resume strictly as a valid JSON object matching the exact keys and ALL experience roles of MASTER_PROFILE so the python-docx script runs smoothly.
 
-JSON OUTPUT FORMAT (return exactly this structure):
+JSON OUTPUT FORMAT (return all experiences from MASTER_PROFILE):
 {{
-  "target_role": "A generic, professional version of the job title (e.g. 'Software Engineer' instead of 'Software Eng III - AI (L4)')",
+  "target_role": "A generic, professional version of the job title (e.g. 'Data Engineer')",
   "summary": "2-4 sentence professional summary targeting {role} at {company}",
   "skills": ["skill1", "skill2", ...],
   "experience": [
     {{
-      "title": "string",
-      "company": "string", 
-      "dates": "string",
-      "location": "string",
+      "title": "Data Engineer II",
+      "company": "Strive Health", 
+      "dates": "2021 – 2026",
+      "location": "West Warwick, RI",
+      "bullets": ["bullet1", "bullet2", ...]
+    }},
+    {{
+      "title": "Junior Data Engineer",
+      "company": "Cornerstone OnDemand", 
+      "dates": "2018 – 2021",
+      "location": null,
       "bullets": ["bullet1", "bullet2", ...]
     }}
   ],
@@ -323,6 +335,47 @@ def rewrite_resume(
                 if k in base_resume and (k not in merged or not merged[k]):
                     merged[k] = base_resume[k]
             merged.pop("_raw_text", None)
+
+            # Guarantee all experiences from base_resume are preserved
+            base_exp = base_resume.get("experience", [])
+            rewritten_exp = merged.get("experience", [])
+            existing_companies = {e.get("company", "").lower().strip() for e in rewritten_exp if isinstance(e, dict)}
+            for orig_e in base_exp:
+                orig_comp = orig_e.get("company", "").lower().strip()
+                if orig_comp not in existing_companies:
+                    print(f"[Rewriter] Retaining missing past experience: {orig_e.get('title')} at {orig_e.get('company')}")
+                    rewritten_exp.append(orig_e)
+            merged["experience"] = rewritten_exp
+
+            # Clean skills array: remove full sentences or duties and extract atomic skills
+            cleaned_skills = []
+            sentence_skills = []
+            for s in merged.get("skills", []):
+                s_str = str(s).strip()
+                words = s_str.split()
+                if len(words) > 4 or s_str.endswith(".") or (words and words[0].lower() in (
+                    "perform", "design", "collaborate", "coordinate", "execute", "debug",
+                    "plan", "maintain", "build", "work", "support", "embrace", "implement", "develop"
+                )):
+                    sentence_skills.append(s_str.rstrip("."))
+                    for token in ("ANSI SQL", "PL/SQL", "Physical Data Modeling", "SQL Tuning", "Star Schema", "Big Data", "Data Engineering", "Data Modeling", "Production Support", "Agile"):
+                        if token.lower() in s_str.lower() and token not in cleaned_skills:
+                            cleaned_skills.append(token)
+                else:
+                    if s_str not in cleaned_skills:
+                        cleaned_skills.append(s_str)
+            merged["skills"] = cleaned_skills
+
+            # Weave any stray sentence responsibilities into the latest role bullets
+            if sentence_skills and merged.get("experience"):
+                latest_bullets = merged["experience"][0].get("bullets", [])
+                for sent in sentence_skills:
+                    if not any(sent.lower()[:30] in b.lower() for b in latest_bullets):
+                        clean_b = sent[0].upper() + sent[1:]
+                        if not clean_b.endswith("."):
+                            clean_b += "."
+                        latest_bullets.append(clean_b)
+                merged["experience"][0]["bullets"] = latest_bullets
 
             # Verify keyword coverage
             embedded, still_missing = _check_keyword_coverage(merged, missing_keywords)
