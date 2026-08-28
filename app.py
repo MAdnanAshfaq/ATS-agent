@@ -20,7 +20,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from flask import Flask, Response, jsonify, render_template, request, send_from_directory
+from flask import Flask, Response, jsonify, render_template, request, send_from_directory, send_file
 from flask_cors import CORS
 
 if hasattr(sys.stdout, 'reconfigure'):
@@ -663,31 +663,43 @@ def delete_history_batch():
 
 @app.route("/api/download/<path:filepath>")
 def download_file(filepath):
-    """Download a generated resume .docx, .pdf, or .json file. Converts .docx to .pdf on the fly if needed."""
-    # Normalize slashes
-    clean_fp = filepath.replace("\\", "/").strip("/")
-    
-    # 1. Direct check inside OUTPUT_DIR
-    target_path = (OUTPUT_DIR / clean_fp).resolve()
-    
-    # 2. If not found, check inside BASE_DIR
+    """Download a generated resume .docx, .pdf, or .json file with robust path resolution."""
+    import urllib.parse
+    clean_fp = urllib.parse.unquote(filepath).replace("\\", "/").strip("/")
+
+    # 1. Direct absolute path check
+    target_path = Path(clean_fp)
+    if not (target_path.is_absolute() and target_path.exists()):
+        target_path = (OUTPUT_DIR / clean_fp).resolve()
+
+    # 2. Check inside BASE_DIR
     if not target_path.exists():
         candidate_base = (BASE_DIR / clean_fp).resolve()
         if candidate_base.exists():
             target_path = candidate_base
 
-    # 3. If still not found, search recursively inside OUTPUT_DIR by exact filename
+    # 3. Check stripped 'output/' prefix
+    if not target_path.exists() and "output/" in clean_fp.lower():
+        sub = clean_fp.split("output/", 1)[-1]
+        candidate_sub = (OUTPUT_DIR / sub).resolve()
+        if candidate_sub.exists():
+            target_path = candidate_sub
+
+    # 4. Search recursively inside OUTPUT_DIR by exact filename
     if not target_path.exists():
         fname = Path(clean_fp).name
         matches = list(OUTPUT_DIR.rglob(fname))
         if matches:
+            # Sort by modification time to get the newest
+            matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
             target_path = matches[0].resolve()
 
-    # 4. If PDF requested but doesn't exist, search for .docx counterpart and convert on the fly!
+    # 5. If PDF requested but doesn't exist, search for .docx counterpart and convert on the fly!
     if not target_path.exists() and clean_fp.lower().endswith(".pdf"):
         docx_name = Path(clean_fp).stem + ".docx"
         docx_matches = list(OUTPUT_DIR.rglob(docx_name))
         if docx_matches:
+            docx_matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
             try:
                 from resume_builder import convert_to_pdf
                 pdf_res = convert_to_pdf(str(docx_matches[0]))
@@ -696,26 +708,45 @@ def download_file(filepath):
             except Exception as e:
                 print(f"[Download] On-the-fly PDF conversion error: {e}")
 
-    # 5. If Cover Letter requested with any name, find any Cover_Letter in the target subfolder or output directory
+    # 6. If Cover Letter requested with any name, find newest Cover_Letter in output
     if not target_path.exists() and "cover_letter" in clean_fp.lower():
         subfolder = Path(clean_fp).parent
         search_dir = (OUTPUT_DIR / subfolder).resolve() if (OUTPUT_DIR / subfolder).exists() else OUTPUT_DIR
         cl_matches = list(search_dir.rglob("*Cover_Letter*.docx")) or list(OUTPUT_DIR.rglob("*Cover_Letter*.docx"))
         if cl_matches:
+            cl_matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
             target_path = cl_matches[0].resolve()
 
-    # 6. If .json requested (e.g. Haseeb_Khan_Resume.json) but not found, fallback to base_resume.json
+    # 7. If generic resume requested and not found, find the newest generated resume in output
+    if not target_path.exists() and "resume" in clean_fp.lower():
+        ext = ".pdf" if clean_fp.lower().endswith(".pdf") else ".docx"
+        resume_matches = list(OUTPUT_DIR.rglob(f"*Resume*{ext}"))
+        if resume_matches:
+            resume_matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            target_path = resume_matches[0].resolve()
+
+    # 8. Fallback to base_resume.json if json requested
     if not target_path.exists() and clean_fp.lower().endswith(".json"):
         if (BASE_DIR / "base_resume.json").exists():
             target_path = (BASE_DIR / "base_resume.json").resolve()
 
-    if not target_path.exists():
+    if not target_path.exists() or not target_path.is_file():
         return jsonify({"error": f"File '{filepath}' not found"}), 404
 
-    return send_from_directory(
-        directory=str(target_path.parent),
-        path=target_path.name,
+    # Determine MIME type
+    mimetype = None
+    if target_path.suffix.lower() == ".docx":
+        mimetype = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    elif target_path.suffix.lower() == ".pdf":
+        mimetype = "application/pdf"
+    elif target_path.suffix.lower() == ".json":
+        mimetype = "application/json"
+
+    return send_file(
+        str(target_path),
         as_attachment=True,
+        download_name=target_path.name,
+        mimetype=mimetype,
     )
 
 

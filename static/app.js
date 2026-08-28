@@ -144,7 +144,7 @@ function detectPlatform(url) {
 /* ── Pipeline Run Execution ──────────────────────────────────────────────── */
 async function startGeneration(opts = {}) {
   let url = document.getElementById("jd-url").value.trim();
-  
+
   if (url && !url.startsWith("http://") && !url.startsWith("https://")) {
     url = "https://" + url;
     document.getElementById("jd-url").value = url;
@@ -152,10 +152,10 @@ async function startGeneration(opts = {}) {
 
   const customKwElem = document.getElementById("custom-keywords-input");
   const customKeywordsRaw = customKwElem ? customKwElem.value.trim() : "";
-  
+
   const customBulletsElem = document.getElementById("matrix-custom-bullets-input") || document.getElementById("custom-bullets-input");
   const customBulletsRaw = (opts.customBullets !== undefined) ? opts.customBullets : (customBulletsElem ? customBulletsElem.value.trim() : "");
-  
+
   const noSimplifyElem = document.getElementById("no-simplify-toggle");
   const noSimplify = noSimplifyElem ? noSimplifyElem.checked : false;
 
@@ -180,7 +180,7 @@ async function startGeneration(opts = {}) {
   document.getElementById("results-dashboard").classList.add("hidden");
   document.getElementById("start-btn").disabled = true;
   document.getElementById("exec-status-badge").innerHTML = `<i class="fa-solid fa-spinner fa-spin text-cyan"></i> Running Pipeline...`;
-  
+
   resetPipelineVisuals();
   startTimer();
   clearTerminal();
@@ -342,8 +342,8 @@ function displayResults(res) {
   document.getElementById("res-company").textContent = res.company;
   document.getElementById("res-role").textContent = res.role;
 
-  const beforeVal = (res.simplify_score_before !== undefined && res.simplify_score_before !== null) 
-    ? res.simplify_score_before 
+  const beforeVal = (res.simplify_score_before !== undefined && res.simplify_score_before !== null)
+    ? res.simplify_score_before
     : (res.score_before || 75);
   const afterVal = res.score_after || (beforeVal < 90 ? 90 : Math.min(98, beforeVal + 10));
   const deltaVal = res.score_delta || (afterVal - beforeVal);
@@ -884,7 +884,7 @@ function collectVisualResumeData() {
   const linkedin = (document.getElementById("vr-linkedin")?.value || "").trim();
   const github = (document.getElementById("vr-github")?.value || "").trim();
   const summary = (document.getElementById("vr-summary")?.value || "").trim();
-  
+
   const rawSkills = (document.getElementById("vr-skills")?.value || "");
   const skills = rawSkills.split(",").map(s => s.trim()).filter(Boolean);
 
@@ -1096,25 +1096,25 @@ async function uploadMasterResumeFile(event) {
   // Reset the input so the same file can be re-selected if needed
   event.target.value = "";
 
-  const progressCard  = document.getElementById("resume-upload-progress-card");
-  const uploadPrompt  = document.getElementById("resume-upload-prompt");
-  const visualCard    = document.getElementById("visual-resume-card");
-  const jsonCard      = document.getElementById("json-editor-card");
-  const actionsBar    = document.getElementById("resume-actions-bar");
-  const bar           = document.getElementById("resume-upload-bar");
-  const pctLabel      = document.getElementById("upload-progress-pct");
-  const mainLabel     = document.getElementById("upload-progress-label");
-  const subLabel      = document.getElementById("upload-progress-sub");
+  const progressCard = document.getElementById("resume-upload-progress-card");
+  const uploadPrompt = document.getElementById("resume-upload-prompt");
+  const visualCard = document.getElementById("visual-resume-card");
+  const jsonCard = document.getElementById("json-editor-card");
+  const actionsBar = document.getElementById("resume-actions-bar");
+  const bar = document.getElementById("resume-upload-bar");
+  const pctLabel = document.getElementById("upload-progress-pct");
+  const mainLabel = document.getElementById("upload-progress-label");
+  const subLabel = document.getElementById("upload-progress-sub");
 
   // Show progress card, hide everything else
   if (uploadPrompt) uploadPrompt.classList.add("hidden");
-  if (visualCard)   visualCard.classList.add("hidden");
-  if (jsonCard)     jsonCard.classList.add("hidden");
-  if (actionsBar)   actionsBar.classList.add("hidden");
+  if (visualCard) visualCard.classList.add("hidden");
+  if (jsonCard) jsonCard.classList.add("hidden");
+  if (actionsBar) actionsBar.classList.add("hidden");
   progressCard.classList.remove("hidden");
 
   mainLabel.textContent = `Uploading ${file.name}…`;
-  subLabel.textContent  = "Sending file to server…";
+  subLabel.textContent = "Sending file to server…";
 
   // ── Phase 1: Real XHR upload progress (0 → 40%) ─────────────────────────
   function setBar(pct) {
@@ -1158,7 +1158,7 @@ async function uploadMasterResumeFile(event) {
 
   // ── Phase 2: Gemini parsing phase (40 → 95%, animated) ──────────────────
   mainLabel.textContent = "Parsing resume with Gemini AI…";
-  subLabel.textContent  = "Extracting skills, experience, education…";
+  subLabel.textContent = "Extracting skills, experience, education…";
   setBar(40);
 
   // Animate the bar smoothly from 40 → 92% while Gemini works
@@ -1187,7 +1187,7 @@ async function uploadMasterResumeFile(event) {
   setBar(100);
   pctLabel.textContent = "100%";
   mainLabel.textContent = data.success ? "✅ Resume parsed successfully!" : "❌ Parse failed";
-  subLabel.textContent  = data.message || data.error || "";
+  subLabel.textContent = data.message || data.error || "";
 
   await new Promise(r => setTimeout(r, 900));  // brief moment so user sees 100%
 
@@ -1281,8 +1281,8 @@ function showToast(message, type = "info") {
   toast.className = `toast toast-${type}`;
 
   const icon = type === "success" ? "fa-circle-check text-emerald" :
-               type === "error" ? "fa-circle-xmark text-red" :
-               type === "warning" ? "fa-triangle-exclamation text-amber" : "fa-circle-info text-cyan";
+    type === "error" ? "fa-circle-xmark text-red" :
+      type === "warning" ? "fa-triangle-exclamation text-amber" : "fa-circle-info text-cyan";
 
   toast.innerHTML = `<i class="fa-solid ${icon}"></i> <span>${escapeHtml(message)}</span>`;
   container.appendChild(toast);
@@ -1373,9 +1373,9 @@ function _analyzeShowError(msg) {
     card = document.createElement("div");
     card.id = "analyze-error-card";
     card.style.cssText = [
-      "margin-top:14px","padding:16px 18px","border-radius:10px",
-      "background:rgba(239,68,68,0.12)","border:1px solid rgba(239,68,68,0.35)",
-      "color:#fca5a5","font-size:13px","line-height:1.7","white-space:pre-wrap",
+      "margin-top:14px", "padding:16px 18px", "border-radius:10px",
+      "background:rgba(239,68,68,0.12)", "border:1px solid rgba(239,68,68,0.35)",
+      "color:#fca5a5", "font-size:13px", "line-height:1.7", "white-space:pre-wrap",
       "word-break:break-word",
     ].join(";");
     const btn = document.getElementById("analyze-btn");
@@ -1780,11 +1780,11 @@ async function generateOrViewHistoryCoverLetter(company, role, relativePath, url
 
 async function regenerateCoverLetter() {
   if (!window.currentCoverLetterParams) return;
-  
+
   const textarea = document.getElementById("cl-modal-textarea");
   textarea.value = "Regenerating high-impact recruiter cover letter with Gemini...";
   const btn = document.querySelector("#cover-letter-modal .btn-primary");
-  if(btn) btn.disabled = true;
+  if (btn) btn.disabled = true;
 
   try {
     const res = await fetch("/api/cover-letter", {
@@ -1797,7 +1797,7 @@ async function regenerateCoverLetter() {
       textarea.value = data.cover_letter_text;
       document.getElementById("cl-modal-docx-download").href = `/api/download/${data.relative_docx}`;
       if (window.lastResult && !window.currentCoverLetterParams.isHistory) {
-          window.lastResult.cover_letter_text = data.cover_letter_text;
+        window.lastResult.cover_letter_text = data.cover_letter_text;
       }
       showToast("Cover letter regenerated successfully!", "success");
     } else {
@@ -1806,7 +1806,7 @@ async function regenerateCoverLetter() {
   } catch (err) {
     textarea.value = `Error regenerating cover letter: ${err.message}`;
   } finally {
-    if(btn) btn.disabled = false;
+    if (btn) btn.disabled = false;
   }
 }
 
