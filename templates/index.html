@@ -367,6 +367,27 @@
 
         </div>
 
+        <!-- Custom Experience Bullets Section (Direct Points to Weave into Work Experience) -->
+        <div class="matrix-custom-bullets-box">
+          <div class="matrix-custom-bullets-header" onclick="toggleCustomBulletsDrawer()">
+            <div style="display:flex; align-items:center; gap:10px; font-weight:700; color:#0f172a; font-size:14px;">
+              <i class="fa-solid fa-pen-to-square text-cyan"></i>
+              <span>Add Specific Experience Points / Job Responsibilities to Weave into Bullets</span>
+              <span class="matrix-tag-pill">Optional</span>
+            </div>
+            <i class="fa-solid fa-chevron-down text-muted" id="custom-bullets-arrow" style="transition:transform 0.2s ease;"></i>
+          </div>
+          <div class="matrix-custom-bullets-body" id="custom-bullets-body">
+            <p style="font-size:12.5px; color:#64748b; margin:6px 0 10px 0;">
+              Paste specific job duties, complex tasks, or project accomplishments you want naturally written into your work experience bullets:
+            </p>
+            <textarea id="matrix-custom-bullets-input" class="matrix-custom-bullets-textarea" rows="3" placeholder="e.g.
+• Use ANSI SQL and/or PL/SQL to perform complex data analysis and database tuning
+• Expertise in Data Engineering and implement multiple end-to-end DW projects in Big Data environment
+• Support embedded analytics partners and coordinate agile end-to-end delivery of solutions"></textarea>
+          </div>
+        </div>
+
         <!-- Primary Action Row -->
         <div class="matrix-action-bar">
           <button type="button" class="btn btn-primary btn-lg" id="matrix-generate-btn" onclick="generateWithSelectedKeywords()" style="font-size:15px; padding:14px 28px; border-radius:30px; box-shadow:0 8px 24px rgba(6,182,212,0.35);">

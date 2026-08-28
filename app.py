@@ -992,11 +992,12 @@ def start_run():
     """Start pipeline generation run and return run_id for streaming."""
     data = request.json or {}
     url = data.get("url", "").strip()
-    custom_keywords = data.get("custom_keywords", "").strip()
+    custom_keywords = data.get("custom_keywords", "")
+    custom_bullets = data.get("custom_bullets", "")
     no_simplify = data.get("no_simplify", False)
     passes = int(data.get("passes", 2))
-    custom_output = data.get("output_dir", str(OUTPUT_DIR))
-    score_before = data.get("score_before", None)  # Passed from Analyze step
+    custom_output = data.get("custom_output", "")
+    score_before = data.get("score_before", None)
 
     if not url or not url.startswith(("http://", "https://")):
         return jsonify({"error": "Invalid URL. Please enter a valid job URL starting with http:// or https://"}), 400
@@ -1158,9 +1159,10 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                 send_log(3, "Simplify ATS Score", f"Simplify error: {e}. Using JD keyword fallback.",
                          status="warning")
 
-        # Step 4: Gemini Resume Rewrite (strict keyword injection)
+        # Step 4: Gemini Resume Rewrite (strict keyword injection + custom bullets)
+        bullets_msg = f" and custom experience bullets" if (custom_bullets and custom_bullets.strip()) else ""
         send_log(4, "Gemini Rewrite",
-                 f"Rewriting resume with strict injection of {len(missing_keywords)} keywords...",
+                 f"Rewriting resume with strict injection of {len(missing_keywords)} keywords{bullets_msg}...",
                  status="working")
         rewritten_resume = rewrite_resume(
             base_resume=base_resume,
@@ -1168,6 +1170,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
             missing_keywords=missing_keywords,
             company=company,
             role=role,
+            custom_bullets=custom_bullets,
         )
         send_log(4, "Gemini Rewrite", "Resume rewritten with keyword injection!", status="success")
 

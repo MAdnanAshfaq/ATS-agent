@@ -1287,6 +1287,66 @@ input:checked + .slider:before { transform: translateX(20px); }
   font-size: 15px;
 }
 
+/* Custom Experience Bullets Box */
+.matrix-custom-bullets-box {
+  margin-top: 24px;
+  background: #f8fafc;
+  border: 1.5px dashed #cbd5e1;
+  border-radius: 16px;
+  padding: 18px 24px;
+  transition: all 0.2s ease;
+}
+
+.matrix-custom-bullets-box:focus-within {
+  border-color: #0284c7;
+  background: #ffffff;
+  box-shadow: 0 4px 20px rgba(2, 132, 199, 0.08);
+}
+
+.matrix-custom-bullets-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+}
+
+.matrix-tag-pill {
+  font-size: 11px;
+  font-weight: 700;
+  background: #e2e8f0;
+  color: #475569;
+  padding: 2px 8px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.matrix-custom-bullets-body {
+  margin-top: 12px;
+}
+
+.matrix-custom-bullets-textarea {
+  width: 100%;
+  padding: 14px 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+  outline: none;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 90px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.matrix-custom-bullets-textarea:focus {
+  border-color: #0284c7;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.12);
+}
+
 .matrix-action-bar {
   margin-top: 28px;
   padding-top: 24px;

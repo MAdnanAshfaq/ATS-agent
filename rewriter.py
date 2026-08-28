@@ -77,8 +77,22 @@ def verify_dynamic_keywords(rewritten_json_output: dict, simplify_keywords: list
     
     for word in simplify_keywords:
         kw = word.lower().strip()
-        
-        # Handle special cases with symbols like C++, .JS, or Vue.js cleanly
+        if not kw:
+            continue
+            
+        # If the item is a long sentence (> 5 words or > 40 chars), check if its core key terms appear
+        if len(kw.split()) > 5 or len(kw) > 40:
+            key_terms = [w for w in re.findall(r'\b[a-zA-Z0-9\+\#\.\-]{3,}\b', kw) 
+                         if w.lower() not in ("with", "and", "the", "for", "from", "that", "this", "have", "been", "work", "team", "your", "their", "perform", "support", "across", "company", "member", "ownership", "goal", "customer", "expectations", "closely", "ensure", "meets", "delivers", "optimal", "consult", "complicated", "enhance", "expertise", "multiple", "several", "coordinate", "embrace", "opportunity", "expand", "both", "functionally", "technically", "scale", "maintain", "wide", "variety", "flexibility", "diverse", "geographically", "distributed")]
+            
+            matched_terms = [t for t in key_terms if t.lower() in content_pool]
+            if key_terms and (len(matched_terms) / len(key_terms)) >= 0.35:
+                embedded.append(word)
+            else:
+                missing_gaps.append(word)
+            continue
+
+        # Normal single/multi-word keyword
         escaped_word = re.escape(kw)
         if kw.endswith('.js') or '+' in kw or '.' in kw:
             pattern = re.compile(r'(?:^|[^a-zA-Z0-9])' + escaped_word + r'(?:$|[^a-zA-Z0-9])')
@@ -111,6 +125,7 @@ def _build_prompt(
     role: str,
     attempt: int,
     still_missing_from_last_attempt: Optional[list] = None,
+    custom_bullets: str = "",
 ) -> tuple[str, str]:
     """
     Build the system + user prompt for Gemini.
@@ -118,26 +133,50 @@ def _build_prompt(
     """
     prompt_resume = {k: v for k, v in base_resume.items() if k != "_raw_text"}
     raw_text_context = ""
-    if base_resume.get("_raw_text"):
-        raw_text_context = (
-            "\n\nORIGINAL RESUME TEXT (use as ground truth for experience/companies/dates):\n"
-            f"{base_resume['_raw_text'][:6000]}"
-        )
+    if "_raw_text" in base_resume and base_resume["_raw_text"]:
+        raw_text_context = f"\nORIGINAL UNFORMATTED RESUME TEXT:\n{base_resume['_raw_text']}\n"
 
-    # Build keyword block based on whether this is a retry
+    # User-specified custom bullet points to inject
+    custom_bullets_section = ""
+    if custom_bullets and custom_bullets.strip():
+        custom_bullets_section = f"""
+===================================================================
+USER-SPECIFIED CUSTOM BULLETS & RESPONSIBILITIES TO INJECT:
+===================================================================
+{custom_bullets.strip()}
+
+INSTRUCTION:
+The user explicitly wants the above responsibilities/accomplishments integrated into their latest work experience bullets. 
+Naturally weave, expand, and adapt them into high-impact, professional, active-voice bullet points for {role} at {company}.
+"""
+
+    kw_list_str = json.dumps(missing_keywords, indent=2)
+
     if attempt == 1 or not still_missing_from_last_attempt:
-        keyword_block = (
-            "MISSING KEYWORDS — You MUST embed ALL of these in the output:\n"
-            + json.dumps(missing_keywords, indent=2)
-        )
-        urgency = ""
+        missing_instruction = f"""
+MISSING KEYWORDS TO INJECT ({len(missing_keywords)} total):
+{kw_list_str}
+
+Inject ALL of these keywords naturally across summary, skills, experience bullets, and projects.
+Every single keyword must appear at least once in the rewritten output.
+"""
     else:
-        keyword_block = (
-            f"[CRITICAL - ATTEMPT {attempt}] The previous rewrite FAILED to embed these keywords:\n"
-            + json.dumps(still_missing_from_last_attempt, indent=2)
-            + "\n\nYou MUST embed ALL of the above. Check every single one before returning."
+        still_missing_str = (
+            json.dumps(still_missing_from_last_attempt, indent=2)
+            if isinstance(still_missing_from_last_attempt, list)
+            else str(still_missing_from_last_attempt)
         )
-        urgency = "\n\nURGENCY LEVEL: MAXIMUM. Every keyword listed above MUST appear at least once."
+        missing_instruction = f"""
+CRITICAL RETRY — ATTEMPT {attempt}:
+The previous rewrite FAILED because the following keywords were STILL MISSING:
+{still_missing_str}
+
+You MUST explicitly inject every single one of the above keywords.
+Add them directly into:
+1. The "skills" list (add missing tools/technologies verbatim)
+2. The "experience" bullet points (write bullets specifically demonstrating use of these tools)
+3. The "summary" (incorporate key methodologies/frameworks)
+"""
 
     system_prompt = f"""You are a dynamic ATS Optimization Engine tailoring a candidate's resume for a brand-new job application.
 
@@ -213,12 +252,13 @@ def rewrite_resume(
     company: str,
     role: str,
     max_retries: int = 3,
+    custom_bullets: str = "",
 ) -> dict:
     """
     Rewrite the resume to inject ALL missing keywords using Gemini.
 
     Runs up to max_retries attempts with escalating strictness:
-    - Attempt 1: inject all missing keywords
+    - Attempt 1: inject all missing keywords + custom experience bullets
     - Attempt 2: strict retry targeting only still-missing keywords
     - Attempt 3: maximum urgency, manual injection fallback
 
@@ -227,8 +267,8 @@ def rewrite_resume(
     """
     client = _get_gemini_client()
 
-    if not missing_keywords:
-        print("[Rewriter] No missing keywords — returning base resume unchanged")
+    if not missing_keywords and not (custom_bullets and custom_bullets.strip()):
+        print("[Rewriter] No missing keywords or custom bullets — returning base resume unchanged")
         return base_resume
 
     models = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash"]
@@ -245,6 +285,7 @@ def rewrite_resume(
             role=role,
             attempt=attempt,
             still_missing_from_last_attempt=still_missing,
+            custom_bullets=custom_bullets,
         )
 
         print(f"[Rewriter] Attempt {attempt}/{max_retries} with {model}...")

@@ -153,6 +153,9 @@ async function startGeneration(opts = {}) {
   const customKwElem = document.getElementById("custom-keywords-input");
   const customKeywordsRaw = customKwElem ? customKwElem.value.trim() : "";
   
+  const customBulletsElem = document.getElementById("matrix-custom-bullets-input") || document.getElementById("custom-bullets-input");
+  const customBulletsRaw = (opts.customBullets !== undefined) ? opts.customBullets : (customBulletsElem ? customBulletsElem.value.trim() : "");
+  
   const noSimplifyElem = document.getElementById("no-simplify-toggle");
   const noSimplify = noSimplifyElem ? noSimplifyElem.checked : false;
 
@@ -191,6 +194,7 @@ async function startGeneration(opts = {}) {
       body: JSON.stringify({
         url,
         custom_keywords: customKeywordsRaw || undefined,
+        custom_bullets: customBulletsRaw || undefined,
         no_simplify: noSimplify,
         passes,
         output_dir: outputDir || undefined,
@@ -1661,6 +1665,19 @@ function generateWithSelectedKeywords() {
   startGeneration({
     scoreBefore: analyzeScoreBefore
   });
+}
+
+function toggleCustomBulletsDrawer() {
+  const body = document.getElementById("custom-bullets-body");
+  const arrow = document.getElementById("custom-bullets-arrow");
+  if (!body) return;
+  if (body.style.display === "none") {
+    body.style.display = "block";
+    if (arrow) arrow.style.transform = "rotate(0deg)";
+  } else {
+    body.style.display = "none";
+    if (arrow) arrow.style.transform = "rotate(-90deg)";
+  }
 }
 
 /* ── Cover Letter Modal Handlers ────────────────────────────────────────── */
