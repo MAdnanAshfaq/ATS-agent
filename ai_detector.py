@@ -158,6 +158,19 @@ Return the full cleaned resume as valid JSON."""
                 if k in resume and (k not in merged or not merged[k]):
                     merged[k] = resume[k]
 
+            # Preserve all skills from rewritten resume
+            merged["skills"] = resume.get("skills", [])
+
+            # Guarantee all experiences from rewritten resume are preserved
+            orig_exp = resume.get("experience", [])
+            clean_exp = merged.get("experience", [])
+            existing_companies = {e.get("company", "").lower().strip() for e in clean_exp if isinstance(e, dict)}
+            for orig_e in orig_exp:
+                orig_comp = orig_e.get("company", "").lower().strip()
+                if orig_comp not in existing_companies:
+                    clean_exp.append(orig_e)
+            merged["experience"] = clean_exp
+
             print(f"[Detector] Pass {pass_number}: [OK] Clean JSON received (attempt {attempt})")
             return merged
         
