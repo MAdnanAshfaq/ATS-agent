@@ -381,17 +381,20 @@ function displayResults(res) {
     missingPills.innerHTML = `<span class="pill pill-success">0 missing keywords! 100% Match!</span>`;
   }
 
-  // Download & Open folder buttons
-  const downloadBtn = document.getElementById("download-doc-btn");
-  downloadBtn.href = `/api/download/${res.relative_path}`;
-
-  const downloadPdfBtn = document.getElementById("download-pdf-btn");
-  if (downloadPdfBtn) {
-    const pdfPath = res.relative_path.replace(/\.docx$/i, ".pdf");
-    downloadPdfBtn.href = `/api/download/${pdfPath}`;
-  }
-
   window.lastResult = res;
+}
+
+function downloadCurrentResume(ext = 'docx') {
+  if (!window.lastResult || !window.lastResult.relative_path) {
+    showToast("Please run an application first or select a file from History to download", "warning");
+    return;
+  }
+  let relPath = window.lastResult.relative_path;
+  if (ext === 'pdf') {
+    relPath = relPath.replace(/\.docx$/i, '.pdf');
+  }
+  const cleanUrl = `/api/download/${encodeURIComponent(relPath).replace(/%2F/g, '/')}`;
+  window.location.href = cleanUrl;
 }
 
 const selectedHistoryFiles = new Set();

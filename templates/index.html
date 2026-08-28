@@ -548,12 +548,12 @@
 
           <!-- Download Action Buttons -->
           <div class="action-buttons-row">
-            <a id="download-doc-btn" href="#" class="btn btn-emerald btn-xl" download>
+            <button id="download-doc-btn" class="btn btn-emerald btn-xl" onclick="downloadCurrentResume('docx')">
               <i class="fa-solid fa-file-word"></i> Download .docx
-            </a>
-            <a id="download-pdf-btn" href="#" class="btn btn-cyan btn-xl" download>
+            </button>
+            <button id="download-pdf-btn" class="btn btn-cyan btn-xl" onclick="downloadCurrentResume('pdf')">
               <i class="fa-solid fa-file-pdf"></i> Download .pdf
-            </a>
+            </button>
             <button class="btn btn-purple btn-xl" onclick="openCurrentCoverLetter()">
               <i class="fa-solid fa-envelope-open-text"></i> AI Cover Letter
             </button>
