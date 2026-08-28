@@ -662,8 +662,15 @@ def delete_history_batch():
 
 
 @app.route("/api/download/<path:filepath>")
+@app.route("/download/<path:filepath>")
+@app.route("/api/<path:filepath>")
 def download_file(filepath):
     """Download a generated resume .docx, .pdf, or .json file with robust path resolution."""
+    # Guard reserved API endpoints
+    first_seg = filepath.split("/")[0].lower()
+    if first_seg in ("health", "settings", "resume", "upload_resume", "delete_resume", "history", "analyze", "open-folder", "cover-letter", "run", "hf-detect", "humanize", "stream"):
+        return jsonify({"error": "Endpoint not found"}), 404
+
     import urllib.parse
     clean_fp = urllib.parse.unquote(filepath).replace("\\", "/").strip("/")
 
