@@ -141,7 +141,8 @@ WRITING ENHANCEMENT RULES (Rules 0–16 from ResumeHQ):
 - Rule 6 (Summary Constraints): Max 3 sentences, max 70 words. No "Results-driven" or "Passionate professional" openers.
 
 ALL CANONICAL EXPERIENCES MUST BE PRESERVED:
-If the master profile has 2 or more jobs, your output MUST contain all of them. Never drop past jobs!
+If the master profile has 2 or more jobs, your output MUST contain all of them.
+MANDATORY COMPANY NAMES: The ONLY allowed company names in the "experience" array are: {[e.get('company') for e in base_resume.get('experience', [])]}. NEVER replace, invent, or substitute company names (e.g. NEVER output Apex Systems or any other third-party company name). Preserve the exact company names and dates!
 
 SKILLS CONSTRAINTS:
 The "skills" array must ONLY contain concise technical tools (< 4 words each, e.g. "Python", "ANSI SQL", "PL/SQL", "Databricks", "Star Schema"). NEVER put full sentences into skills!
@@ -302,16 +303,50 @@ def execute_danis_engine_pipeline(
         if k in base_resume and (k not in merged or not merged[k]):
             merged[k] = base_resume[k]
 
-    # Guarantee all experiences from base_resume are preserved
+    # Guarantee strict canonical company mapping from base_resume (prevent hallucinated companies like Apex Systems)
     base_exp = base_resume.get("experience", [])
-    rewritten_exp = merged.get("experience", [])
-    existing_companies = {e.get("company", "").lower().strip() for e in rewritten_exp if isinstance(e, dict)}
-    for orig_e in base_exp:
-        orig_comp = orig_e.get("company", "").lower().strip()
-        if orig_comp not in existing_companies:
-            print(f"[Dani's Engine] Retaining past experience: {orig_e.get('title')} at {orig_e.get('company')}")
-            rewritten_exp.append(orig_e)
-    merged["experience"] = rewritten_exp
+    raw_rewritten_exp = merged.get("experience", [])
+    final_exp = []
+
+    canonical_companies = [e.get("company", "").strip() for e in base_exp if isinstance(e, dict)]
+    canonical_lower = [c.lower() for c in canonical_companies]
+
+    # Map rewritten experiences to canonical base experiences
+    for idx, orig_e in enumerate(base_exp):
+        orig_comp = orig_e.get("company", "").strip()
+        orig_comp_lower = orig_comp.lower()
+
+        # Find matching rewritten entry
+        matched_rewrite = None
+        for rew in raw_rewritten_exp:
+            if not isinstance(rew, dict):
+                continue
+            rew_comp = rew.get("company", "").strip().lower()
+            if rew_comp == orig_comp_lower or (orig_comp_lower in rew_comp) or (rew_comp in orig_comp_lower):
+                matched_rewrite = rew
+                break
+
+        if matched_rewrite:
+            # Use rewritten entry but FORCE canonical company, title, dates from base_resume
+            entry = dict(matched_rewrite)
+            entry["company"] = orig_e.get("company", entry.get("company"))
+            entry["title"] = orig_e.get("title", entry.get("title"))
+            entry["dates"] = orig_e.get("dates", entry.get("dates"))
+            entry["location"] = orig_e.get("location", entry.get("location"))
+            final_exp.append(entry)
+        else:
+            # If LLM omitted or renamed, check if LLM produced an entry at the same index
+            if idx < len(raw_rewritten_exp) and isinstance(raw_rewritten_exp[idx], dict):
+                entry = dict(raw_rewritten_exp[idx])
+                entry["company"] = orig_e.get("company")
+                entry["title"] = orig_e.get("title")
+                entry["dates"] = orig_e.get("dates")
+                entry["location"] = orig_e.get("location")
+                final_exp.append(entry)
+            else:
+                final_exp.append(orig_e)
+
+    merged["experience"] = final_exp
 
     # Clean skills array: remove full sentences or duties
     cleaned_skills = []
