@@ -92,9 +92,20 @@ def verify_dynamic_keywords(rewritten_json_output: dict, simplify_keywords: list
                 missing_gaps.append(word)
             continue
 
+        # Handle acronyms and parenthesized terms (e.g. "Kusto Query Language (KQL)")
+        paren_match = re.match(r'^(.*?)\s*\((.*?)\)$', kw)
+        if paren_match:
+            full_part = paren_match.group(1).strip()
+            abbr_part = paren_match.group(2).strip()
+            if (full_part and re.search(r'\b' + re.escape(full_part) + r'\b', content_pool)) or \
+               (abbr_part and re.search(r'\b' + re.escape(abbr_part) + r'\b', content_pool)) or \
+               kw in content_pool:
+                embedded.append(word)
+                continue
+
         # Normal single/multi-word keyword
         escaped_word = re.escape(kw)
-        if kw.endswith('.js') or '+' in kw or '.' in kw:
+        if kw.endswith('.js') or '+' in kw or '.' in kw or '(' in kw:
             pattern = re.compile(r'(?:^|[^a-zA-Z0-9])' + escaped_word + r'(?:$|[^a-zA-Z0-9])')
         else:
             pattern = re.compile(r'\b' + escaped_word + r'\b')
