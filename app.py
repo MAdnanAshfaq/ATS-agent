@@ -589,8 +589,10 @@ def history():
 
 
 def _delete_single_history_log(filename: str) -> bool:
-    """Helper: Delete log file, .docx, .pdf, and application folder."""
+    """Helper: Hard delete log file, .docx, .pdf, cover letters, and the physical application folder on disk."""
     import shutil
+    from resume_builder import slugify
+
     logs_dir = OUTPUT_DIR / "logs"
     log_file = logs_dir / filename
     if not log_file.exists():
@@ -599,29 +601,37 @@ def _delete_single_history_log(filename: str) -> bool:
     try:
         with open(log_file, "r", encoding="utf-8") as f:
             log_data = json.load(f)
-            output_file = log_data.get("output_file", "")
-            if output_file:
-                out_path = Path(output_file)
-                parent_dir = out_path.parent
-                if out_path.exists():
-                    try:
-                        os.remove(out_path)
-                    except Exception:
-                        pass
-                pdf_file = out_path.with_suffix(".pdf")
-                if pdf_file.exists():
-                    try:
-                        os.remove(pdf_file)
-                    except Exception:
-                        pass
-                # Remove output subfolder if it exists
-                if parent_dir.exists() and parent_dir != OUTPUT_DIR and str(parent_dir).startswith(str(OUTPUT_DIR)):
-                    try:
-                        shutil.rmtree(parent_dir, ignore_errors=True)
-                    except Exception as folder_err:
-                        print(f"[Delete Folder Error] {folder_err}")
 
-        os.remove(log_file)
+        output_file = log_data.get("output_file", "")
+        company = log_data.get("company", "")
+        role = log_data.get("role", "")
+        
+        # 1. Target output_file parent dir if specified
+        if output_file:
+            out_path = Path(output_file)
+            parent_dir = out_path.parent
+            if parent_dir.exists() and parent_dir != OUTPUT_DIR and parent_dir != Path(__file__).resolve().parent:
+                shutil.rmtree(parent_dir, ignore_errors=True)
+            elif out_path.exists():
+                try:
+                    os.remove(out_path)
+                except Exception:
+                    pass
+        
+        # 2. Also search for any slugified folder in output/ and root workspace
+        if company and role:
+            target_folder_name = f"{slugify(company)}_{slugify(role)}"[:80]
+            # Check in output/
+            out_sub = OUTPUT_DIR / target_folder_name
+            if out_sub.exists():
+                shutil.rmtree(out_sub, ignore_errors=True)
+            # Check in project root
+            root_sub = Path(__file__).resolve().parent / target_folder_name
+            if root_sub.exists():
+                shutil.rmtree(root_sub, ignore_errors=True)
+
+        if log_file.exists():
+            os.remove(log_file)
         return True
     except Exception as e:
         print(f"[History Delete Error] {filename}: {e}")
@@ -630,15 +640,15 @@ def _delete_single_history_log(filename: str) -> bool:
 
 @app.route("/api/history/<filename>", methods=["DELETE"])
 def delete_history_item(filename):
-    """Delete a history run entry and its output folder."""
+    """Delete a history run entry and hard delete its actual output folder on disk."""
     if _delete_single_history_log(filename):
-        return jsonify({"success": True, "message": "History entry and output folder deleted cleanly"})
+        return jsonify({"success": True, "message": "History entry and physical output folder deleted permanently from disk"})
     return jsonify({"success": False, "error": "Failed to delete history item or file not found"}), 404
 
 
 @app.route("/api/history/delete_batch", methods=["POST"])
 def delete_history_batch():
-    """Bulk delete multiple history run entries and their output folders."""
+    """Bulk delete multiple history run entries and hard delete their folders on disk."""
     data = request.json or {}
     filenames = data.get("filenames", [])
     if not filenames or not isinstance(filenames, list):
@@ -651,7 +661,31 @@ def delete_history_batch():
 
     return jsonify({
         "success": True,
-        "message": f"Successfully deleted {deleted_count} history entries and output folders.",
+        "message": f"Successfully deleted {deleted_count} history entries and system folders from disk.",
+        "deleted_count": deleted_count
+    })
+
+
+@app.route("/api/history/clear_all", methods=["POST", "DELETE"])
+def clear_all_history():
+    """Hard delete all history entries, logs, and all generated application folders on disk."""
+    import shutil
+    logs_dir = OUTPUT_DIR / "logs"
+    deleted_count = 0
+    if logs_dir.exists():
+        for log_file in list(logs_dir.glob("run_*.json")):
+            if _delete_single_history_log(log_file.name):
+                deleted_count += 1
+                
+    # Also clean any leftover application subfolders inside output/ (preserving logs/ and uploads/)
+    if OUTPUT_DIR.exists():
+        for item in OUTPUT_DIR.iterdir():
+            if item.is_dir() and item.name not in ("logs", "uploads", ".git"):
+                shutil.rmtree(item, ignore_errors=True)
+                
+    return jsonify({
+        "success": True,
+        "message": f"Successfully deleted all {deleted_count} history entries and cleared all system folders.",
         "deleted_count": deleted_count
     })
 

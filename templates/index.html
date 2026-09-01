@@ -615,20 +615,39 @@
 
     <!-- ── TAB 2: APPLICATIONS HISTORY ──────────────────────────────────── -->
     <section class="tab-content" id="tab-history">
-      <div class="section-header-row">
+      <div class="section-header-row" style="flex-wrap:wrap; gap:12px; margin-bottom:16px;">
         <div>
           <h2>Generated Application Resumes</h2>
           <p>All previously generated ATS Word documents, PDFs, and match score logs.</p>
         </div>
-        <div class="history-toolbar-actions hidden" id="history-toolbar">
-          <label class="checkbox-label flex-align-center margin-right-sm">
+        <div class="history-toolbar-actions hidden" id="history-toolbar" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <label class="checkbox-label flex-align-center margin-right-sm" style="margin-bottom:0;">
             <input type="checkbox" id="select-all-history-cb" onchange="toggleSelectAllHistory(this.checked)">
             <span><strong>Select All</strong></span>
           </label>
-          <button class="btn btn-danger-sm" id="bulk-delete-btn" onclick="deleteSelectedHistoryBatch()" disabled>
+          <button class="btn btn-danger-sm" id="bulk-delete-btn" onclick="deleteSelectedHistoryBatch()" disabled style="border-radius:8px;">
             <i class="fa-solid fa-trash"></i> Delete Selected (<span id="selected-history-count">0</span>)
           </button>
+          <button class="btn btn-danger-sm" id="clear-all-history-btn" onclick="confirmClearAllHistory()" style="background:#ef4444; border-color:#dc2626; border-radius:8px;">
+            <i class="fa-solid fa-dumpster-fire"></i> Delete All
+          </button>
         </div>
+      </div>
+
+      <!-- History Instant Search & Filter Bar -->
+      <div class="history-search-container" id="history-search-container" style="display:flex; align-items:center; gap:10px; margin-bottom:20px; background:#ffffff; padding:10px 16px; border-radius:12px; border:1px solid #e2e8f0; box-shadow:0 2px 6px rgba(15,23,42,0.03);">
+        <i class="fa-solid fa-magnifying-glass" style="color:#0891b2; font-size:15px;"></i>
+        <input 
+          type="text" 
+          id="history-search-input" 
+          placeholder="Search history by company, job title, keywords, score, or date..." 
+          oninput="filterHistoryCards(this.value)" 
+          style="border:none; outline:none; width:100%; font-size:14px; color:#1e293b; background:transparent;"
+        >
+        <span id="history-search-count" style="font-size:12px; color:#64748b; white-space:nowrap;"></span>
+        <button type="button" id="history-search-clear-btn" onclick="clearHistorySearch()" style="background:transparent; border:none; color:#94a3b8; cursor:pointer; font-size:14px; display:none;">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
       </div>
 
       <div class="history-grid" id="history-grid">

@@ -417,11 +417,13 @@ function downloadCurrentResume(ext = 'docx') {
 }
 
 const selectedHistoryFiles = new Set();
+let allHistoryApplications = [];
 
 async function loadHistory() {
   const grid = document.getElementById("history-grid");
   const toolbar = document.getElementById("history-toolbar");
   const selectAllCb = document.getElementById("select-all-history-cb");
+  const searchContainer = document.getElementById("history-search-container");
   if (selectAllCb) selectAllCb.checked = false;
   selectedHistoryFiles.clear();
   updateHistoryToolbarUI();
@@ -429,8 +431,12 @@ async function loadHistory() {
   try {
     const res = await fetch("/api/history");
     const data = await res.json();
+    allHistoryApplications = data.applications || [];
 
-    if (data.applications.length === 0) {
+    const historyCountBadge = document.getElementById("history-count");
+    if (historyCountBadge) historyCountBadge.textContent = allHistoryApplications.length;
+
+    if (allHistoryApplications.length === 0) {
       grid.innerHTML = `
         <div class="empty-state glass-card">
           <i class="fa-solid fa-folder-open empty-icon"></i>
@@ -438,62 +444,120 @@ async function loadHistory() {
           <p>Run your first application from the New Application tab!</p>
         </div>`;
       if (toolbar) toolbar.classList.add("hidden");
+      if (searchContainer) searchContainer.style.display = "none";
       return;
     }
 
     if (toolbar) toolbar.classList.remove("hidden");
+    if (searchContainer) searchContainer.style.display = "flex";
 
-    grid.innerHTML = "";
-    data.applications.forEach(app => {
-      const dateStr = new Date(app.timestamp).toLocaleString();
-      const card = document.createElement("div");
-      card.className = "history-card";
-      card.innerHTML = `
-        <div class="history-card-header">
-          <div class="flex-align-center gap-sm">
-            <input type="checkbox" class="history-item-cb" data-filename="${escapeHtml(app.log_file_name)}" onchange="toggleHistoryItemSelection('${escapeHtml(app.log_file_name)}', this.checked)">
-            <div>
-              <div class="history-company">${escapeHtml(app.company)}</div>
-              <div class="history-role">${escapeHtml(app.role)}</div>
-            </div>
-          </div>
-          <div class="history-date">${dateStr}</div>
-        </div>
-        <div class="history-scores">
-          <div class="score-col">
-            <span>Before Score</span>
-            <strong>${app.match_score_before || 0}%</strong>
-          </div>
-          <div class="score-col">
-            <span>After Score</span>
-            <strong class="text-emerald">${app.match_score_after || 0}%</strong>
-          </div>
-          <div class="score-col">
-            <span>Delta</span>
-            <strong class="text-emerald">+${app.match_score_delta || 0}%</strong>
-          </div>
-        </div>
-        <div class="history-actions">
-          <a href="/api/download/${app.relative_file_path}" class="btn btn-emerald btn-sm" download>
-            <i class="fa-solid fa-download"></i> .docx
-          </a>
-          ${app.relative_file_path ? `<a href="/api/download/${app.relative_file_path.replace('.docx', '.pdf')}" class="btn btn-cyan btn-sm" download><i class="fa-solid fa-file-pdf"></i> .pdf</a>` : ''}
-          <button class="btn btn-purple-sm" onclick="generateOrViewHistoryCoverLetter('${escapeHtml(app.company)}', '${escapeHtml(app.role)}', '${escapeHtml(app.relative_file_path)}', '${escapeHtml(app.url || '')}')">
-            <i class="fa-solid fa-envelope"></i> Cover Letter
-          </button>
-          <button class="btn btn-secondary btn-sm" onclick="openSpecificFolder('${escapeHtml(app.output_file)}')">
-            <i class="fa-solid fa-folder-open"></i> Folder
-          </button>
-          <button class="btn btn-danger-sm" onclick="deleteHistoryItem('${escapeHtml(app.log_file_name)}')">
-            <i class="fa-solid fa-trash"></i> Delete
-          </button>
-        </div>`;
-      grid.appendChild(card);
-    });
+    const searchInput = document.getElementById("history-search-input");
+    const currentQuery = searchInput ? searchInput.value.trim() : "";
+    renderHistoryCards(filterApplicationsList(allHistoryApplications, currentQuery), currentQuery);
 
   } catch (err) {
     grid.innerHTML = `<div class="empty-state">Failed to load history: ${err.message}</div>`;
   }
+}
+
+function filterApplicationsList(apps, query) {
+  if (!query) return apps;
+  const q = query.toLowerCase();
+  return apps.filter(app => {
+    const company = (app.company || "").toLowerCase();
+    const role = (app.role || "").toLowerCase();
+    const dateStr = new Date(app.timestamp).toLocaleString().toLowerCase();
+    const engine = (app.engine_mode || "").toLowerCase();
+    const keywords = (app.matching_keywords || []).concat(app.missing_keywords || []).join(" ").toLowerCase();
+    const score = `${app.match_score_after || 0}%`;
+    return company.includes(q) || role.includes(q) || dateStr.includes(q) || engine.includes(q) || keywords.includes(q) || score.includes(q);
+  });
+}
+
+function filterHistoryCards(query) {
+  const filtered = filterApplicationsList(allHistoryApplications, query);
+  renderHistoryCards(filtered, query);
+}
+
+function clearHistorySearch() {
+  const input = document.getElementById("history-search-input");
+  if (input) input.value = "";
+  const clearBtn = document.getElementById("history-search-clear-btn");
+  if (clearBtn) clearBtn.style.display = "none";
+  renderHistoryCards(allHistoryApplications, "");
+}
+
+function renderHistoryCards(apps, query = "") {
+  const grid = document.getElementById("history-grid");
+  const countLabel = document.getElementById("history-search-count");
+  const clearBtn = document.getElementById("history-search-clear-btn");
+
+  if (clearBtn) {
+    clearBtn.style.display = query ? "block" : "none";
+  }
+
+  if (countLabel) {
+    countLabel.textContent = query ? `${apps.length} of ${allHistoryApplications.length} found` : `${apps.length} applications`;
+  }
+
+  if (apps.length === 0) {
+    grid.innerHTML = `
+      <div class="empty-state glass-card" style="grid-column: 1 / -1; padding: 40px 20px; text-align: center;">
+        <i class="fa-solid fa-filter-circle-xmark empty-icon" style="font-size:36px; color:#94a3b8; margin-bottom:12px;"></i>
+        <h3 style="font-size:16px; color:#334155; margin-bottom:6px;">No applications match "${escapeHtml(query)}"</h3>
+        <p style="font-size:13px; color:#64748b; margin-bottom:16px;">Try searching for a different company name, role title, keyword, or score.</p>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="clearHistorySearch()">Clear Search Filter</button>
+      </div>`;
+    return;
+  }
+
+  grid.innerHTML = "";
+  apps.forEach(app => {
+    const dateStr = new Date(app.timestamp).toLocaleString();
+    const card = document.createElement("div");
+    card.className = "history-card";
+    card.innerHTML = `
+      <div class="history-card-header">
+        <div class="flex-align-center gap-sm">
+          <input type="checkbox" class="history-item-cb" data-filename="${escapeHtml(app.log_file_name)}" ${selectedHistoryFiles.has(app.log_file_name) ? "checked" : ""} onchange="toggleHistoryItemSelection('${escapeHtml(app.log_file_name)}', this.checked)">
+          <div>
+            <div class="history-company">${escapeHtml(app.company)}</div>
+            <div class="history-role">${escapeHtml(app.role)}</div>
+          </div>
+        </div>
+        <div class="history-date">${dateStr}</div>
+      </div>
+      <div class="history-scores">
+        <div class="score-col">
+          <span>Before Score</span>
+          <strong>${app.match_score_before || 0}%</strong>
+        </div>
+        <div class="score-col">
+          <span>After Score</span>
+          <strong class="text-emerald">${app.match_score_after || 0}%</strong>
+        </div>
+        <div class="score-col">
+          <span>Delta</span>
+          <strong class="text-emerald">+${app.match_score_delta || 0}%</strong>
+        </div>
+      </div>
+      <div class="history-actions">
+        <a href="/api/download/${app.relative_file_path}" class="btn btn-emerald btn-sm" download>
+          <i class="fa-solid fa-download"></i> .docx
+        </a>
+        ${app.relative_file_path ? `<a href="/api/download/${app.relative_file_path.replace('.docx', '.pdf')}" class="btn btn-cyan btn-sm" download><i class="fa-solid fa-file-pdf"></i> .pdf</a>` : ''}
+        <button class="btn btn-purple-sm" onclick="generateOrViewHistoryCoverLetter('${escapeHtml(app.company)}', '${escapeHtml(app.role)}', '${escapeHtml(app.relative_file_path)}', '${escapeHtml(app.url || '')}')">
+          <i class="fa-solid fa-envelope"></i> Cover Letter
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="openSpecificFolder('${escapeHtml(app.output_file)}')">
+          <i class="fa-solid fa-folder-open"></i> Folder
+        </button>
+        <button class="btn btn-danger-sm" onclick="deleteHistoryItem('${escapeHtml(app.log_file_name)}')">
+          <i class="fa-solid fa-trash"></i> Delete
+        </button>
+      </div>`;
+    grid.appendChild(card);
+  });
 }
 
 function toggleHistoryItemSelection(filename, isChecked) {
@@ -526,10 +590,29 @@ function updateHistoryToolbarUI() {
   if (btn) btn.disabled = (count === 0);
 }
 
+async function deleteHistoryItem(filename) {
+  if (!confirm("Are you sure you want to permanently delete this application and hard delete its output folder from your computer?")) return;
+  try {
+    const res = await fetch(`/api/history/${encodeURIComponent(filename)}`, {
+      method: "DELETE",
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast("Application and folder permanently deleted from disk", "success");
+      selectedHistoryFiles.delete(filename);
+      loadHistory();
+    } else {
+      showToast(data.error || "Failed to delete item", "error");
+    }
+  } catch (err) {
+    showToast(`Delete failed: ${err.message}`, "error");
+  }
+}
+
 async function deleteSelectedHistoryBatch() {
   const count = selectedHistoryFiles.size;
   if (count === 0) return;
-  if (!confirm(`Are you sure you want to delete ${count} selected test applications and their output folders from your computer?`)) return;
+  if (!confirm(`Are you sure you want to permanently delete ${count} selected applications and hard delete their output folders from your computer?`)) return;
 
   const filenames = Array.from(selectedHistoryFiles);
   showToast(`Deleting ${count} history entries & folders...`, "info");
@@ -550,6 +633,25 @@ async function deleteSelectedHistoryBatch() {
     }
   } catch (err) {
     showToast(`Error performing bulk delete: ${err.message}`, "error");
+  }
+}
+
+async function confirmClearAllHistory() {
+  if (!confirm("⚠️ PERMANENT HARD DELETE:\nAre you sure you want to delete ALL application history and remove all generated application folders from your computer? This cannot be undone.")) return;
+  try {
+    const res = await fetch("/api/history/clear_all", {
+      method: "POST"
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message || "All history and folders deleted from disk.", "success");
+      selectedHistoryFiles.clear();
+      loadHistory();
+    } else {
+      showToast(data.error || "Failed to clear history", "error");
+    }
+  } catch (err) {
+    showToast(`Error clearing history: ${err.message}`, "error");
   }
 }
 
