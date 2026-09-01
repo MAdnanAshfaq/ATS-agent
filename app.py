@@ -911,6 +911,7 @@ def analyze_job():
             "success": True,
             "company": company,
             "role": role,
+            "jd_text": jd_text,
             "jd_length": jd_len,
             "score": score,
             "score_scale_10": score_10,

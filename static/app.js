@@ -6,6 +6,20 @@ let currentRunId = null;
 let eventSource = null;
 let startTime = null;
 let timerInterval = null;
+let analyzeCompany = "";
+let analyzeRole = "";
+let analyzeScoreBefore = null;
+let analyzeJdText = "";
+
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
 
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
@@ -1366,6 +1380,7 @@ async function analyzeJobKeywords() {
     analyzeScoreBefore = data.score;
     analyzeCompany = data.company;
     analyzeRole = data.role;
+    analyzeJdText = data.jd_text || "";
 
     renderSimplifyCard(data);
     showToast(`Scraped ${data.role} at ${data.company}! Keywords cross-checked.`, "success");
@@ -2135,8 +2150,9 @@ async function generateApplicationAnswers() {
   }
 
   const questions = input.value.trim();
-  const company = (currentCompany || document.getElementById("matrix-company-title")?.textContent || "Target Company").trim();
-  const role = (currentRole || document.getElementById("matrix-role-title")?.textContent || "Data Engineer").trim();
+  const company = (analyzeCompany || currentCompany || document.getElementById("matrix-company-title")?.textContent || "Target Company").trim();
+  const role = (analyzeRole || currentRole || document.getElementById("matrix-role-title")?.textContent || "Data Engineer").trim();
+  const jd_text = analyzeJdText || currentJdText || document.getElementById("jd-url")?.value || "";
 
   btn.disabled = true;
   btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Crafting Human-Voiced Answers...`;
@@ -2149,7 +2165,7 @@ async function generateApplicationAnswers() {
         questions,
         company,
         role,
-        jd_text: currentJdText || "",
+        jd_text,
       }),
     });
 
