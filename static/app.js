@@ -1934,6 +1934,54 @@ function closeCoverLetterModal() {
   document.getElementById("cover-letter-modal").classList.add("hidden");
 }
 
+async function downloadEditedCoverLetter() {
+  const textarea = document.getElementById("cl-modal-textarea");
+  const text = textarea ? textarea.value.trim() : "";
+  if (!text) {
+    showToast("No cover letter text to download.", "warning");
+    return;
+  }
+
+  const btn = document.getElementById("cl-modal-docx-download");
+  const origHtml = btn ? btn.innerHTML : "";
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Saving & Downloading...`;
+  }
+
+  const company = (window.currentCoverLetterParams?.company || window.lastResult?.company || "Target Company").trim();
+  const role = (window.currentCoverLetterParams?.role || window.lastResult?.role || "Data Engineer").trim();
+
+  try {
+    const res = await fetch("/api/cover-letter/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cover_letter_text: text,
+        company,
+        role,
+      }),
+    });
+    const data = await res.json();
+    if (data.success && data.relative_docx) {
+      if (window.lastResult) {
+        window.lastResult.cover_letter_text = text;
+      }
+      window.location.href = `/api/download/${data.relative_docx}`;
+      showToast("Cover letter updated with your edits and downloaded!", "success");
+    } else {
+      showToast(data.error || "Failed to save cover letter changes.", "error");
+    }
+  } catch (err) {
+    showToast(`Error saving cover letter: ${err.message}`, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origHtml;
+    }
+  }
+}
+
 
 /* ══════════════════════════════════════════════════════════════════════════
    AI LAB — Multi-Signal Detector & Humanizer Studio

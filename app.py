@@ -1086,6 +1086,90 @@ def generate_cover_letter_api():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/cover-letter/save", methods=["POST"])
+def save_custom_cover_letter_api():
+    """Save user-edited cover letter text to disk as .docx and .txt, and return the download path."""
+    data = request.json or {}
+    text = data.get("cover_letter_text", "").strip()
+    company = data.get("company", "Target Company").strip()
+    role = data.get("role", "Data Engineer").strip()
+
+    if not text:
+        return jsonify({"success": False, "error": "Cover letter text is empty"}), 400
+
+    try:
+        from agent import load_base_resume
+        from resume_builder import slugify
+        from docx import Document
+        from docx.shared import Pt, Inches, RGBColor
+        from datetime import datetime as dt
+
+        base_resume = load_base_resume()
+        candidate_name = base_resume.get("name", "Candidate Name")
+
+        folder_name = f"{slugify(company)}_{slugify(role)}"[:80]
+        target_dir = OUTPUT_DIR / folder_name
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        name_slug = slugify(candidate_name)
+        out_name = f"{name_slug}_Cover_Letter"
+
+        file_path_txt = target_dir / f"{out_name}.txt"
+        file_path_docx = target_dir / f"{out_name}.docx"
+
+        # 1. Write text file
+        with open(file_path_txt, "w", encoding="utf-8") as f:
+            f.write(text)
+
+        # 2. Build docx
+        doc = Document()
+        try:
+            cp = doc.core_properties
+            cp.author = candidate_name
+            cp.title = f"{candidate_name} - Cover Letter"
+            cp.subject = f"Cover Letter - {role} at {company}"
+            cp.last_modified_by = candidate_name
+            cp.comments = ""
+            cp.category = "Cover Letter"
+            now_dt = dt.utcnow()
+            cp.created = now_dt
+            cp.modified = now_dt
+        except Exception:
+            pass
+
+        for s in doc.sections:
+            s.top_margin = Inches(0.8)
+            s.bottom_margin = Inches(0.8)
+            s.left_margin = Inches(0.8)
+            s.right_margin = Inches(0.8)
+
+        paragraphs = text.split("\n\n")
+        for p_text in paragraphs:
+            p_text = p_text.strip()
+            if not p_text:
+                continue
+            para = doc.add_paragraph()
+            para.paragraph_format.space_after = Pt(8)
+            para.paragraph_format.line_spacing = 1.15
+            run = para.add_run(p_text)
+            run.font.name = "Calibri"
+            run.font.size = Pt(10.5)
+            run.font.color.rgb = RGBColor(30, 41, 59)
+
+        doc.save(str(file_path_docx))
+
+        rel_docx = os.path.relpath(str(file_path_docx), str(OUTPUT_DIR)).replace("\\", "/")
+
+        return jsonify({
+            "success": True,
+            "file_path_docx": str(file_path_docx),
+            "relative_docx": rel_docx,
+            "message": "Cover letter saved cleanly with your custom edits."
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/answer-questions", methods=["POST"])
 def api_answer_questions():
     """Answer application-specific questions (Greenhouse/Lever/Workday/Ashby) using Q&A Copilot."""
