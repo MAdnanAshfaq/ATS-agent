@@ -785,15 +785,23 @@ def analyze_job():
             no_simplify = True  # Simplify extension requires a browser URL
 
             # Try to infer company and role if present
-            first_line = jd_text.strip().split("\n")[0][:80]
-            if " at " in first_line:
-                parts = first_line.split(" at ", 1)
+            first_lines = "\n".join(jd_text.strip().split("\n")[:4])
+            if " at " in first_lines:
+                parts = first_lines.split(" at ", 1)
                 role = clean_role_title(parts[0].strip())
-                company = parts[1].strip()
-            elif " - " in first_line:
-                parts = first_line.split(" - ", 1)
+                company = parts[1].split("\n")[0].strip()
+            elif " - " in first_lines:
+                parts = first_lines.split(" - ", 1)
                 role = clean_role_title(parts[0].strip())
-                company = parts[1].strip()
+                company = parts[1].split("\n")[0].strip()
+            else:
+                c_match = re.search(r'(?:about|at|join|company:\s*)\s+([A-Z][a-zA-Z0-9\s]{2,25})', jd_text[:600], re.IGNORECASE)
+                if c_match:
+                    company = c_match.group(1).strip()
+                t_match = re.search(r'([A-Z][a-zA-Z\s]{3,35}(?:Engineer|Developer|Architect|Analyst|Scientist|Manager))', jd_text[:500])
+                if t_match:
+                    role = clean_role_title(t_match.group(1).strip())
+
             jd_data = {"company": company, "role": role, "jd_text": jd_text}
             jd_len = len(jd_text)
         else:

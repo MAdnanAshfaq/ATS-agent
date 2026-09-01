@@ -520,30 +520,30 @@ async def scrape_jd(url: str, force_refresh: bool = False) -> dict:
         except Exception as e:
             print(f"[Scraper] Page goto note: {e} — proceeding with rendered DOM")
 
-        # Allow SPA JavaScript (Notion / React / Vue) 4s to hydrate the DOM
+        # Allow SPA JavaScript / iframes (Greenhouse / Lever / Notion / React) time to hydrate
         await asyncio.sleep(4)
         
-        # Get full page HTML safely (handles client-side navigation/redirects)
-        html = ""
-        title = ""
+        # Get full page HTML from main frame and any embedded iframes (e.g. Greenhouse embeds)
+        html_chunks = []
         try:
-            html = await page.content()
+            main_html = await page.content()
+            html_chunks.append(main_html)
             title = await page.title()
         except Exception:
-            await asyncio.sleep(2)
-            try:
-                html = await page.content()
-                title = await page.title()
-            except Exception as nav_err:
-                print(f"[Scraper] Content fetch error: {nav_err}")
+            main_html = ""
+            title = ""
 
-        if title and ("just a moment" in title.lower() or "attention required" in title.lower()):
-            await asyncio.sleep(2.5)
-            try:
-                html = await page.content()
-                title = await page.title()
-            except Exception:
-                pass
+        for frame in page.frames:
+            if frame != page.main_frame:
+                try:
+                    f_content = await frame.content()
+                    if f_content and len(f_content) > 300:
+                        print(f"[Scraper] Detected embedded job frame ({len(f_content)} chars): {frame.url[:80]}")
+                        html_chunks.append(f_content)
+                except Exception:
+                    pass
+
+        html = "\n\n".join(html_chunks) if html_chunks else main_html
 
         print(f"[Scraper DEBUG] Raw HTML fetched len: {len(html)}")
         await context.close()
