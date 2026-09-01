@@ -1,0 +1,20 @@
+Haseeb Khan
+West Warwick, RI 02893
+mhaseeb.hk0@gmail.com | +1 5514121970
+
+September 5, 2026
+
+Hiring Team
+Evac
+
+Managing production clinical data pipelines and meeting strict freshness SLAs requires deep rigor around reliability, orchestration, and root-cause analysis—precisely the challenges I tackle daily. As a Senior Data Engineer with 8 years of experience building medallion lakehouse architectures for healthcare systems, I bring the exact ELT automation, pipeline observability, and governance expertise Evac needs for the Data Engineer I IS role.
+
+At Strive Health, I built and owned bronze-to-gold ELT pipelines across Azure and Microsoft Fabric, processing EHR, claims, and lab feeds for over 100,000 members. I established automated data quality rules, rigorous T+8 hour freshness checks, and pipeline alerting, while partnering closely with security teams to implement row-level security, workspace RBAC, and HIPAA compliance controls. Earlier at Cornerstone OnDemand, I managed incremental ingestion across 50+ customer tenants using Auto Loader, and developed 25-40 production dbt models with automated tests and CI/CD pull requests. Managing lakehouse on-call rotations, triaging failed clinical loads, and maintaining clear runbooks are standard parts of my engineering workflow.
+
+While my background is rooted in Azure, Databricks, and Fabric, my core expertise in SQL, Python, relational data warehousing, and pipeline orchestration maps directly to Snowflake, Fivetran, and complex scheduling environments like Ctrl-M. I know how to optimize warehouse performance, enforce access controls, and drive down MTTR when production issues strike.
+
+I welcome the opportunity to discuss how my hands-on data engineering background can support Evac’s clinical and operational workflows. 
+
+Sincerely,
+
+Haseeb Khan

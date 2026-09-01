@@ -146,5 +146,15 @@
       ],
       "error": null
     }
+  },
+  "https://evac.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/456122": {
+    "timestamp": 1788281315.2592156,
+    "data": {
+      "success": true,
+      "score": 49,
+      "missing_keywords": [],
+      "matching_keywords": [],
+      "error": null
+    }
   }
 }

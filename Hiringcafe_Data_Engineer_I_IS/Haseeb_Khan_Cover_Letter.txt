@@ -1,0 +1,17 @@
+Haseeb Khan
+West Warwick, RI 02893
+mhaseeb.hk0@gmail.com | +1 5514121970
+
+Hiringcafe
+Hiring Team
+
+Operating healthcare data pipelines under strict HIPAA and HITRUST controls requires rigorous automation, rock-solid observability, and relentless incident management. Over the past 8 years building medallion lakehouse architectures on Azure, Databricks, and Microsoft Fabric, I have owned the end-to-end reliability, freshness, and security of production ELT pipelines supporting 100,000+ members.
+
+At Strive Health, I built and managed bronze-to-gold ingestion and transformation pipelines for 20 to 40 partner EHR, claims, and lab feeds, enforcing T+8 hour freshness SLAs with automated alerting and strict data quality rules. When clinical loads failed, I shared lakehouse on-call rotation duties, triaging root causes, recovering jobs, and maintaining detailed operational runbooks to shrink MTTR. I wrote complex Spark SQL, T-SQL, and PySpark transformations, applied incremental refresh patterns, and tuned warehouse capacity to optimize performance and control operational costs. Previously at Cornerstone OnDemand, I developed incremental Python and SQL ingestion pipelines handling REST and OData APIs across 50+ customer tenants, utilizing Delta Lake MERGE logic to accurately process late-arriving files while automating orchestration, daily freshness checks, and test-driven pull requests.
+
+While my background centers on cloud data platforms like Azure Data Factory, Synapse, and Fabric, my core engineering foundation in complex SQL, Python, automation, Linux environments, and production data operations maps directly to your requirements for keeping enterprise data fresh, secure, and resilient. 
+
+I would welcome the opportunity to discuss how my hands-on background in pipeline reliability and data ops aligns with Hiringcafe's technical roadmap.
+
+Sincerely,
+Haseeb Khan

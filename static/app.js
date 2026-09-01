@@ -840,16 +840,26 @@ function renderVisualResume(data) {
 
       <!-- ── SECTION 4: Work Experience ── -->
       <div class="vr-section">
-        <div class="vr-section-header">
+        <div class="vr-section-header" style="flex-wrap:wrap; gap:8px;">
           <div class="vr-section-title"><i class="fa-solid fa-briefcase"></i> Work Experience (${experience.length})</div>
-          <button type="button" class="vr-btn-add" onclick="addExperienceRole()"><i class="fa-solid fa-plus"></i> Add Role</button>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="copyAllExperienceBullets()" style="border-radius:8px; font-size:12px; padding:4px 12px;">
+              <i class="fa-regular fa-copy"></i> Copy All Job Bullets
+            </button>
+            <button type="button" class="vr-btn-add" onclick="addExperienceRole()"><i class="fa-solid fa-plus"></i> Add Role</button>
+          </div>
         </div>
         <div id="vr-experience-list" style="display:flex; flex-direction:column; gap:14px;">
           ${experience.map((exp, roleIdx) => `
             <div class="vr-item-card" data-role-idx="${roleIdx}">
               <div class="vr-item-card-header">
-                <span style="font-weight:700; color:var(--text-main); font-size:14px;">Role #${roleIdx + 1}</span>
-                <button type="button" class="vr-btn-delete" onclick="removeExperienceRole(${roleIdx})"><i class="fa-solid fa-trash"></i> Delete Role</button>
+                <span style="font-weight:700; color:var(--text-main); font-size:14px;">Role #${roleIdx + 1}: ${escapeHtml(exp.title || 'Position')} (${escapeHtml(exp.company || 'Company')})</span>
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <button type="button" class="btn-chip" style="font-size:11.5px; padding:3px 10px; border-radius:6px; background:#f1f5f9; color:#0f172a; border:1px solid #cbd5e1; cursor:pointer;" onclick="copyRoleBullets(${roleIdx})">
+                    <i class="fa-regular fa-copy"></i> Copy Description
+                  </button>
+                  <button type="button" class="vr-btn-delete" onclick="removeExperienceRole(${roleIdx})"><i class="fa-solid fa-trash"></i> Delete Role</button>
+                </div>
               </div>
               <div class="vr-grid-2">
                 <div class="vr-field">
@@ -1136,6 +1146,66 @@ function removeExpBullet(roleIdx, bulletIdx) {
     currentData.experience[roleIdx].bullets.splice(bulletIdx, 1);
     renderVisualResume(currentData);
   }
+}
+
+function copyRoleBullets(roleIdx) {
+  const container = document.querySelector(`.vr-exp-bullets-container[data-role-idx="${roleIdx}"]`);
+  let bullets = [];
+  if (container) {
+    const textareas = container.querySelectorAll('.vr-exp-bullet');
+    textareas.forEach(ta => {
+      const val = ta.value.trim();
+      if (val) bullets.push(`• ${val.replace(/^[•\-\*]\s*/, '')}`);
+    });
+  }
+  if (bullets.length === 0 && currentMasterResumeData?.experience?.[roleIdx]) {
+    const exp = currentMasterResumeData.experience[roleIdx];
+    (exp.bullets || []).forEach(b => {
+      const val = b.trim();
+      if (val) bullets.push(`• ${val.replace(/^[•\-\*]\s*/, '')}`);
+    });
+  }
+
+  if (bullets.length === 0) {
+    showToast("No bullet points found for this role.", "warning");
+    return;
+  }
+
+  const output = bullets.join('\n');
+  navigator.clipboard.writeText(output);
+  showToast(`Copied ${bullets.length} bullet points to clipboard!`, 'success');
+}
+
+function copyAllExperienceBullets() {
+  const list = document.getElementById("vr-experience-list");
+  let bullets = [];
+
+  if (list) {
+    const textareas = list.querySelectorAll('.vr-exp-bullet');
+    textareas.forEach(ta => {
+      const val = ta.value.trim();
+      if (val) bullets.push(`• ${val.replace(/^[•\-\*]\s*/, '')}`);
+    });
+  }
+
+  // Fallback to memory if DOM textareas are empty
+  if (bullets.length === 0 && currentMasterResumeData?.experience) {
+    currentMasterResumeData.experience.forEach(exp => {
+      (exp.bullets || []).forEach(b => {
+        const val = b.trim();
+        if (val) bullets.push(`• ${val.replace(/^[•\-\*]\s*/, '')}`);
+      });
+    });
+  }
+
+  if (bullets.length === 0) {
+    showToast("No job description bullets found to copy.", "warning");
+    return;
+  }
+
+  const output = bullets.join('\n');
+  navigator.clipboard.writeText(output);
+  showToast(`Copied all ${bullets.length} job description bullets to clipboard!`, 'success');
 }
 
 function addEducationEntry() {
