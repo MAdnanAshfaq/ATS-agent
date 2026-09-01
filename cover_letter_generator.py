@@ -164,6 +164,21 @@ Sincerely,
             from docx.enum.text import WD_ALIGN_PARAGRAPH
 
             doc = Document()
+            from datetime import datetime as dt
+            try:
+                cp = doc.core_properties
+                cp.author = candidate_name
+                cp.title = f"{candidate_name} - Cover Letter"
+                cp.subject = f"Cover Letter - {role} at {company}"
+                cp.last_modified_by = candidate_name
+                cp.comments = ""
+                cp.category = "Cover Letter"
+                now_dt = dt.utcnow()
+                cp.created = now_dt
+                cp.modified = now_dt
+            except Exception:
+                pass
+
             for s in doc.sections:
                 s.top_margin = Inches(0.8)
                 s.bottom_margin = Inches(0.8)

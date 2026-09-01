@@ -123,5 +123,28 @@
       "matching_keywords": [],
       "error": null
     }
+  },
+  "https://thrivemarketjobs.com/job_posting.html?id=4388663009&gh_jid=4388663009": {
+    "timestamp": 1788278842.827694,
+    "data": {
+      "success": true,
+      "score": 32,
+      "missing_keywords": [
+        "data visualization",
+        "data analytics",
+        "Tableau",
+        "Looker",
+        "Hive",
+        "PMP",
+        "Agile",
+        "Six Sigma"
+      ],
+      "matching_keywords": [
+        "SQL",
+        "Python",
+        "Spark"
+      ],
+      "error": null
+    }
   }
 }

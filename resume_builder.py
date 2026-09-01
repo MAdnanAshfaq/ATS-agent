@@ -73,6 +73,21 @@ def build_resume_docx(
     
     # ─── Create Document ─────────────────────────────────────────────────────
     doc = Document()
+
+    # ─── Professional Metadata (Scrub python-docx signatures) ────────────────
+    try:
+        cp = doc.core_properties
+        cp.author = name
+        cp.title = f"{name} - Resume"
+        cp.subject = f"Resume - {role}"
+        cp.last_modified_by = name
+        cp.comments = ""
+        cp.category = "Resume"
+        now_dt = datetime.utcnow()
+        cp.created = now_dt
+        cp.modified = now_dt
+    except Exception:
+        pass
     
     # Set page margins (clean professional standard)
     for section in doc.sections:
