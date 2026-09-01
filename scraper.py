@@ -549,62 +549,48 @@ async def scrape_jd(url: str, force_refresh: bool = False) -> dict:
         await context.close()
         await browser.close()
     
-    # Parse with BeautifulSoup
-    soup = BeautifulSoup(html, 'lxml')
-    
-    # Remove noise elements (keep noscript for Notion/SPA fallbacks)
-    for tag in soup.find_all(['script', 'style', 'nav', 'header', 'footer', 'iframe', 'svg']):
-        tag.decompose()
-    
-    jd_text = ""
-    role = ""
-    company = extract_company_from_url(scrape_url)
-    
-    # Platform-specific extraction
-    if platform and platform in PLATFORM_SELECTORS:
-        selectors = PLATFORM_SELECTORS[platform]
+    # Parse each HTML chunk with BeautifulSoup to extract the richest content (e.g. from embedded Greenhouse/Lever frames)
+    best_jd_text = ""
+    best_role = ""
+    best_company = extract_company_from_url(scrape_url)
+
+    for chunk in html_chunks:
+        if not chunk or len(chunk) < 200:
+            continue
+        c_soup = BeautifulSoup(chunk, 'lxml')
+        for tag in c_soup.find_all(['script', 'style', 'nav', 'header', 'footer', 'iframe', 'svg']):
+            tag.decompose()
         
-        # Extract JD
-        for sel in selectors.get("jd", []):
-            el = soup.select_one(sel)
+        # Check platform and generic selectors on this frame
+        frame_text = ""
+        for sel in ["#content", ".content", "#app", "main", "article", "[class*='job-description']", "[id*='content']", "body"]:
+            el = c_soup.select_one(sel)
             if el:
-                txt = el.get_text(separator='\n').strip()
-                print(f"[Scraper DEBUG] Selector '{sel}' found element with {len(txt)} raw chars")
-                if len(txt) >= 100:
-                    jd_text = txt
-                    print(f"[Scraper] Extracted JD via selector: {sel} ({len(txt)} chars)")
+                candidate_txt = el.get_text(separator='\n').strip()
+                if len(candidate_txt) > len(frame_text):
+                    frame_text = candidate_txt
+
+        if len(frame_text) > len(best_jd_text):
+            best_jd_text = clean_text(frame_text)
+            # Try to extract role title from this frame
+            for sel in ["h1.app-title", "h1.job-title", "h1", "h2", "title"]:
+                r_el = c_soup.select_one(sel)
+                if r_el and len(r_el.get_text().strip()) > 3:
+                    cand_role = clean_role_title(r_el.get_text().strip())
+                    is_valid, _ = validate_role_title(cand_role)
+                    if is_valid:
+                        best_role = cand_role
+                        break
+            # Try to extract company
+            for sel in [".company-name", "[class*='company']", ".posting-category"]:
+                co_el = c_soup.select_one(sel)
+                if co_el and len(co_el.get_text().strip()) > 2:
+                    best_company = co_el.get_text().strip()
                     break
-        
-        # Extract role title
-        for sel in selectors.get("title", []):
-            el = soup.select_one(sel)
-            if el:
-                role = el.get_text().strip()
-                break
-        
-        # Extract company name
-        for sel in selectors.get("company", []):
-            el = soup.select_one(sel)
-            if el:
-                company = el.get_text().strip()
-                break
-    
-    # Fallback: generic selectors
-    if not jd_text:
-        for sel in GENERIC_JD_SELECTORS:
-            el = soup.select_one(sel)
-            if el and len(el.get_text()) > 200:
-                jd_text = el.get_text(separator='\n')
-                print(f"[Scraper] Extracted JD via generic selector: {sel}")
-                break
-    
-    # Last resort: full body text
-    if not jd_text or len(jd_text) < 100:
-        print("[Scraper] Warning: Using full body text — may include noise")
-        body = soup.find('body')
-        if body:
-            jd_text = body.get_text(separator='\n')
-            jd_text = clean_text(jd_text)
+
+    jd_text = best_jd_text
+    role = best_role
+    company = best_company or extract_company_from_url(scrape_url)
 
     # HTTP Fallback if Playwright returned insufficient text
     if not jd_text or len(jd_text) < 100:
