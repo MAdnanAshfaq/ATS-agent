@@ -52,20 +52,68 @@ def answer_application_questions(
             }
         ]
     """
-    if isinstance(questions_input, str):
-        # Split by newlines or numbered lines if multiple questions are pasted
-        raw_lines = [q.strip() for q in questions_input.split("\n") if q.strip()]
-        # Group multiline questions
-        questions = []
-        current_q = []
-        for line in raw_lines:
-            if re.match(r'^(?:\d+[\.\)]|\-|\*|\?)\s*', line) and current_q:
-                questions.append(" ".join(current_q))
-                current_q = [line]
+def split_raw_questions(text: str) -> List[str]:
+    """
+    Intelligently split pasted questions text into individual, discrete questions.
+    Handles question marks, asterisks, bullet points, numbers, and Yes/No options.
+    """
+    text = text.replace('\r\n', '\n').replace('\r', '\n')
+    raw_blocks = re.split(r'\n\s*\n', text)
+    extracted = []
+
+    for block in raw_blocks:
+        lines = [l.strip() for l in block.split('\n') if l.strip()]
+        if not lines:
+            continue
+        current_question = []
+        for line in lines:
+            is_new_q = bool(
+                re.match(r'^(?:\d+[\.\)]|\-|\*|Q\d*:?|Question\s*\d*:?)\s+', line, re.IGNORECASE) or
+                (current_question and re.search(r'[\?\*]\s*$', current_question[-1])) or
+                re.match(r'^(?:Do you|Are you|Can you|Will you|Have you|Is this|Is the|What|Why|How|Tell us|Describe|Please|Due to)\b', line, re.IGNORECASE)
+            )
+            # Skip solitary Yes/No lines if they are checkboxes from copied web forms
+            if line.lower() in ('yes', 'no', 'yes/no', 'n/a', 'true', 'false') and current_question:
+                continue
+            if is_new_q and current_question:
+                extracted.append(' '.join(current_question))
+                current_question = [line]
             else:
-                current_q.append(line)
-        if current_q:
-            questions.append(" ".join(current_q))
+                current_question.append(line)
+        if current_question:
+            extracted.append(' '.join(current_question))
+
+    final = []
+    for q in extracted:
+        clean_q = re.sub(r'^(?:\d+[\.\)]|\-|\*|Q\d*:?|Question\s*\d*:?)\s+', '', q).strip()
+        if clean_q and len(clean_q) > 6 and clean_q.lower() not in ('yes', 'no', 'n/a'):
+            final.append(clean_q)
+    return final
+
+
+def answer_application_questions(
+    questions_input: str | List[str],
+    base_resume: dict,
+    jd_text: str = "",
+    company: str = "Target Company",
+    role: str = "Data Engineer",
+) -> List[Dict[str, Any]]:
+    """
+    Generate interview-true, human-voiced answers to application-specific questions.
+
+    Returns:
+        List of dicts: [
+            {
+                "question": str,
+                "answer": str,
+                "word_count": int,
+                "char_count": int,
+                "tone_type": str
+            }
+        ]
+    """
+    if isinstance(questions_input, str):
+        questions = split_raw_questions(questions_input)
     else:
         questions = list(questions_input)
 
@@ -83,23 +131,21 @@ def answer_application_questions(
     experience_snippet = json.dumps(base_resume.get("experience", []), indent=2, ensure_ascii=False)[:3500]
 
     system_prompt = f"""You are Dani's Human-Voice Application Q&A Copilot.
-Your job is to write compelling, interview-true, and human-sounding answers to custom application questions for {candidate_name} applying for {role} at {company}.
+You have been provided with an array of {len(questions)} distinct application questions.
+You MUST generate a separate, tailored answer for EACH question in the array. The output array MUST have exactly {len(questions)} objects.
 
 STRICT EDITORIAL RULES (Rules 0–16 from ResumeHQ):
-1. ZERO AI FLUFF & THROAT-CLEARING:
-   - NEVER start with: "I am excited to answer...", "Throughout my career as a passionate data engineer...", "I believe that...", "In today's fast-paced world...".
-   - Start immediately with the direct answer or concrete proof.
-2. CANDIDATE TRUTH & INTERVIEW DEFENSIBILITY:
-   - Only use facts, metrics, and tools from the Candidate Profile below.
-   - For technical or "how many years" questions, state the exact years and where they were applied.
-3. DOMAIN & CULTURE QUESTIONS (e.g. Sports, Gaming, Healthcare, Mission):
-   - Answer in an authentic, personal, conversational voice. Connect the personal angle with real appreciation for the company's product and engineering scale.
-4. BEHAVIORAL / SITUATIONAL QUESTIONS:
-   - Use the STAR framework (Situation, Task, Action, Result) concisely in 1-2 tight paragraphs with real metrics.
-5. BANNED AI WORDS (Strictly Prohibited):
-   {banned_words}, {cliche_openers}, "testament", "pivotal", "transformative", "seamless", "robust", "delve", "tapestry".
-6. LENGTH & BREVITY:
-   - Keep answers punchy and scannable (typically 60–150 words per answer unless the question requests a long essay).
+1. FOR SHORT FACTUAL / YES-NO QUESTIONS (e.g. "Do you have 7+ years...", "Are you authorized in US...", "Do you require sponsorship..."):
+   - Give a direct, crisp response with 1 supporting factual sentence.
+   - Example: "Yes. I have 8 years of professional experience designing and building data pipelines and analytical models using SQL, Python, and PySpark."
+   - Example: "Yes, I am legally authorized to work in the United States."
+   - Example: "No, I do not require visa sponsorship now or in the future."
+2. FOR WHY US / CULTURE QUESTIONS:
+   - Connect your authentic background with {company}'s specific engineering challenges and mission. No throat-clearing openers.
+3. FOR BEHAVIORAL / TECHNICAL QUESTIONS:
+   - Use the STAR framework concisely (1-2 tight paragraphs with real metrics from Strive Health or Cornerstone OnDemand).
+4. ZERO BANNED AI WORDS:
+   {banned_words}, {cliche_openers}, "testament", "pivotal", "transformative", "seamless", "robust", "delve".
 
 CANDIDATE PROFILE:
 Name: {candidate_name}
@@ -108,19 +154,19 @@ Skills: {skills}
 Experience:
 {experience_snippet}
 
-TARGET JOB & COMPANY CONTEXT:
+TARGET JOB CONTEXT:
 Company: {company}
 Role: {role}
-Job Description Excerpt:
-{jd_text[:2500]}
+JD Excerpt:
+{jd_text[:2000]}
 
 OUTPUT JSON FORMAT:
-Return strictly a JSON array of objects:
+Return strictly a JSON array containing EXACTLY {len(questions)} items:
 [
   {{
-    "question": "Exact question text",
-    "answer": "Clean, human-voiced, punchy answer text.",
-    "tone_type": "Culture Fit / Behavioral / Technical"
+    "question": "Exact text of Question 1",
+    "answer": "Direct, human-voiced answer.",
+    "tone_type": "Factual / Culture Fit / Behavioral / Technical"
   }}
 ]"""
 
