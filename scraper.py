@@ -313,12 +313,25 @@ def extract_company_from_url(url: str) -> str:
         if clean_name:
             return clean_name
 
-    # generic: extract domain
+    # hiringcafe: hiringcafe.com/job/data-architect-pythian-united-states-u5oaoprwa4zazma8
+    hiringcafe = re.search(r'hiringcafe\.com/job/([a-z0-9-]+)', url.lower())
+    if hiringcafe:
+        slug = hiringcafe.group(1)
+        slug_parts = slug.split('-')
+        if len(slug_parts) >= 3 and len(slug_parts[-1]) >= 8:
+            slug_parts = slug_parts[:-1]
+        loc_words = {"united", "states", "usa", "us", "remote", "hybrid", "onsite", "california", "texas", "new", "york", "ohio", "florida", "georgia", "illinois", "virginia", "washington", "full", "time", "part", "east", "west"}
+        filtered = [p for p in slug_parts if p not in loc_words]
+        if filtered:
+            return filtered[-1].title()
+
+    # generic: extract domain, but ignore aggregator job board domains
+    AGGREGATOR_DOMAINS = {"hiringcafe", "indeed", "ziprecruiter", "linkedin", "dice", "glassdoor", "builtin", "handshake", "careerbuilder", "monster", "simplyhired", "jobvite"}
     domain = re.search(r'https?://(?:www\.|jobs\.|myjobs\.)?([^./]+)', url)
-    if domain:
+    if domain and domain.group(1).lower() not in AGGREGATOR_DOMAINS:
         return domain.group(1).replace('-', ' ').title()
     
-    return "Unknown Company"
+    return "Target Company"
 
 
 def fetch_notion_via_api(url: str) -> Optional[dict]:
@@ -659,9 +672,36 @@ async def scrape_jd(url: str, force_refresh: bool = False) -> dict:
     # Clean role title from parentheses / brackets / location suffixes
     role = clean_role_title(role)
 
-    # Fallback company name if identical to role
-    if not company or (role and company.lower() == role.lower()):
-        company = extract_company_from_url(scrape_url)
+    # ── Resolve true hiring company (avoid job board aggregator names) ──
+    JOB_BOARD_NAMES = {
+        "hiringcafe", "indeed", "ziprecruiter", "linkedin", "dice",
+        "glassdoor", "builtin", "handshake", "careerbuilder", "monster", "simplyhired", "jobvite", "target company", "unknown company"
+    }
+
+    if not company or company.lower().replace(" ", "") in JOB_BOARD_NAMES or (role and company.lower() == role.lower()):
+        # 1. From Page Title: e.g. "Data Architect at Pythian · Remote" or "Senior Data Engineer at Saint"
+        if title:
+            t_clean = re.sub(r'\s*[-–—|]\s*(?:HiringCafe|Indeed|LinkedIn|ZipRecruiter|Glassdoor|BuiltIn).*$', '', title, flags=re.I).strip()
+            if " at " in t_clean:
+                cand_co = t_clean.split(" at ", 1)[1].split("·")[0].split("•")[0].split("-")[0].split("|")[0].strip()
+                if cand_co and cand_co.lower().replace(" ", "") not in JOB_BOARD_NAMES:
+                    company = cand_co
+            elif " - " in t_clean:
+                cand_co = t_clean.split(" - ", 1)[1].split("·")[0].split("•")[0].split("|")[0].strip()
+                if cand_co and cand_co.lower().replace(" ", "") not in JOB_BOARD_NAMES and len(cand_co) < 35:
+                    company = cand_co
+
+        # 2. From DOM / JD: e.g. "About Pythian" or "About Saint"
+        if not company or company.lower().replace(" ", "") in JOB_BOARD_NAMES:
+            about_m = re.search(r'(?:About|Company:)\s+([A-Z][a-zA-Z0-9\s&,\.]{2,30})(?:\n|\r|\.|\s*—)', jd_text)
+            if about_m:
+                cand_co = about_m.group(1).strip()
+                if cand_co.lower().replace(" ", "") not in JOB_BOARD_NAMES and "the role" not in cand_co.lower() and "this job" not in cand_co.lower():
+                    company = cand_co
+
+        # 3. Fallback to URL parsing
+        if not company or company.lower().replace(" ", "") in JOB_BOARD_NAMES:
+            company = extract_company_from_url(scrape_url)
 
     jd_text = clean_text(jd_text)
 
