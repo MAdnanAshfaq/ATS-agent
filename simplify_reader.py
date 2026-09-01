@@ -421,7 +421,7 @@ async def read_simplify_score(job_url: str, company: str = "", role: str = "", f
 
             # Only filter out Simplify extension UI button texts (never filter tech/domain terms)
             ui_button_terms = {
-                "preview resume", "tailor resume", "jalal_khan_resume", "report", "autofill",
+                "preview resume", "tailor resume", "adnan_khan_resume", "resume", "report", "autofill",
                 "resume score", "profile", "feedback", "help", "log in", "login", "simplify"
             }
             missing_keywords = [k for k in missing_keywords if k.lower().strip() not in ui_button_terms]

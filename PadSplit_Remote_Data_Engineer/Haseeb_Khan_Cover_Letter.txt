@@ -1,0 +1,20 @@
+Haseeb Khan
+West Warwick, RI | +1 5514121970 | mhasebk313@gmail.com
+
+March 30, 2026
+
+Hiring Team
+PadSplit
+Atlanta, GA (Remote)
+
+Dear PadSplit Engineering Team,
+
+I am writing to express my strong enthusiasm for the Data Engineer position at PadSplit. As a practitioner with eight years of experience architecting reliable medallion lakehouse architectures and managing end-to-end data lifecycles, I am drawn to PadSplit’s mission of expanding housing accessibility through robust analytics. My background in building scalable ingestion pipelines, designing dimension and fact models, and enforcing rigorous data quality guarantees aligns directly with your need to fortify the daily Postgres to data warehouse and third-party API flows.
+
+Throughout my tenure at Strive Health and Cornerstone OnDemand, I have owned the transition of complex data streams from ingestion to production gold marts using Python, SQL, and dbt. While my primary ecosystem includes Microsoft Fabric, Databricks, and Azure, my core engineering principles translate seamlessly to your stack. I routinely design idempotent pipelines, orchestrating incremental loads and managing state transitions across complex workflows using tools like Databricks Workflows and orchestration platforms analogous to Dagster and Airflow. Furthermore, my hands-on cloud literacy—including configuring AWS S3 buckets, IAM task roles, and infrastructure-as-code automation—ensures I can securely manage cloud resources alongside your platform team. I also bring deep expertise in moving data via EL tools, writing comprehensive tests for data quality, and maintaining strict SLAs through continuous integration and peer-reviewed pull requests.
+
+I am eager to partner with your existing Data Engineer lead to build resilient data models, optimize performance, and ensure uncompromising production reliability for PadSplit. Thank you for your time and consideration, and I look forward to discussing how my background in scaling robust data platforms can directly benefit your team.
+
+Sincerely,
+
+Haseeb Khan

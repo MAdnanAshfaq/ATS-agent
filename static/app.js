@@ -188,6 +188,9 @@ async function startGeneration(opts = {}) {
 
   logTerminal("info", `[System] Initiating job application run for: ${url}`);
 
+  const engineModeElem = document.getElementById("engine-mode-select");
+  const engineMode = engineModeElem ? engineModeElem.value : "danis_engine";
+
   try {
     const response = await fetch("/api/run", {
       method: "POST",
@@ -196,6 +199,7 @@ async function startGeneration(opts = {}) {
         url,
         custom_keywords: customKeywordsRaw || undefined,
         custom_bullets: customBulletsRaw || undefined,
+        engine_mode: engineMode,
         no_simplify: noSimplify,
         passes,
         output_dir: outputDir || undefined,

@@ -1,0 +1,18 @@
+October 24, 2023
+
+Hiring Team
+Location
+West Warwick, RI
+
+Dear Hiring Team,
+
+I am writing to express my strong interest in the Senior Data Engineer position at Location. With 8 years of specialized engineering experience building robust medallion architectures, optimizing complex cloud workflows, and enforcing strict data quality standards, I am drawn to your mission of scaling critical infrastructure and government data programs. My background in developing resilient pipelines, coupled with hands-on expertise across modern cloud data stacks, positions me to immediately contribute to your data platform growth and help bring structure to high-volume, multi-tenant environments.
+
+Throughout my career at Strive Health and Cornerstone OnDemand, I have owned the full data lifecycle from ingestion to production-grade transformation, ensuring strict observability, automated testing, and stringent SLA adherence. While my core foundation rests on PySpark, SQL, Python, and dbt to build scalable analytical models, I have actively expanded my toolkit to encompass modern cloud ecosystems and AI-driven infrastructure. I am well-equipped to design scalable infrastructure utilizing AWS services including S3, PostgreSQL, Lambda, and RDS, while engineering reliable orchestration workflows via Apache Airflow. Furthermore, I bring practical experience integrating emerging technologies into data pipelines, working with vector databases, LangChain, AWS Bedrock, and MLflow to support automated data validation, semantic search, and production-level machine learning workflows. Beyond core pipeline development, I have consistently optimized compute spend, automated workspace deployments through CI/CD, and established rigorous data quality frameworks to protect sensitive multi-tenant datasets.
+
+I welcome the opportunity to discuss how my end-to-end data ownership, technical versatility, and commitment to engineering excellence can drive high-performing data infrastructure at Location. Thank you for your time and consideration, and I look forward to speaking with you soon.
+
+Sincerely,
+
+Haseeb Khan
+mhasebk313@gmail.com | +1 5514121970

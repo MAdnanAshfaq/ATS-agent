@@ -3,7 +3,7 @@ from cover_letter_generator import generate_cover_letter
 
 def test_cl():
     base_resume = {
-        "name": "Jalal Khan",
+        "name": "Adnan Khan",
         "contact": {"email": "test@test.com", "phone": "123", "location": "Remote"},
         "summary": "Full stack engineer",
         "skills": ["Python", "JavaScript"],

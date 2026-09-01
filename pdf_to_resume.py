@@ -26,7 +26,7 @@ def parse_with_gemini(raw_text: str) -> dict:
     prompt = f"""You are an expert resume parser. Parse the following resume text into a clean, structured JSON object.
 
 RULES:
-- "name": First/last name only (e.g. "Jalal Khan") — NOT the job title
+- "name": First/last name only (e.g. "Adnan Khan") — NOT the job title
 - "contact": {{ email, phone, linkedin (url only), github (url only), portfolio, location }}
 - "summary": Professional summary paragraph only (no skill list text)
 - "skills": Flat array of individual technology/skill strings extracted from the Skills section.

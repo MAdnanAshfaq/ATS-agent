@@ -1,0 +1,17 @@
+March 30, 2026
+
+Hiring Team
+Ats
+
+Dear Hiring Team,
+
+I am writing to express my strong interest in the Senior Data Engineer position at Ats. Your rapid growth and commitment to scaling operational infrastructure without sacrificing quality mirror my own professional ethos. Having spent the last eight years owning data engineering domains end-to-end—from ingestion architecture and rigorous data quality monitoring to scalable silver-to-gold modeling—I am energized by the opportunity to build a trusted, AI-ready single source of truth for your team.
+
+Throughout my career at Strive Health and Cornerstone OnDemand, I have specialized in making complex data ingestion reliable and numbers indisputably trustworthy. I routinely design robust pipelines that handle API-based ingestion via OAuth2, rate-limit management, schema drift, idempotency, and incremental processing. To ensure our data remains pristine at the boundary, I implement automated data quality tests, anomaly detection, and freshness SLAs that catch discrepancies before they impact downstream workflows. Whether building medallion lakehouses on Microsoft Fabric and Databricks or orchestrating workflows with Airflow and Dagster, I focus heavily on operational resilience. Furthermore, my hands-on experience tuning workloads across modern cloud data environments—including Snowflake, BigQuery, and Delta Lake—ensures that the systems I build scale efficiently while minimizing compute spend. I also bring strong familiarity with containerized deployments using Docker, allowing me to containerize custom ingestion microservices and streamline environment promotion.
+
+I am eager to bring my ownership mindset, deep technical rigor, and passion for reliable data infrastructure to Ats. I welcome the opportunity to discuss how my background aligning ingestion reliability and stakeholder trust can directly support your scaling mission. Thank you for your time and consideration, and I look forward to speaking with you soon.
+
+Sincerely,
+
+Haseeb Khan
+mhasebk313@gmail.com | +1 5514121970 | West Warwick, RI

@@ -37,8 +37,8 @@ def print_banner():
     """Print the agent startup banner."""
     print()
     print("=" * 60)
-    print("  AI JOB APPLICATION AGENT")
-    print("  Jalal Khan  |  Gemini 2.5 Flash  |  Real Simplify Scores")
+    print("  AI Job Application Agent  |  Dual ATS & HR Engine")
+    print("  Adnan Khan  |  Gemini 2.5/3.5/3.6  |  Real Simplify Scores")
     print("=" * 60)
     print()
 

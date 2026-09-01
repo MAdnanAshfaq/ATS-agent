@@ -57,8 +57,13 @@ def generate_cover_letter(
     candidate_phone = base_resume.get("contact", {}).get("phone", "")
     candidate_location = base_resume.get("contact", {}).get("location", "")
 
-    prompt = f"""You are an elite Executive Career Strategist and Resume Architect.
-Write a compelling, recruiter-targeting 3-paragraph Cover Letter for {candidate_name} applying for the {role} position at {company}.
+    prompt = f"""You are the expert Cover Letter Writer adhering to Dani's Human-Voice Rules (from ResumeHQ cover-letter.md).
+Write a brief, punchy, persuasive 1-page Cover Letter for {candidate_name} applying for the {role} position at {company}.
+
+PRIORITY ORDER:
+1. Authenticity: Only reference facts, tools, and achievements from the candidate's real profile.
+2. Human Voice: Brief, varied sentence rhythm, plain conversational engineering language.
+3. Proof Match: Connect candidate's verified wins to the company's stated problems.
 
 CANDIDATE PROFILE:
 Name: {candidate_name}
@@ -70,22 +75,23 @@ Recent Experience: {json.dumps(base_resume.get('experience', [])[:2], indent=2)}
 TARGET JOB DETAILS:
 Company: {company}
 Role: {role}
-Key Terms to Weave In: {", ".join(missing_keywords[:10]) if missing_keywords else "N/A"}
+Key Requirements & Tools: {", ".join(missing_keywords[:10]) if missing_keywords else "N/A"}
 
 JOB DESCRIPTION:
 {jd_text[:3500]}
 
-COVER LETTER STRUCTURAL REQUIREMENTS:
-- Length: Exactly 3 structured, powerful paragraphs (250 - 350 words total).
-- Paragraph 1 (The Hook): Express genuine enthusiasm for {role} at {company}. State why candidate's experience in full-stack engineering and cloud architecture aligns perfectly with their mission.
-- Paragraph 2 (The Proof & Impact): Highlight 2-3 specific technical achievements from experience that match the key requirements of the job description. Weave in key technical terms smoothly.
-- Paragraph 3 (The Closing): Express confidence in driving results for {company}. Request an interview.
+COVER LETTER STRUCTURAL REQUIREMENTS (Rules 11-16 from ResumeHQ):
+- Length: 220 - 300 words total (crisp and scannable).
+- Paragraph 1 (The Hook): Lead immediately with a concrete match or proof point. NO throat-clearing openers like "I am writing to express my interest in..." or "Please accept this application for...". State directly why the candidate's specific background solves {company}'s immediate engineering needs.
+- Paragraph 2 (Core Value Stories): Highlight 2 concrete, quantified accomplishments from recent experience that directly address the top requirements of this job. Use plain strong verbs (Built, Cut, Led, Shipped, Designed, Optimized).
+- Paragraph 3 (The Close): Brief closing expressing interest in discussing how these approaches apply to {company}'s roadmap.
 
-TONE & STYLE RULES:
-- Professional, confident, active human voice.
-- NO cliché AI buzzwords ("spearheaded", "leveraged", "pivotal", "testament", "transformative", "groundbreaking", "fostered").
-- Return ONLY the clean cover letter text including date and recipient header. No markdown code blocks around the text.
-"""
+STRICT BANNED PHRASES:
+- No "I am writing to apply..."
+- No "I believe I am the ideal candidate..."
+- No cliché AI words: "spearheaded", "leveraged", "pivotal", "testament", "transformative", "groundbreaking", "fostered", "synergy", "seamlessly", "robust".
+
+Return ONLY the clean cover letter text (including date and recipient header). Do not wrap in markdown fences."""
 
     def _call_gemini(client):
         for model in ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash"]:

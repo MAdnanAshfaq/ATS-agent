@@ -1,0 +1,19 @@
+March 30, 2026
+
+Hiring Manager
+Manuka
+
+Dear Hiring Manager,
+
+I am writing to express my strong interest in the Data Engineer position at Manuka. As a specialist in designing and scaling modern data architectures, I am drawn to Manuka's mission of empowering businesses through cutting-edge data and AI solutions. My eight years of experience building medallion lakehouses and robust data pipelines align directly with your focus on delivering high-impact platforms for enterprise and consulting clients.
+
+Throughout my career at Strive Health and Cornerstone OnDemand, I have owned end-to-end data pipelines from ingestion to gold-layer reporting, ensuring high performance, cost efficiency, and strict governance. Working extensively with Delta Lake and Apache Spark, I build scalable SQL-based ELT pipelines and PySpark workflows that process complex multi-source data efficiently. My technical scope includes hands-on programming in Python, SQL, and Scala, alongside cloud integrations across Azure and multi-cloud environments like GCP. For example, I automated workspace promotion and catalog deployment using CI/CD pipelines and Databricks Asset Bundles, reducing environment setup times from days to minutes while tuning Spark workloads to cut compute spend by up to 30 percent. 
+
+I am confident that my background in developing secure, high-throughput architectures will allow me to deliver immediate value to Manuka and your clients. I welcome the opportunity to discuss how my technical expertise in Databricks and cloud-native engineering can contribute to your upcoming projects. Thank you for your time and consideration, and I look forward to speaking with you soon.
+
+Sincerely,
+
+Haseeb Khan
+mhasebk313@gmail.com
++1 5514121970
+West Warwick, RI

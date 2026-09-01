@@ -1,0 +1,20 @@
+March 30, 2026
+
+Hiring Manager
+Thrive Market
+Remote
+
+Dear Hiring Manager,
+
+I am writing to express my strong interest in the Senior Data Engineer position at Thrive Market. As a long-time admirer of your mission to make healthy and sustainable living accessible to millions while maintaining a B Corporation commitment, I am excited by the opportunity to apply my 8 years of data architecture and distributed systems experience to scale your membership and e-commerce analytics platforms. My background in building robust, end-to-end data products aligns directly with your need for an engineer who can own complex data processing pipelines and collaborate cross-functionally in an Agile environment.
+
+Throughout my career at Strive Health and Cornerstone OnDemand, I have owned the complete data lifecycle—from multi-source ingestion and transformation to production delivery. I build scalable medallion lakehouses and high-performance data marts using Python, advanced SQL, and dbt, ensuring strict data quality and low-latency freshness SLAs. To orchestrate complex pipelines and handle high-throughput event data, I routinely design distributed streaming workflows utilizing Kafka and AWS Kinesis, complemented by orchestration tools like Airflow. Furthermore, I bring deep cloud infrastructure expertise, provisioning and managing resilient RDBMS, cloud data warehouses like Snowflake, and data lakes backed by AWS, Terraform, and CI/CD pipelines in GitHub and Jenkins. I have also integrated modern AI capabilities like Claude and Fabric Copilot into data workflows to automate schema documentation and streamline ad-hoc analytics requests, while maintaining rigorous data governance and security standards.
+
+I am eager to bring my technical depth in cloud data architecture, distributed processing, and cross-functional collaboration to Thrive Market to help drive your next phase of growth. I welcome the opportunity to discuss how my background in building reliable data services will support your engineering and data strategy teams. Thank you for your time and consideration, and I look forward to speaking with you soon.
+
+Sincerely,
+
+Haseeb Khan
+mhasebk313@gmail.com
++1 5514121970
+West Warwick, RI

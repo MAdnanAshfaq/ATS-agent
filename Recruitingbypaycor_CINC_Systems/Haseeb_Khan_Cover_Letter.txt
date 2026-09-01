@@ -1,0 +1,20 @@
+October 24, 2023
+
+Hiring Team
+Recruitingbypaycor
+CINC Systems
+
+Dear Hiring Team,
+
+I am writing to express my enthusiastic interest in the Senior Data Engineer position for CINC Systems through Recruitingbypaycor. As an elite data architect with 8 years of experience designing secure, large-scale data systems, I am deeply inspired by CINC Systems’ mission to modernize its industry-leading platform into an AI-enabled, modular ecosystem. The challenge of connecting financial data, operations, and user experience securely across millions of homes aligns precisely with my background in building production-grade data foundations that power both complex business analytics and intelligent applications.
+
+Throughout my career, I have owned end-to-end data pipelines—from ingestion and quality monitoring to advanced transformation and consumption—ensuring strict compliance and low-latency delivery. While my core expertise centers on high-performance medallion lakehouses, PySpark, and distributed compute, I bring the versatile cloud architecture mindset required to integrate modern ecosystems. In my recent roles, I have designed automated promotion frameworks via CI/CD, established rigorous data quality contracts and observability systems that maintain 99%+ freshness SLAs, and partnered closely with product and analytics stakeholders to serve reliable data marts. Furthermore, I am well-versed in modern cloud infrastructure and AI integration, having worked extensively with distributed data stores, serverless orchestration, and scalable data retrieval patterns similar to those utilizing AWS environments, S3, Glue, Athena, and event-driven architectures like EventBridge and Lambda, alongside foundational work with vector databases, OpenAI, and Bedrock.
+
+I am eager to bring my rigorous approach to data reliability, governance, and AI enablement to the CINC Systems team, helping scale the data infrastructure that powers the future of community association management. I welcome the opportunity to discuss how my technical leadership and hands-on execution will drive immediate impact for your platform. Thank you for your time and consideration, and I look forward to speaking with you soon.
+
+Sincerely,
+
+Haseeb Khan
+mhasebk313@gmail.com
++1 5514121970
+West Warwick, RI

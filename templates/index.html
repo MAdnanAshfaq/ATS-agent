@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Job Application Agent | Jalal Khan</title>
+  <title>AI Job Application Agent | Adnan</title>
   
   <!-- Google Fonts: Outfit & Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -30,7 +30,7 @@
         <div class="logo-icon"><i class="fa-solid fa-robot"></i></div>
         <div class="brand-text">
           <span class="brand-name">AI Job Agent <span class="badge-v2">V2.0</span></span>
-          <span class="brand-sub">Jalal Khan  ·  Zero Paid Tools</span>
+          <span class="brand-sub">Adnan  ·  Dual ATS & HR Engine</span>
         </div>
       </div>
 
@@ -147,6 +147,20 @@
           <div class="advanced-options-panel hidden" id="options-panel">
             <div class="options-grid">
               
+              <div class="option-item full-width" style="background: rgba(6, 182, 212, 0.06); border: 1px solid rgba(6, 182, 212, 0.25); border-radius: 12px; padding: 14px 18px;">
+                <label for="engine-mode-select" class="option-title-label" style="display:flex; align-items:center; justify-content:space-between;">
+                  <span><i class="fa-solid fa-users-gear" style="color:#06b6d4; margin-right:6px;"></i> Tailoring Engine Architecture</span>
+                  <span class="badge badge-success" style="font-size:11px; padding:3px 10px; border-radius:6px; background:#06b6d4; color:#fff; font-weight:700;">★ Recommended</span>
+                </label>
+                <select id="engine-mode-select" class="form-select" style="font-weight:600; margin-top:6px;">
+                  <option value="danis_engine" selected>⚡ Dani's Multi-Agent Engine (Researcher → Writer Rules 0-16 → Human Voice & Provenance Auditor → Editor)</option>
+                  <option value="standard">Standard Engine (Direct Rewrite + 2-Pass Tone Cleaner)</option>
+                </select>
+                <span class="option-hint" style="margin-top:6px; display:block; color:#64748b;">
+                  <strong>Dani's Engine:</strong> Enforces Rules 0–16 from ResumeHQ (anti-hallucination, burstiness CV ≥ 0.30, front-loaded impact, and zero AI cliché words).
+                </span>
+              </div>
+
               <div class="option-item">
                 <label class="toggle-switch">
                   <input type="checkbox" id="no-simplify-toggle">
@@ -632,7 +646,7 @@
 
             <div class="form-group">
               <label for="simplify-email-input">Simplify Email (Optional)</label>
-              <input type="email" id="simplify-email-input" class="form-input" placeholder="jalal.dev.work@gmail.com">
+              <input type="email" id="simplify-email-input" class="form-input" placeholder="user@example.com">
             </div>
 
             <div class="form-group">

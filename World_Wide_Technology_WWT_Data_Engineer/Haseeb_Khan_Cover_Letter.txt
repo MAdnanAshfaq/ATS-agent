@@ -1,0 +1,18 @@
+March 31, 2026
+
+Hiring Team
+World Wide Technology (WWT)
+St. Louis, MO
+
+Dear World Wide Technology Hiring Team,
+
+I am writing to express my strong interest in the Data Engineer position within the Internal IT HCM Analytics team at World Wide Technology. WWT’s commitment to building intelligent digital and cloud solutions through its advanced technical ecosystem resonates deeply with my own engineering philosophy. Throughout my 8-year career building medallion lakehouses, enterprise data pipelines, and robust HRIS architectures, I have consistently focused on turning complex multi-source data into secure, high-performance assets that drive strategic decision-making. My background in managing end-to-end data lifecycles aligns perfectly with WWT's mission to maintain seamless, high-performance technical infrastructure across global operations.
+
+In my recent role as Data Engineer II at Strive Health, I owned silver-to-gold transforms for 20 to 40 complex feeds, built HIPAA-compliant security controls, and automated workspace promotions using Git and Azure DevOps CI/CD to slash environment setup times from days to minutes. Prior to that, during my tenure at Cornerstone OnDemand, I built production dbt models and managed Databricks medallion pipelines supporting enterprise HRIS, ATS, learning, and performance datasets. While my core expertise centers on modern cloud stacks like Microsoft Fabric, Databricks, and Python, I bring the architectural adaptability required to integrate across diverse enterprise environments. I am fully capable of bridging modern cloud workflows with traditional enterprise ecosystems, whether utilizing Java and Scala for custom data processing, configuring integration flows via MuleSoft and APIGee, or extracting operational insights from Oracle, OTBI, and enterprise data warehouses using tools like Matillion, Informatica, and Oracle Data Integrator. Furthermore, my hands-on experience optimizing Spark jobs and warehouse capacity for cost reduction ensures that I design pipelines that are both scalable and economically efficient.
+
+I welcome the opportunity to discuss how my end-to-end data engineering expertise, commitment to data quality, and cross-functional collaboration skills can support the Internal WWT IT team. Thank you for considering my application, and I look forward to speaking with you soon to explore how I can contribute to World Wide Technology's continued success.
+
+Sincerely,
+
+Haseeb Khan
+mhasebk313@gmail.com | +1 5514121970 | West Warwick, RI

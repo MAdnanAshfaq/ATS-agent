@@ -1,12 +1,7 @@
 """
-app.py — Modern Web UI Server for Jalal Khan's AI Job Application Agent.
-
-Features:
-- REST API & Server-Sent Events (SSE) for live step-by-step progress tracking
-- Prerequisites health check & config management
-- Base resume viewer/editor
-- Generated applications history with instant document downloads
-- Windows File Explorer folder launcher
+app.py — Modern Web UI Server for Adnan's AI Job Application Agent.
+Provides real-time SSE streaming for live pipeline progress tracking,
+interactive keyword selection, custom experience point insertion, and dual-engine tailoring.
 """
 
 import json
@@ -1055,6 +1050,7 @@ def start_run():
     url = data.get("url", "").strip()
     custom_keywords = data.get("custom_keywords", "")
     custom_bullets = data.get("custom_bullets", "")
+    engine_mode = data.get("engine_mode", "danis_engine")
     no_simplify = data.get("no_simplify", False)
     passes = int(data.get("passes", 2))
     custom_output = data.get("custom_output", "")
@@ -1070,7 +1066,7 @@ def start_run():
     # Start background thread for execution
     thread = threading.Thread(
         target=_execute_agent_pipeline,
-        args=(run_id, url, custom_keywords, no_simplify, passes, custom_output, msg_queue, score_before, custom_bullets),
+        args=(run_id, url, custom_keywords, no_simplify, passes, custom_output, msg_queue, score_before, custom_bullets, engine_mode),
         daemon=True,
     )
     thread.start()
@@ -1078,7 +1074,7 @@ def start_run():
     return jsonify({"run_id": run_id, "status": "started"})
 
 
-def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passes, custom_output, msg_queue, analyze_score_before=None, custom_bullets=""):
+def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passes, custom_output, msg_queue, analyze_score_before=None, custom_bullets="", engine_mode="danis_engine"):
     """Execute pipeline in thread and push step logs to SSE queue."""
     # analyze_score_before: real score from Analyze step (Gemini/Simplify) — authoritative before score
     def send_log(step, stage, message, data=None, status="info"):
@@ -1262,27 +1258,42 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                 send_log(3, "Simplify ATS Score", f"Simplify error: {e}. Using JD keyword fallback.",
                          status="warning")
 
-        # Step 4: Gemini Resume Rewrite (strict keyword injection + custom bullets)
-        bullets_msg = f" and custom experience bullets" if (custom_bullets and custom_bullets.strip()) else ""
-        send_log(4, "Gemini Rewrite",
-                 f"Rewriting resume with strict injection of {len(missing_keywords)} keywords{bullets_msg}...",
-                 status="working")
-        rewritten_resume = rewrite_resume(
-            base_resume=base_resume,
-            jd_text=jd_text,
-            missing_keywords=missing_keywords,
-            company=company,
-            role=role,
-            custom_bullets=custom_bullets,
-        )
-        send_log(4, "Gemini Rewrite", "Resume rewritten with keyword injection!", status="success")
+        # Step 4 & 5: Resume Tailoring & Verification
+        if engine_mode == "danis_engine":
+            send_log(4, "Dani's Multi-Agent Engine", "Launching 4-role team: Researcher → Writer (Rules 0–16) → Auditor → Editor...", status="working")
+            from danis_engine import execute_danis_engine_pipeline
+            cleaned_resume = execute_danis_engine_pipeline(
+                base_resume=base_resume,
+                jd_text=jd_text,
+                missing_keywords=missing_keywords,
+                company=company,
+                role=role,
+                custom_bullets=custom_bullets,
+                log_callback=send_log,
+            )
+            send_log(5, "Dani's Engine", "Multi-role resume generation & human-voice audit passed!", status="success")
+        else:
+            # Step 4: Standard Gemini Resume Rewrite (strict keyword injection + custom bullets)
+            bullets_msg = f" and custom experience bullets" if (custom_bullets and custom_bullets.strip()) else ""
+            send_log(4, "Gemini Rewrite",
+                     f"Rewriting resume with strict injection of {len(missing_keywords)} keywords{bullets_msg}...",
+                     status="working")
+            rewritten_resume = rewrite_resume(
+                base_resume=base_resume,
+                jd_text=jd_text,
+                missing_keywords=missing_keywords,
+                company=company,
+                role=role,
+                custom_bullets=custom_bullets,
+            )
+            send_log(4, "Gemini Rewrite", "Resume rewritten with keyword injection!", status="success")
 
-        # Step 5: AI Detection Loop
-        send_log(5, "AI Detector",
-                 f"Running {passes}-pass AI writing detection and cleanup...",
-                 status="working")
-        cleaned_resume = run_ai_detection_loop(rewritten_resume, num_passes=passes)
-        send_log(5, "AI Detector", f"AI writing cleanup complete ({passes} passes)", status="success")
+            # Step 5: AI Detection Loop
+            send_log(5, "AI Detector",
+                     f"Running {passes}-pass AI writing detection and cleanup...",
+                     status="working")
+            cleaned_resume = run_ai_detection_loop(rewritten_resume, num_passes=passes)
+            send_log(5, "AI Detector", f"AI writing cleanup complete ({passes} passes)", status="success")
 
         # Step 6a: Keyword Coverage (injection verification)
         send_log(6, "Coverage Check", "Verifying keyword injection coverage...", status="working")

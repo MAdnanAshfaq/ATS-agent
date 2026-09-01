@@ -45,14 +45,14 @@ copy .env.example .env
 Open `.env` and fill in:
 ```
 GEMINI_API_KEY=your_key_here
-SIMPLIFY_EMAIL=jalal.dev.work@gmail.com
+SIMPLIFY_EMAIL=your_email@example.com
 SIMPLIFY_PASSWORD=your_simplify_password
 BASE_RESUME_PATH=base_resume.json
 ```
 
 ### Step 4: Parse Your PDF Resume
 
-Place your `Jalal Khan - Resume.pdf` in the `job-agent/` folder, then run:
+Place your `Resume.pdf` in the folder, then run:
 
 ```bash
 python pdf_to_resume.py
@@ -113,9 +113,9 @@ Every application gets its own folder:
 ```
 output/
 ├── Tradeify_Full_Stack_Engineer/
-│   └── Jalal_Khan_Resume.docx
+│   └── Candidate_Resume.docx
 ├── Babylist_Staff_Engineer/
-│   └── Jalal_Khan_Resume.docx
+│   └── Candidate_Resume.docx
 └── logs/
     └── run_20260810_154230.json
 ```
@@ -178,21 +178,21 @@ job-agent/
 
 | Tool | Cost |
 |------|------|
-| Gemini 1.5 Flash API | Free (1,500 req/day) |
+| Gemini 1.5/2.5/3.5 Flash API | Free tier / Pay-as-you-go |
 | Playwright | Free, open source |
 | python-docx | Free, open source |
 | Simplify account | Free (read-only) |
 | **Total** | **$0** |
 
 Each application uses 3 Gemini API calls (1 rewrite + 2 detection passes).  
-You can run **500 applications per day** before hitting any free tier limit.
+You can run hundreds of applications per day.
 
 ---
 
 ## Troubleshooting
 
 **"base_resume.json not found"**  
-→ Run `python pdf_to_resume.py` first. Make sure `Jalal Khan - Resume.pdf` is in the job-agent folder.
+→ Run `python pdf_to_resume.py` first. Make sure `Resume.pdf` is in the folder.
 
 **"GEMINI_API_KEY not found"**  
 → Check your `.env` file. Make sure `GEMINI_API_KEY=your_key` is set (no spaces around `=`).
@@ -208,4 +208,4 @@ You can run **500 applications per day** before hitting any free tier limit.
 
 ---
 
-*Built for Jalal Khan · jalal.dev.work@gmail.com · github.com/jalaldev1122*
+*Built by Adnan · Dual ATS & HR Optimization Engine*
