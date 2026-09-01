@@ -1316,22 +1316,9 @@ function showToast(message, type = "info") {
   }, 4000);
 }
 
-function escapeHtml(str) {
-  if (!str) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 /* ── Simplify-Style Interactive Keyword Cross-Check ─────────────────────── */
 let analyzedMissingKeywords = [];
 let selectedMissingKeywords = new Set();
-let analyzeScoreBefore = null;  // Preserved from Analyze step, used as authoritative before score
-let analyzeCompany = null;
-let analyzeRole = null;
-let analyzeJdText = null;
 
 async function analyzeJobKeywords() {
   let url = document.getElementById("jd-url").value.trim();
