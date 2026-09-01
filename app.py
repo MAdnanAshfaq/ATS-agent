@@ -1043,6 +1043,49 @@ def generate_cover_letter_api():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/answer-questions", methods=["POST"])
+def api_answer_questions():
+    """Answer application-specific questions (Greenhouse/Lever/Workday/Ashby) using Q&A Copilot."""
+    data = request.json or {}
+    questions = data.get("questions", "")
+    company = data.get("company", "Target Company").strip()
+    role = data.get("role", "Data Engineer").strip()
+    jd_text = data.get("jd_text", "").strip()
+
+    if not questions:
+        return jsonify({"success": False, "error": "Please provide one or more questions to answer."}), 400
+
+    try:
+        from agent import load_base_resume
+        from qa_generator import answer_application_questions
+
+        base_resume = load_base_resume()
+
+        # If JD text is missing, check cache
+        if not jd_text:
+            from scraper import get_cached_jd
+            cached = get_cached_jd(company) or get_cached_jd(role)
+            if cached:
+                jd_text = cached.get("jd_text", "")
+
+        answers = answer_application_questions(
+            questions_input=questions,
+            base_resume=base_resume,
+            jd_text=jd_text,
+            company=company,
+            role=role,
+        )
+
+        return jsonify({
+            "success": True,
+            "answers": answers,
+            "company": company,
+            "role": role,
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/run", methods=["POST"])
 def start_run():
     """Start pipeline generation run and return run_id for streaming."""

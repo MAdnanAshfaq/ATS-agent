@@ -1927,3 +1927,31 @@ input:checked + .slider:before { transform: translateX(20px); }
 
 .ai-bar-red  { background: linear-gradient(90deg, #ef4444, #f97316); }
 .ai-bar-green { background: linear-gradient(90deg, #10b981, #06b6d4); }
+
+/* Q&A Copilot Styles */
+.qa-answer-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.qa-answer-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08) !important;
+}
+
+.btn-chip {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-chip:hover {
+  background: #e0f2fe;
+  border-color: #7dd3fc;
+  color: #0369a1;
+}

@@ -402,6 +402,37 @@
           </div>
         </div>
 
+        <!-- Application Questions Copilot Section (Human-Voiced & JD-Synced Q&A) -->
+        <div class="matrix-custom-bullets-box" id="qa-copilot-card" style="margin-top:14px; border-color:rgba(6, 182, 212, 0.3);">
+          <div class="matrix-custom-bullets-header" onclick="toggleQACopilotDrawer()" style="background:rgba(6, 182, 212, 0.05);">
+            <div style="display:flex; align-items:center; gap:10px; font-weight:700; color:#0f172a; font-size:14px;">
+              <i class="fa-solid fa-circle-question" style="color:#06b6d4;"></i>
+              <span>🎯 Job Application Questions Copilot (Human-Voiced & JD-Synced)</span>
+              <span class="matrix-tag-pill" style="background:#06b6d4; color:#fff; font-weight:700;">New</span>
+            </div>
+            <i class="fa-solid fa-chevron-down text-muted" id="qa-copilot-arrow" style="transition:transform 0.2s ease;"></i>
+          </div>
+          <div class="matrix-custom-bullets-body" id="qa-copilot-body">
+            <p style="font-size:12.5px; color:#64748b; margin:6px 0 10px 0;">
+              Paste custom application questions from Greenhouse, Lever, Workday, or Ashby (e.g. <em>"Why us?"</em>, <em>"Sports / Culture fit"</em>, <em>"Explain a data pipeline outage you resolved"</em>). Grounded in your real experience and crafted in Dani's human voice.
+            </p>
+            <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; align-items:center;">
+              <span style="font-size:11.5px; font-weight:700; color:#64748b; margin-right:4px;">Presets:</span>
+              <button type="button" class="btn-micro" onclick="insertPresetQA('Sports are at the core of everything we do here. Tell us about your relationship with them — are you a fan, athlete, Underdog user, or just someone who appreciates a great game?')">🏆 Sports / Culture</button>
+              <button type="button" class="btn-micro" onclick="insertPresetQA('Why do you want to join our engineering team and what excites you about this role?')">💡 Why This Company?</button>
+              <button type="button" class="btn-micro" onclick="insertPresetQA('Describe a complex technical challenge or data pipeline outage you resolved.')">⚙️ Outage / Challenge</button>
+              <button type="button" class="btn-micro" onclick="insertPresetQA('How many years of experience do you have with Databricks, PySpark, and Cloud Data Warehouses?')">⏱️ Years of Experience</button>
+            </div>
+            <textarea id="qa-copilot-input" class="matrix-custom-bullets-textarea" rows="3" placeholder="Paste 1 or more application questions here (one per line)..."></textarea>
+            <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:10px;">
+              <button type="button" class="btn btn-primary btn-sm" id="qa-copilot-generate-btn" onclick="generateApplicationAnswers()" style="border-radius:20px; font-weight:700; padding:8px 20px;">
+                <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Human-Voiced Answers
+              </button>
+            </div>
+            <div id="qa-answers-container" class="hidden" style="margin-top:16px;"></div>
+          </div>
+        </div>
+
         <!-- Primary Action Row -->
         <div class="matrix-action-bar">
           <button type="button" class="btn btn-primary btn-lg" id="matrix-generate-btn" onclick="generateWithSelectedKeywords()" style="font-size:15px; padding:14px 28px; border-radius:30px; box-shadow:0 8px 24px rgba(6,182,212,0.35);">

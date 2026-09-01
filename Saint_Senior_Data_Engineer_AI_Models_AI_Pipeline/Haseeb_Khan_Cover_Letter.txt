@@ -1,0 +1,19 @@
+Haseeb Khan
+West Warwick, RI | mhasebk313@gmail.com | +1 5514121970
+
+March 30, 2026
+
+Hiring Team
+Saint-Gobain / Verifi
+
+Building real-time AI pipelines and managing scalable data infrastructure requires deep experience with cloud data backends, automated deployments, and rigorous performance tuning. With 8 years of data engineering experience designing medallion lakehouses, streaming feeds, and production machine learning pipelines on Microsoft Azure, I bring the exact technical background needed to support Verifi’s data science and development teams.
+
+At Strive Health, I built and managed Microsoft Fabric medallion architectures (bronze, silver, gold) using OneLake, PySpark notebooks, and Warehouse T-SQL, owning silver-to-gold transforms for 20 to 40 complex data feeds. To support machine learning and rapid feature deployment, I automated workspace and pipeline promotions using Git and Azure DevOps CI/CD, cutting environment setup time from two days to under 30 minutes. I also partnered with platform teams to tune Spark jobs, partitioning, and incremental refreshes, achieving a 20% to 30% reduction in compute spend while maintaining strict T+8 hour freshness SLAs with a 99% hit rate.
+
+Previously at Cornerstone OnDemand, I engineered Databricks medallion pipelines using PySpark, Delta Lake CDC, and Auto Loader, implementing Unity Catalog governance and CI/CD via Databricks Asset Bundles. I regularly optimized job clusters and Delta tables using Photon and liquid clustering to drive down compute costs, and maintained robust on-call ownership with resolution times under 60 minutes. My work centers on building clean data contracts, securing pipelines with strict RBAC and column-level controls, and ensuring real-time reliability for downstream analytical and predictive applications.
+
+I welcome the opportunity to discuss how my hands-on background in Azure data architectures, CI/CD automation, and high-performance pipeline scaling can support Saint’s engineering roadmap.
+
+Best regards,
+
+Haseeb Khan

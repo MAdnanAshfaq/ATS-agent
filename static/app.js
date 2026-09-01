@@ -2096,3 +2096,137 @@ function testHumanizedInDetector() {
   showToast("Loaded humanized text into detector — analyzing...", "info");
   runHfDetect();
 }
+
+/* =========================================================================
+   Application Questions Copilot (Human-Voiced Q&A)
+   ========================================================================= */
+
+function toggleQACopilotDrawer() {
+  const body = document.getElementById("qa-copilot-body");
+  const arrow = document.getElementById("qa-copilot-arrow");
+  if (!body) return;
+  const isHidden = body.style.display === "none";
+  body.style.display = isHidden ? "block" : "none";
+  if (arrow) arrow.style.transform = isHidden ? "rotate(0deg)" : "rotate(-90deg)";
+}
+
+function insertPresetQA(questionText) {
+  const input = document.getElementById("qa-copilot-input");
+  if (!input) return;
+  if (input.value.trim()) {
+    input.value += "\n" + questionText;
+  } else {
+    input.value = questionText;
+  }
+  // Ensure drawer is open
+  const body = document.getElementById("qa-copilot-body");
+  if (body) body.style.display = "block";
+  input.focus();
+}
+
+async function generateApplicationAnswers() {
+  const input = document.getElementById("qa-copilot-input");
+  const container = document.getElementById("qa-answers-container");
+  const btn = document.getElementById("qa-copilot-generate-btn");
+
+  if (!input || !input.value.trim()) {
+    showToast("Please enter or select at least one question to answer.", "warning");
+    return;
+  }
+
+  const questions = input.value.trim();
+  const company = (currentCompany || document.getElementById("matrix-company-title")?.textContent || "Target Company").trim();
+  const role = (currentRole || document.getElementById("matrix-role-title")?.textContent || "Data Engineer").trim();
+
+  btn.disabled = true;
+  btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Crafting Human-Voiced Answers...`;
+
+  try {
+    const res = await fetch("/api/answer-questions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        questions,
+        company,
+        role,
+        jd_text: currentJdText || "",
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || "Failed to generate answers.");
+    }
+
+    if (!data.answers || data.answers.length === 0) {
+      showToast("No answers could be generated.", "warning");
+      return;
+    }
+
+    // Render Answers Cards
+    container.innerHTML = "";
+    container.classList.remove("hidden");
+
+    data.answers.forEach((item, idx) => {
+      const card = document.createElement("div");
+      card.className = "qa-answer-card";
+      card.style.cssText = `
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 12px;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+      `;
+
+      card.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:8px;">
+          <div style="font-weight:700; color:#0f172a; font-size:13.5px; line-height:1.4;">
+            <span style="color:#0891b2; margin-right:6px;">Q${idx + 1}:</span> ${escapeHtml(item.question)}
+          </div>
+          <span class="badge" style="font-size:11px; padding:2px 8px; border-radius:6px; background:#f1f5f9; color:#475569; white-space:nowrap;">
+            ${escapeHtml(item.tone_type || "Application Q&A")}
+          </span>
+        </div>
+        <div style="font-size:13px; color:#334155; line-height:1.6; white-space:pre-wrap; background:#f8fafc; padding:12px 14px; border-radius:8px; border-left:3px solid #06b6d4; margin-bottom:10px;" id="qa-ans-text-${idx}">
+${escapeHtml(item.answer)}
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:11.5px; color:#94a3b8;">
+            <i class="fa-solid fa-align-left"></i> ${item.word_count || item.answer.split(' ').length} words  ·  ${item.char_count || item.answer.length} chars
+          </span>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="copyQAText(${idx}, this)" style="border-radius:6px; font-weight:600; padding:4px 12px; font-size:12px;">
+            <i class="fa-regular fa-copy"></i> Copy Answer
+          </button>
+        </div>
+      `;
+      container.appendChild(card);
+    });
+
+    showToast(`Generated ${data.answers.length} human-voiced answers!`, "success");
+    container.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+  } catch (err) {
+    showToast(`Error: ${err.message}`, "error");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles"></i> Generate Human-Voiced Answers`;
+  }
+}
+
+function copyQAText(idx, btnElement) {
+  const textElem = document.getElementById(`qa-ans-text-${idx}`);
+  if (!textElem) return;
+  const text = textElem.textContent.trim();
+  navigator.clipboard.writeText(text);
+  
+  const origHtml = btnElement.innerHTML;
+  btnElement.innerHTML = `<i class="fa-solid fa-check text-emerald"></i> Copied!`;
+  btnElement.style.borderColor = "#10b981";
+  showToast("Copied answer to clipboard!", "success");
+  
+  setTimeout(() => {
+    btnElement.innerHTML = origHtml;
+    btnElement.style.borderColor = "";
+  }, 2000);
+}
