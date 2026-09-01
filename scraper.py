@@ -229,36 +229,29 @@ def validate_jd_extraction(text: str) -> tuple[bool, str]:
     """
     Gate that catches bot-block/error pages masquerading as JD content.
     Returns (is_valid, reason).
-    A 403 error page is typically 200-600 chars; a real JD is almost always 800+.
     """
-    ERROR_SIGNATURES = [
-        "403 forbidden", "access denied", "just a moment",
-        "enable javascript", "captcha", "robot",
-        "checking your browser", "attention required", "error 403",
-        "you have been blocked", "security check", "cloudflare",
-        "verify you are human", "ddos protection",
-        "browser check", "your request has been blocked",
-        "human verification", "please verify", "are you a human",
-        "temporary unavailable", "service unavailable", "502 bad gateway",
-        "page not found", "404 not found",
-    ]
-    # Role titles that indicate we scraped a CAPTCHA or error page, not a job posting
-    BOT_ROLE_TITLES = {
-        "human verification", "access denied", "just a moment",
-        "403 forbidden", "error", "captcha", "attention required",
-        "security check", "checking your browser", "please wait",
-        "page not found", "404", "502",
-    }
     stripped = text.strip()
-    if len(stripped) < 800:
+    if len(stripped) < 500:
         return False, (
             f"Extracted only {len(stripped)} characters — suspiciously short for a real JD. "
             "The site likely returned a bot-block or error page instead of the job description."
         )
-    text_lower = stripped.lower()
-    for sig in ERROR_SIGNATURES:
-        if sig in text_lower:
-            return False, f"Content matches a known error/bot-block pattern: '{sig}'"
+
+    # Real bot-block error pages are short (< 2000 chars) and contain explicit blocking phrases
+    if len(stripped) < 2000:
+        ERROR_SIGNATURES = [
+            "403 forbidden", "access denied", "just a moment...",
+            "enable javascript to continue", "verify you are human",
+            "please verify you are a human", "checking your browser before accessing",
+            "attention required! | cloudflare", "error 403", "you have been blocked",
+            "security check to continue", "human verification",
+            "temporary unavailable", "502 bad gateway", "page not found", "404 not found"
+        ]
+        text_lower = stripped.lower()
+        for sig in ERROR_SIGNATURES:
+            if sig in text_lower:
+                return False, f"Content matches a known error/bot-block pattern: '{sig}'"
+
     return True, "OK"
 
 
