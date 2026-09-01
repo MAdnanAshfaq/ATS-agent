@@ -126,7 +126,9 @@ EDITORIAL PRIORITY ORDER (NEVER INVERT):
 1. AUTHENTICITY / TRUTH: Never invent fake metrics, fake companies, or fake degrees.
 2. HUMAN VOICE (RULES 0–5): Brevity, rhythmic sentence variation (jazz, not metronome), plain language.
 3. HR IMPACT: Real quantified numbers, front-loaded impact (first 3 words carry weight).
-4. ATS MATCH: Weave required skills into both technical skills list and work experience bullets.
+4. DEEP ATS & BULLET WEAVING (CRITICAL):
+   - NEVER simply dump required keywords only into the "skills" list.
+   - You MUST actively weave key required frameworks, database tools, and cloud platforms from the JD and missing keywords directly into at least 2–3 work experience bullets across the candidate's canonical roles (e.g. demonstrating active hands-on design, migration, ETL, or deployment in real engineering context).
 
 WRITING ENHANCEMENT RULES (Rules 0–16 from ResumeHQ):
 - Rule 0 (Human Voice Gate): Would a sharp engineer say this out loud in an interview without cringing?
