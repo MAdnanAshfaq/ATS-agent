@@ -158,9 +158,10 @@ function detectPlatform(url) {
 /* ── Pipeline Run Execution ──────────────────────────────────────────────── */
 async function startGeneration(opts = {}) {
   let url = document.getElementById("jd-url").value.trim();
+  const directJdText = opts.directJdText || "";
 
   const isDirectText = url.includes("\n") || (url.includes(" ") && url.split(" ").length > 3);
-  if (url && !isDirectText && !url.startsWith("http://") && !url.startsWith("https://")) {
+  if (url && !isDirectText && !url.startsWith("http://") && !url.startsWith("https://") && !directJdText) {
     url = "https://" + url;
     document.getElementById("jd-url").value = url;
   }
@@ -183,8 +184,8 @@ async function startGeneration(opts = {}) {
   // Use score passed from Analyze step if available, otherwise null (backend will compute)
   const scoreBefore = opts.scoreBefore !== undefined ? opts.scoreBefore : analyzeScoreBefore;
 
-  if (!url) {
-    showToast("Please enter a valid job posting URL", "warning");
+  if (!url && !directJdText) {
+    showToast("Please enter a valid job posting URL or paste the job description", "warning");
     return;
   }
 
@@ -200,20 +201,21 @@ async function startGeneration(opts = {}) {
   startTimer();
   clearTerminal();
 
-  logTerminal("info", `[System] Initiating job application run for: ${url}`);
+  logTerminal("info", `[System] Initiating job application run for: ${url || "Direct Job Description"}`);
 
   const engineModeElem = document.getElementById("engine-mode-select");
   const engineMode = engineModeElem ? engineModeElem.value : "danis_engine";
 
-  const customCompany = (analyzeCompany || document.getElementById("matrix-company-name")?.value || "").trim();
-  const customRole = (analyzeRole || document.getElementById("matrix-role-name")?.value || "").trim();
+  const customCompany = (opts.customCompany || analyzeCompany || document.getElementById("matrix-company-name")?.value || "").trim();
+  const customRole = (opts.customRole || analyzeRole || document.getElementById("matrix-role-name")?.value || "").trim();
 
   try {
     const response = await fetch("/api/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        url,
+        url: url || "Manual Job Description",
+        jd_text: directJdText || undefined,
         custom_company: customCompany || undefined,
         custom_role: customRole || undefined,
         custom_keywords: customKeywordsRaw || undefined,
@@ -272,6 +274,12 @@ function listenToEventStream(runId) {
         logTerminal("error", `[FAILED] ${data.message}`);
         stopExecutionState("failed");
         showToast(`Pipeline Failed: ${data.message}`, "error");
+
+        const isBotBlock = data.error_type === "bot_block" || 
+                           (data.message && (data.message.includes("bot-block") || data.message.includes("JD validation failed") || data.message.includes("captcha")));
+        if (isBotBlock) {
+          openManualJdModal(data.company, data.role, "pipeline");
+        }
       }
     } catch (e) {
       console.error("SSE parse error", e);
@@ -1497,14 +1505,16 @@ function showToast(message, type = "info") {
 let analyzedMissingKeywords = [];
 let selectedMissingKeywords = new Set();
 
-async function analyzeJobKeywords() {
+async function analyzeJobKeywords(opts = {}) {
   let url = document.getElementById("jd-url").value.trim();
-  if (!url) {
+  const directJdText = opts.directJdText || "";
+
+  if (!url && !directJdText) {
     showToast("Please enter a job URL or paste the job description text", "warning");
     return;
   }
   const isDirectText = url.includes("\n") || (url.includes(" ") && url.split(" ").length > 3);
-  if (!isDirectText && !url.startsWith("http://") && !url.startsWith("https://")) {
+  if (!isDirectText && !url.startsWith("http://") && !url.startsWith("https://") && !directJdText) {
     url = "https://" + url;
     document.getElementById("jd-url").value = url;
   }
@@ -1521,7 +1531,10 @@ async function analyzeJobKeywords() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        url,
+        url: url || "Manual Job Description",
+        jd_text: directJdText || undefined,
+        company: opts.customCompany || undefined,
+        role: opts.customRole || undefined,
         no_simplify: document.getElementById("no-simplify-toggle").checked
       })
     });
@@ -1531,9 +1544,10 @@ async function analyzeJobKeywords() {
     analyzeBtn.innerHTML = `<i class="fa-solid fa-magnifying-glass"></i> Analyze & Cross-Check`;
 
     if (!data.success) {
-      const isBlockError = data.error_type === "scrape_blocked" || data.error_type === "jd_blocked";
+      const isBlockError = data.error_type === "scrape_blocked" || data.error_type === "jd_blocked" || (data.error && (data.error.includes("bot-block") || data.error.includes("CAPTCHA")));
       if (isBlockError) {
         _analyzeShowError(data.error || "Could not extract job description from this URL.");
+        openManualJdModal(data.company, data.role, "analyze");
       } else {
         showToast(data.error || "Analysis failed", "error");
       }
@@ -1577,7 +1591,85 @@ function _analyzeShowError(msg) {
 
 function _analyzeHideError() {
   const card = document.getElementById("analyze-error-card");
-  if (card) card.style.display = "none";
+  if (card) card.remove();
+}
+
+/* ── Manual Job Description Fallback Modal ───────────────────────────────── */
+let manualJdSource = "pipeline";
+
+function openManualJdModal(company = "", role = "", source = "pipeline") {
+  manualJdSource = source;
+  const modal = document.getElementById("manual-jd-modal");
+  if (!modal) return;
+
+  const compInput = document.getElementById("manual-jd-company");
+  const roleInput = document.getElementById("manual-jd-role");
+  const txtArea = document.getElementById("manual-jd-text");
+  const charCount = document.getElementById("manual-jd-charcount");
+
+  // Clean company & role placeholders
+  const isBadComp = !company || company.toLowerCase().includes("careers navitus") || company.toLowerCase().includes("target company");
+  const isBadRole = !role || role.toLowerCase().includes("confirm you are human") || role.toLowerCase().includes("data engineer");
+
+  const cleanComp = (!isBadComp) ? company : (analyzeCompany || "");
+  const cleanRole = (!isBadRole) ? role : (analyzeRole || "");
+
+  if (compInput) compInput.value = cleanComp;
+  if (roleInput) roleInput.value = cleanRole;
+  if (txtArea) {
+    txtArea.value = "";
+    if (charCount) charCount.textContent = "0 characters";
+  }
+
+  modal.classList.remove("hidden");
+  setTimeout(() => txtArea && txtArea.focus(), 150);
+}
+
+function closeManualJdModal() {
+  const modal = document.getElementById("manual-jd-modal");
+  if (modal) modal.classList.add("hidden");
+}
+
+function continuePipelineWithManualJd() {
+  const txtArea = document.getElementById("manual-jd-text");
+  const text = (txtArea ? txtArea.value : "").trim();
+  if (!text || text.length < 50) {
+    showToast("Please paste the job description text (minimum 50 characters)", "warning");
+    return;
+  }
+
+  const customCompany = document.getElementById("manual-jd-company")?.value.trim() || "";
+  const customRole = document.getElementById("manual-jd-role")?.value.trim() || "";
+
+  closeManualJdModal();
+  showToast("Resuming pipeline with pasted Job Description...", "info");
+
+  startGeneration({
+    directJdText: text,
+    customCompany: customCompany || undefined,
+    customRole: customRole || undefined,
+  });
+}
+
+function continueAnalyzeWithManualJd() {
+  const txtArea = document.getElementById("manual-jd-text");
+  const text = (txtArea ? txtArea.value : "").trim();
+  if (!text || text.length < 50) {
+    showToast("Please paste the job description text (minimum 50 characters)", "warning");
+    return;
+  }
+
+  const customCompany = document.getElementById("manual-jd-company")?.value.trim() || "";
+  const customRole = document.getElementById("manual-jd-role")?.value.trim() || "";
+
+  closeManualJdModal();
+  showToast("Cross-checking ATS matrix with pasted Job Description...", "info");
+
+  analyzeJobKeywords({
+    directJdText: text,
+    customCompany: customCompany || undefined,
+    customRole: customRole || undefined,
+  });
 }
 
 function renderSimplifyCard(data) {

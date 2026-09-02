@@ -797,13 +797,16 @@ def analyze_job():
     """
     data = request.json or {}
     url = data.get("url", "").strip()
+    direct_jd_text = data.get("jd_text", "").strip()
+    custom_company = (data.get("company") or data.get("custom_company") or "").strip()
+    custom_role = (data.get("role") or data.get("custom_role") or "").strip()
     no_simplify = data.get("no_simplify", False)
 
-    if not url:
+    if not url and not direct_jd_text:
         return jsonify({"error": "Please enter a job URL or paste the job description text."}), 400
 
     # Detect if user pasted direct job description text instead of a URL
-    is_direct_text = ("\n" in url) or (" " in url and len(url.split()) > 5) or (not url.startswith(("http://", "https://")) and not ("." in url and "/" in url))
+    is_direct_text = bool(direct_jd_text and len(direct_jd_text) >= 100) or ("\n" in url) or (" " in url and len(url.split()) > 5) or (not url.startswith(("http://", "https://")) and not ("." in url and "/" in url))
 
     try:
         import asyncio
@@ -814,11 +817,11 @@ def analyze_job():
         base_resume = load_base_resume()
 
         if is_direct_text:
-            print(f"[Analyze] Direct Job Description text detected ({len(url):,} chars). Skipping network scraper.")
-            jd_text = url
-            company = "Target Company"
-            role = "Data Engineer"
+            jd_text = direct_jd_text if (direct_jd_text and len(direct_jd_text) >= 100) else url
+            company = custom_company or "Target Company"
+            role = clean_role_title(custom_role) if custom_role else "Data Engineer"
             no_simplify = True  # Simplify extension requires a browser URL
+            print(f"[Analyze] Direct Job Description text detected ({len(jd_text):,} chars). Skipping network scraper.")
 
             # Try to infer company and role if present
             first_lines = "\n".join(jd_text.strip().split("\n")[:4])
@@ -1216,12 +1219,13 @@ def api_answer_questions():
 
 
 @app.route("/api/run", methods=["POST"])
-def start_run():
+def run_agent():
     """Start pipeline generation run and return run_id for streaming."""
     data = request.json or {}
     url = data.get("url", "").strip()
-    custom_company = data.get("custom_company", "").strip()
-    custom_role = data.get("custom_role", "").strip()
+    direct_jd_text = data.get("jd_text", "").strip()
+    custom_company = (data.get("custom_company") or data.get("company") or "").strip()
+    custom_role = (data.get("custom_role") or data.get("role") or "").strip()
     custom_keywords = data.get("custom_keywords", "")
     custom_bullets = data.get("custom_bullets", "")
     engine_mode = data.get("engine_mode", "danis_engine")
@@ -1230,8 +1234,10 @@ def start_run():
     custom_output = data.get("custom_output", "")
     score_before = data.get("score_before", None)
 
-    if not url:
+    if not url and not direct_jd_text:
         return jsonify({"error": "Please enter a job URL or paste the job description text."}), 400
+    if not url and direct_jd_text:
+        url = direct_jd_text
 
     run_id = f"run_{int(time.time()*1000)}"
     msg_queue = queue.Queue()
@@ -1240,7 +1246,7 @@ def start_run():
     # Start background thread for execution
     thread = threading.Thread(
         target=_execute_agent_pipeline,
-        args=(run_id, url, custom_keywords, no_simplify, passes, custom_output, msg_queue, score_before, custom_bullets, engine_mode, custom_company, custom_role),
+        args=(run_id, url, custom_keywords, no_simplify, passes, custom_output, msg_queue, score_before, custom_bullets, engine_mode, custom_company, custom_role, direct_jd_text),
         daemon=True,
     )
     thread.start()
@@ -1279,7 +1285,15 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
         # Step 2: Scrape JD (checks memory & disk cache first, or uses direct text)
         is_direct_text = ("\n" in url) or (" " in url and len(url.split()) > 5) or (not url.startswith(("http://", "https://")) and not ("." in url and "/" in url))
         
-        if is_direct_text:
+        if direct_jd_text and len(direct_jd_text) >= 100:
+            jd_text = direct_jd_text
+            company = custom_company or "Target Company"
+            role = clean_role_title(custom_role) if custom_role else "Data Engineer"
+            no_simplify = True
+            GLOBAL_ANALYSIS_CACHE[url] = {"company": company, "role": role, "jd_text": jd_text}
+            send_log(2, "Scrape JD", f"Using direct Job Description text ({len(jd_text):,} chars)",
+                     data={"company": company, "role": role, "jd_length": len(jd_text)}, status="success")
+        elif is_direct_text:
             jd_text = url
             company = custom_company or "Target Company"
             role = clean_role_title(custom_role) if custom_role else "Data Engineer"
@@ -1619,9 +1633,13 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
         import traceback
         err_msg = str(e)
         traceback.print_exc()
+        is_bot = ("bot-block" in err_msg.lower() or "jd validation failed" in err_msg.lower() or "captcha" in err_msg.lower())
         msg_queue.put({
             "type": "error",
             "status": "failed",
+            "error_type": "bot_block" if is_bot else "general",
+            "company": custom_company or (company if 'company' in locals() and company != "Careers Navitus" else ""),
+            "role": custom_role or (role if 'role' in locals() and "confirm you are human" not in role.lower() else ""),
             "message": f"Pipeline Error: {err_msg}",
             "traceback": traceback.format_exc(),
         })
