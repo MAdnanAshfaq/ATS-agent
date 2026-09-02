@@ -1254,7 +1254,7 @@ def run_agent():
     return jsonify({"run_id": run_id, "status": "started"})
 
 
-def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passes, custom_output, msg_queue, analyze_score_before=None, custom_bullets="", engine_mode="danis_engine", custom_company="", custom_role=""):
+def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passes, custom_output, msg_queue, analyze_score_before=None, custom_bullets="", engine_mode="danis_engine", custom_company="", custom_role="", direct_jd_text=""):
     """Execute pipeline in thread and push step logs to SSE queue."""
     # analyze_score_before: real score from Analyze step (Gemini/Simplify) — authoritative before score
     def send_log(step, stage, message, data=None, status="info"):
