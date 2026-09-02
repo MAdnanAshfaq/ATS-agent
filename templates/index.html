@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI Job Application Agent | Adnan</title>
   
-  <!-- Google Fonts: Outfit & Inter -->
+  <!-- Google Fonts: Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   
   <!-- FontAwesome 6 -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -18,19 +18,16 @@
 </head>
 <body>
 
-  <!-- Top Ambient Glow Elements -->
-  <div class="ambient-glow glow-purple"></div>
-  <div class="ambient-glow glow-cyan"></div>
-  <div class="ambient-glow glow-blue"></div>
+
 
   <!-- Header Navigation -->
   <header class="app-header">
     <div class="header-container">
       <div class="brand-logo">
-        <div class="logo-icon"><i class="fa-solid fa-robot"></i></div>
+        <div class="logo-icon">AJ</div>
         <div class="brand-text">
-          <span class="brand-name">AI Job Agent <span class="badge-v2">V2.0</span></span>
-          <span class="brand-sub">Adnan  ·  Dual ATS & HR Engine</span>
+          <span class="brand-name">ATS Agent</span>
+          <span class="brand-sub">Career Copilot by Adnan</span>
         </div>
       </div>
 
@@ -77,12 +74,11 @@
         <button class="btn btn-secondary btn-sm" onclick="switchTab('setup')">Fix Setup Now</button>
       </div>
 
-      <!-- Hero Header -->
+      <!-- Page Header -->
       <div class="hero-section">
-        <h1 class="hero-title">Paste Job URL. <span class="gradient-text">Get Tailored Resume.</span></h1>
+        <h1 class="hero-title">Paste a job URL. Get a tailored resume.</h1>
         <p class="hero-subtitle">
-          Scrapes full JD, analyzes keyword match score, rewrites experience with Gemini 2.5 Flash, 
-          runs 2-pass Wikipedia AI-detection cleanup, and outputs clean ATS Word document.
+          Scrapes the full job description, runs a 4-agent rewrite pipeline with human-voice auditing, and outputs a recruiter-clean Word document in under 15 seconds.
         </p>
       </div>
 
@@ -153,7 +149,7 @@
                   <span class="badge badge-success" style="font-size:11px; padding:3px 10px; border-radius:6px; background:#06b6d4; color:#fff; font-weight:700;">★ Recommended</span>
                 </label>
                 <select id="engine-mode-select" class="form-select" style="font-weight:600; margin-top:6px;">
-                  <option value="danis_engine" selected>⚡ Dani's Multi-Agent Engine (Researcher → Writer Rules 0-16 → Human Voice & Provenance Auditor → Editor)</option>
+                  <option value="danis_engine" selected>Dani's Multi-Agent Engine (Researcher → Writer Rules 0-16 → Auditor → Editor)</option>
                   <option value="standard">Standard Engine (Direct Rewrite + 2-Pass Tone Cleaner)</option>
                 </select>
                 <span class="option-hint" style="margin-top:6px; display:block; color:#64748b;">
