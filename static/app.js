@@ -205,12 +205,17 @@ async function startGeneration(opts = {}) {
   const engineModeElem = document.getElementById("engine-mode-select");
   const engineMode = engineModeElem ? engineModeElem.value : "danis_engine";
 
+  const customCompany = (analyzeCompany || document.getElementById("matrix-company-name")?.value || "").trim();
+  const customRole = (analyzeRole || document.getElementById("matrix-role-name")?.value || "").trim();
+
   try {
     const response = await fetch("/api/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         url,
+        custom_company: customCompany || undefined,
+        custom_role: customRole || undefined,
         custom_keywords: customKeywordsRaw || undefined,
         custom_bullets: customBulletsRaw || undefined,
         engine_mode: engineMode,
@@ -1631,9 +1636,17 @@ function renderSimplifyCard(data) {
   const resumeFile = document.getElementById("matrix-resume-filename");
 
   const cName = data.company || "Company";
-  if (compName) compName.innerText = cName;
+  const rName = data.role || "Job Role";
+
+  if (compName) {
+    if (compName.tagName === "INPUT") compName.value = cName;
+    else compName.innerText = cName;
+  }
   if (compAvatar) compAvatar.innerText = cName.substring(0, 3).toUpperCase();
-  if (roleName) roleName.innerText = data.role || "Job Role";
+  if (roleName) {
+    if (roleName.tagName === "INPUT") roleName.value = rName;
+    else roleName.innerText = rName;
+  }
   if (resumeFile) resumeFile.innerText = data.resume_name || "Haseeb_Khan_Resume";
 
   // 3. Job Title Row
@@ -1832,9 +1845,25 @@ function addMatrixManualChip() {
   input.value = "";
 }
 
+function onCompanyEdited(newVal) {
+  analyzeCompany = (newVal || "").trim();
+  const compAvatar = document.getElementById("matrix-company-avatar");
+  if (compAvatar && analyzeCompany) {
+    compAvatar.innerText = analyzeCompany.substring(0, 3).toUpperCase();
+  }
+}
+
+function onRoleEdited(newVal) {
+  analyzeRole = (newVal || "").trim();
+  const titleJd = document.getElementById("matrix-title-jd");
+  if (titleJd && analyzeRole) {
+    titleJd.innerText = analyzeRole;
+  }
+}
+
 function openCoverLetterFromAnalyze() {
-  const comp = analyzeCompany || document.getElementById("matrix-company-name")?.innerText || "";
-  const role = analyzeRole || document.getElementById("matrix-role-name")?.innerText || "";
+  const comp = (analyzeCompany || document.getElementById("matrix-company-name")?.value || document.getElementById("matrix-company-name")?.innerText || "").trim();
+  const role = (analyzeRole || document.getElementById("matrix-role-name")?.value || document.getElementById("matrix-role-name")?.innerText || "").trim();
   const url = document.getElementById("jd-url")?.value.trim() || "";
   generateOrViewHistoryCoverLetter(comp, role, "", url);
 }

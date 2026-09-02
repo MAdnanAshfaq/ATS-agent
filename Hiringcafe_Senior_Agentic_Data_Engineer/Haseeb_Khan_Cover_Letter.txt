@@ -1,0 +1,13 @@
+Haseeb Khan
+West Warwick, RI 02893
+mhaseeb.hk0@gmail.com | +1 5514121970
+
+Hiringcafe Engineering Team
+
+Scaling cloud-native data platforms and automated pipelines requires rigorous infrastructure management and battle-tested execution. Across eight years of building medallion lakehouse architectures on Azure, Databricks, and Microsoft Fabric, I have owned end-to-end data systems that handle complex partner integrations while enforcing strict security and reliability standards.
+
+At Strive Health, I designed and migrated bronze-to-gold ELT pipelines for 20 to 40 partner EHR, claims, and lab feeds covering over 100,000 members. Working closely with security and platform teams, I implemented automated data quality checks, T+8 hour freshness alerts, column-level security, and row-level access control across Fabric Warehouse and Power BI semantic models. I routinely tuned Spark jobs, partitioned tables, and managed on-call recovery to keep production clinical loads running reliably. 
+
+Previously at Cornerstone OnDemand, I built scalable Delta Lake medallion pipelines using PySpark and Spark SQL, ingesting incremental employee and course data via Auto Loader across 50+ customer tenants. I developed production dbt models with automated pull-request testing, applied Delta Lake MERGE for change-data updates, and tuned job clusters to cut runtime on nightly workloads. Furthermore, I built Algolia indexing jobs on curated tables to serve high-performance search under 200 ms.
+
+I bring deep technical execution in distributed data systems, CI/CD workflows, and reliable pipeline observability. I welcome the opportunity to discuss how my background in designing secure, high-performing data architectures applies to Hiringcafe's roadmap.

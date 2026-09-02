@@ -1,0 +1,16 @@
+Haseeb Khan
+West Warwick, RI 02893
+mhaseeb.hk0@gmail.com | +1 5514121970
+
+Beaconbiosignals Engineering Team
+
+Managing regulated clinical and physiological data requires rigorous schema design, strict data integrity, and resilient event pipelines—challenges I tackle daily scaling data platforms for 100,000+ patients under HIPAA and HITRUST controls. 
+
+At Strive Health, I built and scaled medallion architectures (bronze-to-gold ELT) across Azure and Microsoft Fabric, processing 20 to 40 partner EHR, claims, and lab feeds. I write complex SQL by hand, tune Spark jobs and warehouse capacity, and enforce strict correctness guarantees for clinical data movement. My background includes building incremental ingestion pipelines via Databricks Auto Loader, implementing row- and column-level security, and maintaining strict T+8 hour freshness SLAs with automated failure alerting and on-call recovery. 
+
+Earlier at Cornerstone OnDemand, I engineered 25 to 40 production dbt models in SQL with automated pull-request testing, and used Delta Lake MERGE logic to handle late-arriving HR and learning feeds reliably under partial failure. 
+
+I would welcome the opportunity to discuss how my hands-on backend data platform experience applies to Beaconbiosignals's Datastore scaling roadmap.
+
+Best regards,
+Haseeb Khan

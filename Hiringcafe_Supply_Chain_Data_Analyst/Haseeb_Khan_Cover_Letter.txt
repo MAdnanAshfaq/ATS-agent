@@ -1,0 +1,14 @@
+Haseeb Khan
+West Warwick, RI 02893 | +1 5514121970 | mhaseeb.hk0@gmail.com
+
+Hiringcafe Hiring Team
+
+Building production data systems on Databricks and Delta Lake is core to how I have scaled medallion architectures over the last 8 years. For your Supply Chain Data Analyst role, I bring hands-on expertise in PySpark, Spark SQL, and SQL-driven analytics engineering that maps directly to your technical requirements.
+
+At Strive Health, I built medallion lakehouse pipelines moving EHR, claims, and lab feeds from Azure into Microsoft Fabric and Databricks, owning silver-to-gold transforms, data quality rules, and automated freshness alerts. Previously at Cornerstone OnDemand, I engineered bronze-to-gold Delta Lake pipelines using PySpark and Spark SQL, implementing Auto Loader for incremental ingestion across 50+ customer tenants. I built 25 to 40 production dbt models with incremental logic, automated test suites on pull requests, and Delta Lake MERGE updates for late or re-sent files, alongside Algolia indexing to serve search queries under 200 ms. 
+
+I am eager to bring my production delivery experience with Databricks, Delta Lake, and complex dataset modeling to Hiringcafe to help scale your analytics and data operations. 
+
+Best regards,
+
+Haseeb Khan

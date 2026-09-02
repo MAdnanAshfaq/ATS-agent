@@ -247,9 +247,15 @@
             <div class="matrix-cell-jd">
               <div class="matrix-job-card">
                 <div class="matrix-company-avatar" id="matrix-company-avatar">ALT</div>
-                <div>
-                  <div class="matrix-company-name" id="matrix-company-name">Alt</div>
-                  <div class="matrix-role-name" id="matrix-role-name">Data Engineer</div>
+                <div style="flex:1; min-width:0;">
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <input type="text" id="matrix-company-name" class="matrix-company-name" value="Alt" placeholder="Company Name" oninput="onCompanyEdited(this.value)" title="Click to edit Company Name" />
+                    <i class="fa-solid fa-pen-to-square" style="font-size:11px; color:#94a3b8;" title="Company name is editable"></i>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:6px; margin-top:2px;">
+                    <input type="text" id="matrix-role-name" class="matrix-role-name" value="Data Engineer" placeholder="Role Title" oninput="onRoleEdited(this.value)" title="Click to edit Job Title" />
+                    <i class="fa-solid fa-pen-to-square" style="font-size:10px; color:#94a3b8;" title="Role title is editable"></i>
+                  </div>
                 </div>
               </div>
             </div>

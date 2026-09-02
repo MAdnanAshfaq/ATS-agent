@@ -1,0 +1,15 @@
+Haseeb Khan
+West Warwick, RI 02893
+mhaseeb.hk0@gmail.com | +1 5514121970
+
+ClassLink Engineering Team
+ClassLink
+
+Scaling secure, high-throughput data pipelines and cloud platforms for millions of active educational users requires rigorous architecture, bulletproof governance, and automated reliability. At Strive Health, I built and migrated the enterprise medallion lakehouse on Azure, Databricks, and Microsoft Fabric, designing silver-to-gold pipelines that process complex EHR, claims, and lab feeds for over 100,000 members under strict HIPAA and HITRUST compliance controls. 
+
+Throughout my 8 years as a data engineer, I have owned data architecture end-to-end—from automated incremental ingestion and Python-based transformations to dbt model testing, semantic layer modeling, and production on-call recovery. At Cornerstone OnDemand, I implemented automated dbt models and Delta Lake incremental merges to process high-volume HRIS and LMS feeds, cutting runtimes and guaranteeing strict data freshness. Bringing this background in distributed data pipelines, strict CI/CD testing, observability, and technical leadership allows me to design reliable, scalable cloud platforms that support ClassLink’s data-driven educational tools.
+
+I welcome the opportunity to discuss how my engineering background maps to ClassLink’s architecture roadmap.
+
+Best regards,
+Haseeb Khan

@@ -1,0 +1,12 @@
+Haseeb Khan
+West Warwick, RI 02893
+mhaseeb.hk0@gmail.com | +1 5514121970
+
+Hiring Team
+Nortal
+
+Building scalable data pipelines and financial reporting services for global merchants requires the exact kind of high-reliability ELT and data modeling background I have spent the last 8 years refining. At Strive Health, I built and managed medallion lakehouse pipelines processing complex EHR, claims, and financial feeds for 100,000+ members under strict HIPAA and HITRUST compliance controls, pairing robust Python and SQL architectures with rigorous data quality and T+8 hour freshness SLAs.
+
+My engineering track record is rooted in measurable impact. At Strive Health, I developed bronze-to-gold pipelines using PySpark, Spark SQL, and Synapse SQL, migrating core workloads smoothly to Microsoft Fabric and OneLake while applying row-level security and incremental refresh strategies for 10+ payor partners. Earlier at Cornerstone OnDemand, I engineered automated ingestion pipelines across 50+ customer tenants, building 25-40 production dbt models in SQL with automated pull-request tests and Delta Lake MERGE logic to handle late or re-sent data feeds without missing a beat. I am equally comfortable stepping into on-call rotations to triage and recover failed loads, maintaining production uptime, and integrating AI coding assistants like Claude into my day-to-day workflow to accelerate development and pull request reviews.
+
+I would welcome the opportunity to discuss how my hands-on data engineering and reporting expertise aligns with Nortal's roadmap for merchant settlement and transaction reporting.

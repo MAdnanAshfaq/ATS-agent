@@ -1218,6 +1218,8 @@ def start_run():
     """Start pipeline generation run and return run_id for streaming."""
     data = request.json or {}
     url = data.get("url", "").strip()
+    custom_company = data.get("custom_company", "").strip()
+    custom_role = data.get("custom_role", "").strip()
     custom_keywords = data.get("custom_keywords", "")
     custom_bullets = data.get("custom_bullets", "")
     engine_mode = data.get("engine_mode", "danis_engine")
@@ -1236,7 +1238,7 @@ def start_run():
     # Start background thread for execution
     thread = threading.Thread(
         target=_execute_agent_pipeline,
-        args=(run_id, url, custom_keywords, no_simplify, passes, custom_output, msg_queue, score_before, custom_bullets, engine_mode),
+        args=(run_id, url, custom_keywords, no_simplify, passes, custom_output, msg_queue, score_before, custom_bullets, engine_mode, custom_company, custom_role),
         daemon=True,
     )
     thread.start()
@@ -1244,7 +1246,7 @@ def start_run():
     return jsonify({"run_id": run_id, "status": "started"})
 
 
-def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passes, custom_output, msg_queue, analyze_score_before=None, custom_bullets="", engine_mode="danis_engine"):
+def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passes, custom_output, msg_queue, analyze_score_before=None, custom_bullets="", engine_mode="danis_engine", custom_company="", custom_role=""):
     """Execute pipeline in thread and push step logs to SSE queue."""
     # analyze_score_before: real score from Analyze step (Gemini/Simplify) — authoritative before score
     def send_log(step, stage, message, data=None, status="info"):
@@ -1277,17 +1279,22 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
         
         if is_direct_text:
             jd_text = url
-            company = "Target Company"
-            role = "Data Engineer"
-            first_line = jd_text.strip().split("\n")[0][:80]
-            if " at " in first_line:
-                parts = first_line.split(" at ", 1)
-                role = clean_role_title(parts[0].strip())
-                company = parts[1].strip()
-            elif " - " in first_line:
-                parts = first_line.split(" - ", 1)
-                role = clean_role_title(parts[0].strip())
-                company = parts[1].strip()
+            company = custom_company or "Target Company"
+            role = clean_role_title(custom_role) if custom_role else "Data Engineer"
+            if not custom_company or not custom_role:
+                first_line = jd_text.strip().split("\n")[0][:80]
+                if " at " in first_line:
+                    parts = first_line.split(" at ", 1)
+                    if not custom_role:
+                        role = clean_role_title(parts[0].strip())
+                    if not custom_company:
+                        company = parts[1].strip()
+                elif " - " in first_line:
+                    parts = first_line.split(" - ", 1)
+                    if not custom_role:
+                        role = clean_role_title(parts[0].strip())
+                    if not custom_company:
+                        company = parts[1].strip()
             no_simplify = True
             send_log(2, "Scrape JD", f"Using direct Job Description text ({len(jd_text):,} chars)",
                      data={"company": company, "role": role, "jd_length": len(jd_text)}, status="success")
@@ -1295,8 +1302,8 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
             send_log(2, "Scrape JD", f"Extracting job description from {url}...", status="working")
             cached_analysis = GLOBAL_ANALYSIS_CACHE.get(url)
             if cached_analysis and len(cached_analysis.get("jd_text", "")) >= 800:
-                company = cached_analysis["company"]
-                role = clean_role_title(cached_analysis["role"])
+                company = custom_company or cached_analysis["company"]
+                role = clean_role_title(custom_role) if custom_role else clean_role_title(cached_analysis["role"])
                 jd_text = cached_analysis["jd_text"]
                 jd_chars = len(jd_text)
                 send_log(2, "Scrape JD",
@@ -1305,8 +1312,8 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                          status="success")
             else:
                 jd_data = scrape_jd_sync(url)
-                company = jd_data["company"]
-                role = clean_role_title(jd_data["role"])
+                company = custom_company or jd_data["company"]
+                role = clean_role_title(custom_role) if custom_role else clean_role_title(jd_data["role"])
                 jd_text = jd_data["jd_text"]
                 jd_chars = len(jd_text)
 
@@ -1334,29 +1341,15 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                     "jd_length": jd_chars,
                 }, status=jd_status)
 
-            if jd_chars < 800:
-                send_log(2, "Scrape JD",
-                         f"❌ JD validation FAILED: Only {jd_chars} chars extracted — likely a bot-block page. "
-                         "Halting pipeline. Please paste the job description text manually into the "
-                         "'Missing Keywords' field and retry.",
-                         data={"jd_length": jd_chars, "company": company, "role": role},
-                         status="error")
-                raise RuntimeError(
-                    f"JD validation failed: only {jd_chars} chars extracted — "
-                    "the site likely returned a 403/bot-block page. Paste the JD text manually."
-                )
+        # Apply custom overrides and sync in memory cache
+        if custom_company:
+            company = custom_company
+        if custom_role:
+            role = clean_role_title(custom_role)
 
-            jd_status = "success"
-            jd_msg = f"Extracted {jd_chars:,} chars for {role} at {company}"
-            if jd_chars < 1500:
-                jd_status = "warning"
-                jd_msg += f" (⚠ short extract — may be partial)"
-
-            send_log(2, "Scrape JD", jd_msg, data={
-                "company": company,
-                "role": role,
-                "jd_length": jd_chars,
-            }, status=jd_status)
+        if url in GLOBAL_ANALYSIS_CACHE:
+            GLOBAL_ANALYSIS_CACHE[url]["company"] = company
+            GLOBAL_ANALYSIS_CACHE[url]["role"] = role
 
         # Step 3: Parse custom keywords OR Simplify ATS score OR local keyword extraction
         missing_keywords = []

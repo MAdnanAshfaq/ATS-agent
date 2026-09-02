@@ -1,0 +1,18 @@
+March 29, 2026
+
+Hing Hiring Team
+Remote, United States
+West Warwick, RI 02893
+mhaseeb.hk0@gmail.com | +1 5514121970
+
+Building reliable data pipelines and scalable data layers for complex business requirements is what I’ve done for the past eight years across healthcare and tech data ecosystems. 
+
+At Strive Health, I owned end-to-end data pipelines and bronze-to-gold architectures on Azure and Microsoft Fabric, moving complex EHR, claims, and lab feeds for 100,000+ members. I built gold marts in Spark SQL and Warehouse T-SQL, enforced strict governance and compliance controls like column-level security and row-level security, and maintained T+8 hour freshness SLAs with automated pipeline alerting. 
+
+Previously at Cornerstone OnDemand, I built Databricks medallion pipelines in PySpark and Spark SQL on Delta Lake, ingesting incremental REST and API data across 50+ customer tenants. I developed production dbt models in SQL with incremental logic and automated tests running on pull requests, and used Delta Lake MERGE for change-data updates on late-arriving files. I also tuned job clusters and table partitioning to cut runtime on nightly loads, and built indexing jobs serving search under 200 ms while turning recurring stakeholder report requests into governed gold tables. 
+
+I understand how data changes flow through a broader ecosystem, and I translate complex business needs into reusable, scalable data capabilities. I welcome the opportunity to discuss how my end-to-end pipeline ownership and data modeling experience map to Remote, United States's roadmap.
+
+Best regards,
+
+Haseeb Khan
