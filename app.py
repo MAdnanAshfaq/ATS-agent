@@ -806,7 +806,7 @@ def analyze_job():
         return jsonify({"error": "Please enter a job URL or paste the job description text."}), 400
 
     # Detect if user pasted direct job description text instead of a URL
-    is_direct_text = bool(direct_jd_text and len(direct_jd_text) >= 100) or ("\n" in url) or (" " in url and len(url.split()) > 5) or (not url.startswith(("http://", "https://")) and not ("." in url and "/" in url))
+    is_direct_text = bool(direct_jd_text and len(direct_jd_text) >= 20) or ("\n" in url) or (" " in url and len(url.split()) > 5) or (not url.startswith(("http://", "https://")) and not ("." in url and "/" in url))
 
     try:
         import asyncio
@@ -817,7 +817,7 @@ def analyze_job():
         base_resume = load_base_resume()
 
         if is_direct_text:
-            jd_text = direct_jd_text if (direct_jd_text and len(direct_jd_text) >= 100) else url
+            jd_text = direct_jd_text if (direct_jd_text and len(direct_jd_text) >= 20) else url
             company = custom_company or "Target Company"
             role = clean_role_title(custom_role) if custom_role else "Data Engineer"
             no_simplify = True  # Simplify extension requires a browser URL
@@ -1285,7 +1285,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
         # Step 2: Scrape JD (checks memory & disk cache first, or uses direct text)
         is_direct_text = ("\n" in url) or (" " in url and len(url.split()) > 5) or (not url.startswith(("http://", "https://")) and not ("." in url and "/" in url))
         
-        if direct_jd_text and len(direct_jd_text) >= 100:
+        if direct_jd_text and len(direct_jd_text) >= 20:
             jd_text = direct_jd_text
             company = custom_company or "Target Company"
             role = clean_role_title(custom_role) if custom_role else "Data Engineer"
