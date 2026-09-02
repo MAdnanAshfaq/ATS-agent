@@ -76,9 +76,10 @@
 
       <!-- Page Header -->
       <div class="hero-section">
-        <h1 class="hero-title">Paste a job URL. Get a tailored resume.</h1>
+        <div class="hero-badge"><i class="fa-solid fa-bolt"></i> Autonomous Resume Tailoring Pipeline</div>
+        <h1 class="hero-title">Cross-check ATS keywords and tailor your resume in seconds.</h1>
         <p class="hero-subtitle">
-          Scrapes the full job description, runs a 4-agent rewrite pipeline with human-voice auditing, and outputs a recruiter-clean Word document in under 15 seconds.
+          Scrapes the live job description, audits keyword gaps, and rewrites bullet points adhering to human-voice rules in under 15 seconds.
         </p>
       </div>
 
@@ -192,6 +193,48 @@
           </div>
 
         </form>
+      </div>
+
+      <!-- System Architecture & Profile Status (Executive Overview) -->
+      <div class="workspace-features-grid" id="workspace-features-grid">
+        <div class="feature-card">
+          <div class="feature-card-header">
+            <div class="feature-icon-badge"><i class="fa-solid fa-user-check"></i></div>
+            <span class="feature-status-tag tag-ready">Profile Active</span>
+          </div>
+          <h3 class="feature-title">Master Resume Synced</h3>
+          <p class="feature-desc">Grounds every generated bullet point in your verified experience. Zero hallucinations, zero invented roles.</p>
+          <div class="feature-meta">
+            <span><i class="fa-regular fa-file-word"></i> Haseeb_Khan_Resume.docx</span>
+            <button type="button" class="feature-link-btn" onclick="switchTab('resume')">Edit Profile →</button>
+          </div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-card-header">
+            <div class="feature-icon-badge"><i class="fa-solid fa-brain"></i></div>
+            <span class="feature-status-tag tag-ready">Engine v2.0</span>
+          </div>
+          <h3 class="feature-title">4-Agent Tailoring Pipeline</h3>
+          <p class="feature-desc">Researcher extracts requirements, Writer applies Rules 0–16, Auditor filters AI tone clichés, Editor finalizes format.</p>
+          <div class="feature-meta">
+            <span><i class="fa-solid fa-microchip"></i> Gemini 2.5 Flash Active</span>
+            <button type="button" class="feature-link-btn" onclick="switchTab('setup')">Settings →</button>
+          </div>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-card-header">
+            <div class="feature-icon-badge"><i class="fa-solid fa-bullseye"></i></div>
+            <span class="feature-status-tag tag-ready">Dual Gate</span>
+          </div>
+          <h3 class="feature-title">ATS & Recruiter Verification</h3>
+          <p class="feature-desc">Calculates semantic keyword coverage and validates burstiness and formatting before generating Word & PDF.</p>
+          <div class="feature-meta">
+            <span><i class="fa-solid fa-shield-check"></i> 100% Recruiter Clean</span>
+            <button type="button" class="feature-link-btn" onclick="switchTab('history')">View History →</button>
+          </div>
+        </div>
       </div>
 
       <!-- Simplify ATS Match Matrix Card (Side-by-Side Comparison UI) -->
@@ -437,10 +480,10 @@
 
         <!-- Primary Action Row -->
         <div class="matrix-action-bar">
-          <button type="button" class="btn btn-primary btn-lg" id="matrix-generate-btn" onclick="generateWithSelectedKeywords()" style="font-size:15px; padding:14px 28px; border-radius:30px; box-shadow:0 8px 24px rgba(6,182,212,0.35);">
-            <i class="fa-solid fa-bolt"></i> Auto-Tailor Resume with Injected (<span id="matrix-btn-kw-count">0</span>) Keywords (1-Click)
+          <button type="button" class="btn btn-primary btn-lg" id="matrix-generate-btn" onclick="generateWithSelectedKeywords()">
+            <i class="fa-solid fa-bolt"></i> Auto-Tailor Resume with Injected (<span id="matrix-btn-kw-count">0</span>) Keywords
           </button>
-          <button type="button" class="btn btn-outline btn-lg" onclick="openCoverLetterFromAnalyze()" style="font-size:15px; padding:14px 24px; border-radius:30px; color:#0f172a; border-color:#cbd5e1;">
+          <button type="button" class="btn btn-secondary btn-lg" onclick="openCoverLetterFromAnalyze()">
             <i class="fa-solid fa-file-pen"></i> Generate Recruiter Cover Letter
           </button>
         </div>
@@ -839,7 +882,7 @@
           <button id="ai-lab-tab-detect-btn" class="btn btn-primary btn-sm" onclick="switchAiLabMode('detect')" style="padding:10px 22px; font-size:14px; border-radius:30px;">
             <i class="fa-solid fa-magnifying-glass-chart"></i> AI Text Detector
           </button>
-          <button id="ai-lab-tab-humanize-btn" class="btn btn-outline btn-sm" onclick="switchAiLabMode('humanize')" style="padding:10px 22px; font-size:14px; border-radius:30px;">
+          <button id="ai-lab-tab-humanize-btn" class="btn btn-secondary btn-sm" onclick="switchAiLabMode('humanize')">
             <i class="fa-solid fa-wand-magic-sparkles"></i> Text Humanizer Studio
           </button>
         </div>
@@ -853,11 +896,11 @@
 
           <!-- Left — Input & Config -->
           <div class="glass-card ai-lab-input-card">
-            <div class="section-header" style="margin-bottom:16px;">
-              <div class="section-icon" style="background:linear-gradient(135deg,#f59e0b,#ef4444);"><i class="fa-solid fa-flask-vial"></i></div>
+            <div class="section-header" style="margin-bottom:16px; display:flex; align-items:center; gap:12px;">
+              <div class="feature-icon-badge"><i class="fa-solid fa-flask-vial"></i></div>
               <div>
-                <div class="section-title">Text to Analyze</div>
-                <div class="section-sub">Paste any paragraph, resume bullet, email, or essay</div>
+                <div class="section-title" style="font-weight:700; font-size:14.5px;">Text to Analyze</div>
+                <div class="section-sub" style="font-size:12px; color:var(--t2);">Paste any paragraph, resume bullet, email, or essay</div>
               </div>
             </div>
 
@@ -1031,11 +1074,11 @@
 
           <!-- Left — Input Text & Options -->
           <div class="glass-card ai-lab-input-card">
-            <div class="section-header" style="margin-bottom:16px;">
-              <div class="section-icon" style="background:linear-gradient(135deg,#8b5cf6,#ec4899);"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+            <div class="section-header" style="margin-bottom:16px; display:flex; align-items:center; gap:12px;">
+              <div class="feature-icon-badge"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
               <div>
-                <div class="section-title">AI Text to Humanize</div>
-                <div class="section-sub">Rewrites with natural burstiness & removes robotic AI patterns</div>
+                <div class="section-title" style="font-weight:700; font-size:14.5px;">AI Text to Humanize</div>
+                <div class="section-sub" style="font-size:12px; color:var(--t2);">Rewrites with natural burstiness & removes robotic AI patterns</div>
               </div>
             </div>
 
@@ -1058,18 +1101,18 @@
               </select>
             </div>
 
-            <button class="btn btn-primary" id="humanize-run-btn" onclick="runHumanizer()" style="width:100%; margin-top:20px; font-size:15px; padding:14px; background:linear-gradient(135deg,#8b5cf6,#ec4899); border:none;">
+            <button class="btn btn-primary" id="humanize-run-btn" onclick="runHumanizer()" style="width:100%; margin-top:20px; font-size:14.5px; padding:12px;">
               <i class="fa-solid fa-wand-magic-sparkles"></i> Humanize Text Now
             </button>
           </div>
 
           <!-- Right — Humanized Output -->
           <div class="glass-card ai-lab-result-card">
-            <div class="section-header" style="margin-bottom:16px;">
-              <div class="section-icon" style="background:linear-gradient(135deg,#10b981,#06b6d4);"><i class="fa-solid fa-check-double"></i></div>
+            <div class="section-header" style="margin-bottom:16px; display:flex; align-items:center; gap:12px;">
+              <div class="feature-icon-badge"><i class="fa-solid fa-check-double"></i></div>
               <div>
-                <div class="section-title">Humanized Result</div>
-                <div class="section-sub" id="humanize-engine-badge">Engine: Gemini / Llama-3 Anti-Detection</div>
+                <div class="section-title" style="font-weight:700; font-size:14.5px;">Humanized Result</div>
+                <div class="section-sub" id="humanize-engine-badge" style="font-size:12px; color:var(--t2);">Engine: Gemini Anti-Detection</div>
               </div>
             </div>
 
@@ -1095,10 +1138,10 @@
               ></textarea>
 
               <div style="display:flex; gap:10px; margin-top:16px; flex-wrap:wrap;">
-                <button class="btn btn-outline btn-sm" onclick="copyHumanizedText()" style="flex:1; padding:10px;">
+                <button class="btn btn-secondary btn-sm" onclick="copyHumanizedText()" style="flex:1; padding:10px;">
                   <i class="fa-solid fa-copy"></i> Copy Output
                 </button>
-                <button class="btn btn-primary btn-sm" onclick="testHumanizedInDetector()" style="flex:1.2; padding:10px; background:linear-gradient(135deg,#06b6d4,#10b981); border:none;">
+                <button class="btn btn-primary btn-sm" onclick="testHumanizedInDetector()" style="flex:1.2; padding:10px;">
                   <i class="fa-solid fa-shield-halved"></i> Test in AI Detector
                 </button>
               </div>
@@ -1107,11 +1150,11 @@
           </div>
 
         </div>
-      </div>> = AI-generated, <code>Real</code> = Human.
-          The model uses HuggingFace Inference API — your text is sent securely to HuggingFace's servers (not to Gemini, not to the ATS pipeline).
-          <br><br>
-          <strong style="color:var(--text-primary);">HF Key:</strong> Add <code>HF_API_KEY=hf_xxxx</code> to your <code>.env</code> file to avoid entering it each time.
-        </div>
+      </div>
+      <div style="margin-top:20px; padding:14px 18px; border-radius:var(--r-md); background:var(--surface-inset); border:1px solid var(--border-base); font-size:12px; color:var(--t2); line-height:1.6;">
+        <i class="fa-solid fa-shield-halved" style="color:var(--accent); margin-right:6px;"></i>
+        The model uses HuggingFace Inference API — your text is analyzed securely.
+        <span style="display:block; margin-top:4px;"><strong>HF Key:</strong> Add <code>HF_API_KEY=hf_xxxx</code> to your <code>.env</code> file to enable local detector calls without manual entry.</span>
       </div>
     </section>
 

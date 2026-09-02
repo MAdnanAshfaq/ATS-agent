@@ -37,6 +37,8 @@ ENV_PATH = BASE_DIR / ".env"
 RESUME_PATH = BASE_DIR / "base_resume.json"
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
+app.config["TEMPLATES_AUTO_RELOAD"] = True
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 CORS(app)
 
 # Active background runs & message queues for SSE
