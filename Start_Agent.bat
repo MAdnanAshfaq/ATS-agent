@@ -15,9 +15,17 @@ cd /d "%~dp0"
 :: ===========================================================
 :: STEP 1: Check Python
 :: ===========================================================
-echo [1/4] Checking Python...
+echo [1/4] Checking Python environment...
 
 set PYTHON_CMD=
+if exist ".venv\Scripts\python.exe" (
+    set PYTHON_CMD=.venv\Scripts\python.exe
+    goto :python_found
+)
+if exist "venv\Scripts\python.exe" (
+    set PYTHON_CMD=venv\Scripts\python.exe
+    goto :python_found
+)
 where py >nul 2>&1
 if not errorlevel 1 (
     set PYTHON_CMD=py
@@ -85,6 +93,7 @@ if exist "requirements.txt" (
         pywin32 ^
         docx2pdf ^
         nest_asyncio ^
+        requests ^
         --quiet 2>&1
 )
 

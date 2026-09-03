@@ -12,3 +12,4 @@ pypdf
 pywin32
 docx2pdf
 nest_asyncio
+requests
