@@ -56,13 +56,16 @@ PLATFORM_SELECTORS = {
     },
     "ashbyhq.com": {
         "jd": [
-            "div[class*='job-posting']",
+            "div[class*='ashby-job-posting']",
+            "div[class*='JobPosting']",
+            "div[class*='jobPosting']",
             "div[class*='posting']",
+            "div[class*='job-description']",
             "main",
             "#app",
         ],
-        "title": ["h1"],
-        "company": ["h2", "[class*='company']"],
+        "title": ["h1", "h1[class*='title']", "title"],
+        "company": ["h2", "[class*='company']", "[class*='organization']"],
     },
     "notion.site": {
         "jd": ["main", ".notion-scroller", ".notion-page-content", "body"],
@@ -389,6 +392,136 @@ def fetch_notion_via_api(url: str) -> Optional[dict]:
     return None
 
 
+def fetch_json_ld_via_http(url: str) -> Optional[dict]:
+    """
+    Fast, reliable HTTP fetch that extracts Schema.org/JobPosting JSON-LD.
+    Used by AshbyHQ, Lever, Greenhouse, and major ATS platforms.
+    Bypasses headless browser bot-detection entirely in 150ms.
+    """
+    try:
+        import urllib.request
+        from bs4 import BeautifulSoup
+        import json
+
+        check_url = url
+        if "ashbyhq.com" in check_url and check_url.endswith("/application"):
+            check_url = check_url[:-12]
+
+        req = urllib.request.Request(
+            check_url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+            }
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            html = resp.read().decode("utf-8", errors="ignore")
+
+        soup = BeautifulSoup(html, "lxml")
+        for s in soup.find_all("script", type="application/ld+json"):
+            raw = s.string or s.get_text()
+            if not raw or "JobPosting" not in raw:
+                continue
+            try:
+                data = json.loads(raw)
+                items = []
+                if isinstance(data, list):
+                    items = data
+                elif isinstance(data, dict):
+                    if "@graph" in data:
+                        items = data["@graph"]
+                    else:
+                        items = [data]
+                for item in items:
+                    if isinstance(item, dict) and item.get("@type") in ("JobPosting", "http://schema.org/JobPosting", "https://schema.org/JobPosting"):
+                        title = clean_role_title(item.get("title", "").strip())
+                        org = item.get("hiringOrganization", {})
+                        company = ""
+                        if isinstance(org, dict):
+                            company = org.get("name", "").strip()
+                        elif isinstance(org, str):
+                            company = org.strip()
+                        if not company:
+                            company = extract_company_from_url(url)
+
+                        desc = item.get("description", "")
+                        if desc:
+                            d_soup = BeautifulSoup(desc, "lxml")
+                            clean_desc = clean_text(d_soup.get_text("\n"))
+                            if len(clean_desc) >= 500:
+                                folder_name = f"{slugify(company)}_{slugify(title)}"[:80]
+                                return {
+                                    "url": url,
+                                    "company": company,
+                                    "role": title,
+                                    "jd_text": clean_desc,
+                                    "folder_name": folder_name,
+                                }
+            except Exception:
+                continue
+    except Exception as e:
+        print(f"[Scraper] JSON-LD HTTP fetch note: {e}")
+    return None
+
+
+async def solve_captcha_interactively(p, url: str) -> Optional[str]:
+    """
+    When headless Playwright hits a CAPTCHA or Cloudflare challenge,
+    launches a visible browser window on screen so the user can solve it immediately.
+    Monitors the page until genuine job description content is detected.
+    """
+    print(f"[Scraper] 🛡 Security challenge / CAPTCHA detected. Launching visible browser for interactive resolution...")
+    try:
+        browser = await p.chromium.launch(
+            headless=False,
+            args=[
+                '--no-sandbox',
+                '--disable-blink-features=AutomationControlled',
+            ]
+        )
+        context = await browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/125.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1280, "height": 850},
+        )
+        page = await context.new_page()
+        try:
+            await page.goto(url, wait_until="domcontentloaded", timeout=25000)
+        except Exception:
+            pass
+
+        print("[Scraper] 👁 Browser window is open on your desktop. If a captcha/human check is present, please solve it...")
+
+        # Poll up to 30 seconds (20 checks * 1.5s)
+        for _ in range(20):
+            await asyncio.sleep(1.5)
+            try:
+                content = await page.content()
+                soup = BeautifulSoup(content, 'lxml')
+                for tag in soup.find_all(['script', 'style', 'nav', 'header', 'footer', 'noscript', 'iframe', 'svg']):
+                    tag.decompose()
+                txt = clean_text(soup.get_text('\n'))
+                is_valid, _ = validate_jd_extraction(txt)
+                if is_valid and len(txt) >= 800:
+                    print(f"[Scraper] ✅ Captcha challenge resolved successfully! Captured {len(txt)} characters.")
+                    await context.close()
+                    await browser.close()
+                    return content
+            except Exception:
+                pass
+
+        print("[Scraper] Interactive verification window closed or timed out.")
+        await context.close()
+        await browser.close()
+    except Exception as e:
+        print(f"[Scraper] Interactive verification note: {e}")
+    return None
+
+
 # ─── Intelligent Job Description Cache ───────────────────────────────────────
 import json
 import time
@@ -484,6 +617,14 @@ async def scrape_jd(url: str, force_refresh: bool = False) -> dict:
             save_cached_jd(scrape_url, notion_data)
             return notion_data
 
+    # Fast path for Schema.org/JobPosting JSON-LD (AshbyHQ, Lever, Greenhouse, etc.)
+    json_ld_data = fetch_json_ld_via_http(scrape_url)
+    if json_ld_data and len(json_ld_data.get("jd_text", "")) >= 500:
+        print(f"[Scraper] ⚡ Extracted verified JobPosting JSON-LD for {json_ld_data.get('role')} at {json_ld_data.get('company')} ({len(json_ld_data.get('jd_text'))} chars)")
+        save_cached_jd(scrape_url, json_ld_data)
+        save_cached_jd(url, json_ld_data)
+        return json_ld_data
+
     print(f"[Scraper] Opening: {scrape_url}")
     platform = detect_platform(scrape_url)
     if platform:
@@ -539,6 +680,17 @@ async def scrape_jd(url: str, force_refresh: bool = False) -> dict:
             main_html = ""
             title = ""
 
+        # Check if headless Playwright hit a bot-block / captcha challenge
+        is_blocked = False
+        try:
+            body_txt = (await page.inner_text("body") or "").lower()
+            for sig in ["verify you are human", "let's confirm you are human", "attention required", "checking your browser before accessing", "security check to continue", "human verification", "captcha"]:
+                if sig in body_txt and len(body_txt) < 1500:
+                    is_blocked = True
+                    break
+        except Exception:
+            pass
+
         for frame in page.frames:
             if frame != page.main_frame:
                 try:
@@ -554,6 +706,14 @@ async def scrape_jd(url: str, force_refresh: bool = False) -> dict:
         print(f"[Scraper DEBUG] Raw HTML fetched len: {len(html)}")
         await context.close()
         await browser.close()
+
+        # If headless mode hit a verification challenge, open interactive browser window immediately
+        if is_blocked:
+            interactive_html = await solve_captcha_interactively(p, scrape_url)
+            if interactive_html:
+                main_html = interactive_html
+                html_chunks = [interactive_html]
+                html = interactive_html
     
     # Parse each HTML chunk with BeautifulSoup to extract the richest content (e.g. from embedded Greenhouse/Lever frames)
     best_jd_text = ""
@@ -564,12 +724,14 @@ async def scrape_jd(url: str, force_refresh: bool = False) -> dict:
         if not chunk or len(chunk) < 200:
             continue
         c_soup = BeautifulSoup(chunk, 'lxml')
-        for tag in c_soup.find_all(['script', 'style', 'nav', 'header', 'footer', 'iframe', 'svg']):
+        for tag in c_soup.find_all(['script', 'style', 'nav', 'header', 'footer', 'noscript', 'iframe', 'svg']):
             tag.decompose()
         
         # Check platform and generic selectors on this frame
         frame_text = ""
-        for sel in ["#content", ".content", "#app", "main", "article", "[class*='job-description']", "[id*='content']", "body"]:
+        platform_sels = PLATFORM_SELECTORS.get(platform, {}).get("jd", []) if platform else []
+        combined_sels = platform_sels + ["#content", ".content", "#app", "main", "article", "[class*='job-description']", "[id*='content']", "body"]
+        for sel in combined_sels:
             el = c_soup.select_one(sel)
             if el:
                 candidate_txt = el.get_text(separator='\n').strip()
