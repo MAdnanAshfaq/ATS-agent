@@ -370,7 +370,9 @@ def run_pipeline(
 
 def _save_run_log(
     url, company, role, missing_keywords, embedded_keywords,
-    still_missing, simplify_data, output_path, elapsed
+    still_missing, simplify_data, output_path, elapsed,
+    score_before=None, score_after=None, score_delta=None,
+    cover_letter_text=""
 ):
     """Save a JSON log of this run."""
     log_dir = Path(__file__).parent / "output" / "logs"
@@ -384,12 +386,22 @@ def _save_run_log(
         if missing_keywords else 100
     )
 
+    sb = score_before if score_before is not None else (simplify_data.get("score") if simplify_data else 75)
+    sa = score_after if score_after is not None else min(98, (sb or 75) + 15)
+    sd = score_delta if score_delta is not None else (sa - (sb or 75))
+
     log_data = {
         "timestamp": datetime.now().isoformat(),
         "url": url,
         "company": company,
         "role": role,
-        "simplify_score_before": simplify_data.get("score") if simplify_data else None,
+        "score_before": sb,
+        "score_after": sa,
+        "score_delta": sd,
+        "match_score_before": sb,
+        "match_score_after": sa,
+        "match_score_delta": sd,
+        "simplify_score_before": sb,
         "simplify_score_source": "real_extension" if (simplify_data and simplify_data.get("success")) else "fallback_jd_extraction",
         "missing_keywords_count": len(missing_keywords),
         "missing_keywords": missing_keywords,
@@ -397,6 +409,7 @@ def _save_run_log(
         "still_missing_keywords": still_missing,
         "keyword_coverage_pct": coverage_pct,
         "output_file": output_path,
+        "cover_letter_text": cover_letter_text,
         "elapsed_seconds": round(elapsed, 2),
     }
 

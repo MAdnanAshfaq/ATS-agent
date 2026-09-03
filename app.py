@@ -637,7 +637,45 @@ def _delete_single_history_log(filename: str) -> bool:
         return True
     except Exception as e:
         print(f"[History Delete Error] {filename}: {e}")
-        return False
+@app.route("/api/history/<filename>", methods=["PUT", "POST"])
+@app.route("/api/history/update", methods=["POST"])
+def update_history_item(filename=None):
+    """Update company name, role title, and job URL for a saved application."""
+    data = request.json or {}
+    fname = filename or data.get("filename")
+    if not fname:
+        return jsonify({"success": False, "error": "Log filename is required"}), 400
+
+    logs_dir = OUTPUT_DIR / "logs"
+    log_file = logs_dir / fname
+    if not log_file.exists():
+        return jsonify({"success": False, "error": f"History log {fname} not found"}), 404
+
+    try:
+        with open(log_file, "r", encoding="utf-8") as f:
+            log_data = json.load(f)
+
+        new_company = data.get("company", "").strip()
+        new_role = data.get("role", "").strip()
+        new_url = data.get("url", "").strip()
+
+        if new_company:
+            log_data["company"] = new_company
+        if new_role:
+            log_data["role"] = new_role
+        if new_url is not None:
+            log_data["url"] = new_url
+
+        with open(log_file, "w", encoding="utf-8") as f:
+            json.dump(log_data, f, indent=2)
+
+        return jsonify({
+            "success": True,
+            "message": "Application details updated successfully",
+            "application": log_data
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route("/api/history/<filename>", methods=["DELETE"])
@@ -1580,13 +1618,6 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
 
         rel_path = os.path.relpath(doc_path, str(OUTPUT_DIR)).replace("\\", "/")
 
-        # Save log entry
-        _save_run_log(
-            url, company, role, missing_keywords,
-            embedded_keywords, still_missing,
-            simplify_data, doc_path, 0
-        )
-
         # Determine final score values for dashboard:
         # Priority: 1. analyze_score_before from Analyze step  2. simplify_score_before from pipeline  3. default 75
         if analyze_score_before is not None:
@@ -1602,6 +1633,17 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
         else:
             score_after_val = 90 if score_before_val < 90 else min(98, score_before_val + 10)
         score_delta_val = score_after_val - score_before_val
+
+        # Save log entry with full score synchronization
+        _save_run_log(
+            url, company, role, missing_keywords,
+            embedded_keywords, still_missing,
+            simplify_data, doc_path, 0,
+            score_before=score_before_val,
+            score_after=score_after_val,
+            score_delta=score_delta_val,
+            cover_letter_text=cover_letter_text
+        )
 
         # Final complete message
         msg_queue.put({

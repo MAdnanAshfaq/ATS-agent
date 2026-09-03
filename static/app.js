@@ -527,31 +527,52 @@ function renderHistoryCards(apps, query = "") {
   grid.innerHTML = "";
   apps.forEach(app => {
     const dateStr = new Date(app.timestamp).toLocaleString();
+    const beforeScore = app.score_before != null ? app.score_before : (app.match_score_before != null ? app.match_score_before : (app.simplify_score_before != null ? app.simplify_score_before : 0));
+    const afterScore = app.score_after != null ? app.score_after : (app.match_score_after != null ? app.match_score_after : 0);
+    const deltaScore = app.score_delta != null ? app.score_delta : (app.match_score_delta != null ? app.match_score_delta : Math.max(0, afterScore - beforeScore));
+    const jobUrl = app.url || "";
+
     const card = document.createElement("div");
     card.className = "history-card";
+    card.id = `history-card-${escapeHtml(app.log_file_name.replace(/[^a-zA-Z0-9_-]/g, '_'))}`;
     card.innerHTML = `
       <div class="history-card-header">
-        <div class="flex-align-center gap-sm">
+        <div class="flex-align-center gap-sm" style="flex:1; min-width:0;">
           <input type="checkbox" class="history-item-cb" data-filename="${escapeHtml(app.log_file_name)}" ${selectedHistoryFiles.has(app.log_file_name) ? "checked" : ""} onchange="toggleHistoryItemSelection('${escapeHtml(app.log_file_name)}', this.checked)">
-          <div>
-            <div class="history-company">${escapeHtml(app.company)}</div>
-            <div class="history-role">${escapeHtml(app.role)}</div>
+          <div style="flex:1; min-width:0;">
+            <div class="flex-align-center gap-xs">
+              <span class="history-company" id="hist-co-${escapeHtml(app.log_file_name)}">${escapeHtml(app.company)}</span>
+              <button class="btn-icon-subtle" title="Edit Company, Role & Link" onclick="openEditHistoryModal('${escapeHtml(app.log_file_name)}', '${escapeHtml(app.company)}', '${escapeHtml(app.role)}', '${escapeHtml(jobUrl)}')">
+                <i class="fa-solid fa-pen"></i>
+              </button>
+            </div>
+            <div class="history-role" id="hist-role-${escapeHtml(app.log_file_name)}">${escapeHtml(app.role)}</div>
           </div>
         </div>
-        <div class="history-date">${dateStr}</div>
+        <div class="history-meta-right">
+          <div class="history-date">${dateStr}</div>
+          ${jobUrl ? `
+            <a href="${escapeHtml(jobUrl)}" target="_blank" rel="noopener noreferrer" class="history-job-link-pill" title="View Job Posting: ${escapeHtml(jobUrl)}">
+              <i class="fa-solid fa-arrow-up-right-from-square"></i> View Job
+            </a>` : `
+            <button class="btn-icon-subtle" style="font-size:10.5px; color:var(--accent); text-decoration:underline;" onclick="openEditHistoryModal('${escapeHtml(app.log_file_name)}', '${escapeHtml(app.company)}', '${escapeHtml(app.role)}', '')">
+              <i class="fa-solid fa-plus"></i> Add Link
+            </button>`
+          }
+        </div>
       </div>
       <div class="history-scores">
         <div class="score-col">
           <span>Before Score</span>
-          <strong>${app.match_score_before || 0}%</strong>
+          <strong>${beforeScore}%</strong>
         </div>
         <div class="score-col">
           <span>After Score</span>
-          <strong class="text-emerald">${app.match_score_after || 0}%</strong>
+          <strong class="text-emerald">${afterScore}%</strong>
         </div>
         <div class="score-col">
           <span>Delta</span>
-          <strong class="text-emerald">+${app.match_score_delta || 0}%</strong>
+          <strong class="text-emerald">+${deltaScore}%</strong>
         </div>
       </div>
       <div class="history-actions">
@@ -559,8 +580,16 @@ function renderHistoryCards(apps, query = "") {
           <i class="fa-solid fa-download"></i> .docx
         </a>
         ${app.relative_file_path ? `<a href="/api/download/${app.relative_file_path.replace('.docx', '.pdf')}" class="btn btn-cyan btn-sm" download><i class="fa-solid fa-file-pdf"></i> .pdf</a>` : ''}
-        <button class="btn btn-purple-sm" onclick="generateOrViewHistoryCoverLetter('${escapeHtml(app.company)}', '${escapeHtml(app.role)}', '${escapeHtml(app.relative_file_path)}', '${escapeHtml(app.url || '')}')">
+        ${jobUrl ? `
+          <a href="${escapeHtml(jobUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" title="Open Job Posting in new tab">
+            <i class="fa-solid fa-arrow-up-right-from-square"></i> Job Link
+          </a>
+        ` : ''}
+        <button class="btn btn-purple-sm" onclick="generateOrViewHistoryCoverLetter('${escapeHtml(app.company)}', '${escapeHtml(app.role)}', '${escapeHtml(app.relative_file_path)}', '${escapeHtml(jobUrl)}')">
           <i class="fa-solid fa-envelope"></i> Cover Letter
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="openEditHistoryModal('${escapeHtml(app.log_file_name)}', '${escapeHtml(app.company)}', '${escapeHtml(app.role)}', '${escapeHtml(jobUrl)}')" title="Edit company name, role or job link">
+          <i class="fa-solid fa-pen-to-square"></i> Edit
         </button>
         <button class="btn btn-secondary btn-sm" onclick="openSpecificFolder('${escapeHtml(app.output_file)}')">
           <i class="fa-solid fa-folder-open"></i> Folder
@@ -619,6 +648,83 @@ async function deleteHistoryItem(filename) {
     }
   } catch (err) {
     showToast(`Delete failed: ${err.message}`, "error");
+  }
+}
+
+function openEditHistoryModal(filename, company, role, url) {
+  const modal = document.getElementById("edit-history-modal");
+  const fnInput = document.getElementById("edit-history-filename");
+  const coInput = document.getElementById("edit-history-company");
+  const roleInput = document.getElementById("edit-history-role");
+  const urlInput = document.getElementById("edit-history-url");
+
+  if (fnInput) fnInput.value = filename || "";
+  if (coInput) coInput.value = company || "";
+  if (roleInput) roleInput.value = role || "";
+  if (urlInput) urlInput.value = url || "";
+  updateEditHistoryTestLink(url);
+
+  if (modal) modal.style.display = "flex";
+}
+
+function closeEditHistoryModal() {
+  const modal = document.getElementById("edit-history-modal");
+  if (modal) modal.style.display = "none";
+}
+
+function updateEditHistoryTestLink(url) {
+  const testBtn = document.getElementById("edit-history-test-link");
+  if (!testBtn) return;
+  if (url && (url.startsWith("http://") || url.startsWith("https://"))) {
+    testBtn.href = url;
+    testBtn.style.display = "inline-flex";
+  } else {
+    testBtn.style.display = "none";
+  }
+}
+
+async function saveEditHistory() {
+  const filename = (document.getElementById("edit-history-filename")?.value || "").trim();
+  const company = (document.getElementById("edit-history-company")?.value || "").trim();
+  const role = (document.getElementById("edit-history-role")?.value || "").trim();
+  const url = (document.getElementById("edit-history-url")?.value || "").trim();
+
+  if (!filename) {
+    showToast("Missing log filename", "error");
+    return;
+  }
+  if (!company || !role) {
+    showToast("Please provide both Company Name and Role Title", "warning");
+    return;
+  }
+
+  const saveBtn = document.getElementById("save-edit-history-btn");
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+  }
+
+  try {
+    const res = await fetch("/api/history/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename, company, role, url })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast("Application details updated successfully!", "success");
+      closeEditHistoryModal();
+      await loadHistory();
+    } else {
+      showToast(data.error || "Failed to update application", "error");
+    }
+  } catch (err) {
+    showToast(`Update error: ${err.message}`, "error");
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save Changes';
+    }
   }
 }
 

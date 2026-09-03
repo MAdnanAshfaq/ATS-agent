@@ -1432,6 +1432,57 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   align-items: center;
 }
 
+.history-meta-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+}
+
+.history-job-link-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-border);
+  padding: 2.5px 9px;
+  border-radius: var(--r-pill);
+  text-decoration: none;
+  font-weight: 500;
+  transition: var(--t-fast);
+  max-width: 170px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.history-job-link-pill:hover {
+  background: rgba(59, 130, 246, 0.2);
+  color: #93C5FD;
+  border-color: rgba(59, 130, 246, 0.5);
+  transform: translateY(-1px);
+}
+
+.btn-icon-subtle {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--t2);
+  padding: 3px 6px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-size: 11px;
+  transition: var(--t-fast);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-icon-subtle:hover {
+  color: var(--t0);
+  background: var(--surface-hover);
+  border-color: var(--border-base);
+}
+
 .checkbox-label input[type="checkbox"],
 .history-item-cb {
   width: 15px;
