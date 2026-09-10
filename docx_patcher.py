@@ -2,7 +2,7 @@
 docx_patcher.py - In-place DOCX editor that preserves original styling with 100% fidelity.
 
 Instead of building a new DOCX from scratch, this module:
-1. Loads the user's original formatted DOCX (Canva / Word / Master template)
+1. Loads the user's original master DOCX template
 2. In-place patches:
    - Professional Summary (without altering section styling)
    - Technical Skills rows (categorized or atomic, preserving bold labels)
@@ -98,7 +98,7 @@ def _iter_table_paragraphs(table):
 def _get_all_paragraphs_from_doc(doc):
     """
     Yield all paragraphs from both body AND table cells, in document order.
-    Critical for DOCX files with table-based layouts (common in Canva exports).
+    Critical for DOCX files with table-based layouts.
     """
     from docx.table import Table
     from docx.text.paragraph import Paragraph
@@ -180,7 +180,11 @@ def patch_docx_with_rewritten_resume(
         # If paragraph 1 is a role subtitle (short, uppercase, not contact)
         if 2 <= len(p1_text) <= 50 and "@" not in p1_text and not p1_text.startswith("+"):
             from scraper import clean_role_title
-            clean_r = clean_role_title(target_role).upper()
+            clean_r = clean_role_title(target_role)
+            if p1_text.isupper():
+                clean_r = clean_r.upper()
+            else:
+                clean_r = clean_r.title()
             if clean_r:
                 _set_para_text_preserve_format(all_paras[1], clean_r)
                 print(f"[Patcher] Updated target role subtitle to: {clean_r}")
@@ -298,20 +302,33 @@ def patch_docx_with_rewritten_resume(
             if comp and comp in text:
                 score += 0.6
             if title and title in text:
-                score += 0.4
+                score += 0.5
             if score > best_score and score >= 0.5:
                 best_score = score
                 best_para_idx = i
 
         if best_para_idx is not None:
-            role_anchors.append((exp_idx, best_para_idx, exp))
-            print(f"[Patcher] Located role '{exp.get('company')}' at paragraph {best_para_idx}")
+            # If the best match is line 2 (e.g. company name) and line 1 above it is the title/date,
+            # or vice versa, the true start of this role block is the earlier paragraph.
+            start_idx = best_para_idx
+            if best_para_idx > 0:
+                prev_text = _normalize(_get_para_full_text(all_paras[best_para_idx - 1]))
+                if title and title in prev_text:
+                    start_idx = best_para_idx - 1
+                elif comp and comp in prev_text:
+                    start_idx = best_para_idx - 1
+            
+            role_anchors.append((exp_idx, start_idx, exp))
+            print(f"[Patcher] Located role '{exp.get('company')}' starting at paragraph {start_idx}")
 
     # Sort role anchors by paragraph index
     role_anchors.sort(key=lambda x: x[1])
 
     # Now for each role, define its paragraph range and patch bullets
     for r_i, (exp_idx, anchor_idx, exp) in enumerate(role_anchors):
+        comp = _normalize(exp.get("company", ""))
+        title = _normalize(exp.get("title", ""))
+        
         # Determine end index: next role anchor or next section header
         if r_i + 1 < len(role_anchors):
             end_idx = role_anchors[r_i + 1][1]
@@ -324,19 +341,30 @@ def patch_docx_with_rewritten_resume(
                     end_idx = j
                     break
 
-        # Collect bullet paragraphs in range (anchor_idx + 1 .. end_idx)
+        # Header lines can span 1 or 2 paragraphs (e.g. Title line + Company line)
+        content_start = anchor_idx + 1
+        if content_start < end_idx:
+            next_p_text = _normalize(_get_para_full_text(all_paras[content_start]))
+            if (comp and comp in next_p_text) or (title and title in next_p_text) or any(loc in next_p_text for loc in ("remote", "usa", "ca", "ny", "tx")):
+                content_start += 1
+
+        # Collect bullet paragraphs in range (content_start .. end_idx)
         role_bullet_paras = []
-        for p_idx in range(anchor_idx + 1, end_idx):
+        for p_idx in range(content_start, end_idx):
             p = all_paras[p_idx]
             p_text = _get_para_full_text(p).strip()
             # Skip empty, location lines (very short), or dates
-            if not p_text or len(p_text) < 15:
+            if not p_text or len(p_text) < 10:
                 continue
+            # Skip if this line looks like a role title or company or date range
+            if re.search(r'\b(20\d\d|19\d\d)\s*[-–—]\s*(20\d\d|present)\b', p_text, re.IGNORECASE):
+                continue
+            
             # Check if it looks like a bullet or description
             is_bullet = (
                 p.style.name.startswith("List")
                 or p_text.startswith(('•', '·', '▪', '-', '*'))
-                or len(p_text) >= 30
+                or len(p_text) >= 20
             )
             if is_bullet:
                 role_bullet_paras.append(p)

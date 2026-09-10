@@ -1596,7 +1596,7 @@ def refine_resume_api():
         with open(tailored_json_path, "w", encoding="utf-8") as f:
             json.dump(refined_resume, f, indent=2, ensure_ascii=False)
 
-        # 6. Rebuild .docx document (check Canva original docx template first)
+        # 6. Rebuild .docx document (check original master docx template first)
         user_orig_docx = user_data_dir / "master_resume_original.docx"
         orig_docx_path = user_orig_docx if user_orig_docx.exists() else (BASE_DIR / "master_resume_original.docx")
 
@@ -1993,7 +1993,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
             print(f"[Pipeline] Rescore note: {rescore_err}")
             send_log(6, "Score Analysis", f"Rescore skipped: {rescore_err}", status="warning")
 
-        # Step 7: Build Word Doc (patch original Canva DOCX if available, else build fresh)
+        # Step 7: Build Word Doc (patch original master DOCX if available, else build fresh)
         send_log(7, "Word Document", "Generating Word document...", status="working")
         role = clean_role_title(role, company)
         for sec in ("education", "certifications", "contact", "name", "projects"):
@@ -2001,7 +2001,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                 cleaned_resume[sec] = base_resume[sec]
 
         orig_docx_path = BASE_DIR / "master_resume_original.docx"
-        # Check user-specific master docx first (if they uploaded a Canva/custom template)
+        # Check user-specific master docx first (if they uploaded an original template)
         user_data_dir = _resume_path.parent
         user_orig_docx = user_data_dir / "master_resume_original.docx"
         if user_orig_docx.exists():
@@ -2013,7 +2013,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
         if orig_docx_path.exists():
             try:
                 from docx_patcher import patch_docx_with_rewritten_resume
-                send_log(7, "Word Document", "Patching original Canva DOCX template to preserve custom styling...", status="working")
+                send_log(7, "Word Document", "Patching original master DOCX template to preserve authentic styling...", status="working")
                 doc_path = patch_docx_with_rewritten_resume(
                     original_docx_path=str(orig_docx_path),
                     rewritten_resume=cleaned_resume,
@@ -2021,7 +2021,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                     role=role,
                     output_dir=effective_output,
                 )
-                send_log(7, "Word Document", "Patched original Canva template with rewritten content!", status="success")
+                send_log(7, "Word Document", "Patched original master template with rewritten content!", status="success")
             except Exception as patch_err:
                 print(f"[Pipeline] DOCX patcher error: {patch_err}, falling back to build_resume_docx")
                 doc_path = build_resume_docx(

@@ -325,7 +325,7 @@ def run_pipeline(
                 role=role,
                 output_dir=output_dir,
             )
-            print_success(f"Patched original Canva DOCX template saved: {output_path}")
+            print_success(f"Patched master DOCX template saved: {output_path}")
         else:
             from resume_builder import build_resume_docx
             output_path = build_resume_docx(

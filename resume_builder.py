@@ -79,30 +79,23 @@ def build_resume_docx(
         cp = doc.core_properties
         cp.author = name
         cp.title = f"{name} - Resume"
-        cp.subject = f"Resume - {role}"
-        cp.last_modified_by = name
-        cp.comments = ""
-        cp.category = "Resume"
-        now_dt = datetime.utcnow()
-        cp.created = now_dt
-        cp.modified = now_dt
     except Exception:
         pass
-    
+
     # Set page margins (clean professional standard)
     for section in doc.sections:
         section.top_margin = Inches(0.5)
         section.bottom_margin = Inches(0.5)
-        section.left_margin = Inches(0.65)
-        section.right_margin = Inches(0.65)
+        section.left_margin = Inches(0.55)
+        section.right_margin = Inches(0.55)
     
-    # Content width: 8.5 - 2*0.65 = 7.20 inches = 10368 twips
-    CONTENT_WIDTH_TWIPS = '10368'
+    # Content width: 8.5 - 2*0.55 = 7.40 inches = 10656 twips
+    CONTENT_WIDTH_TWIPS = '10656'
     
     # ─── Helper functions ─────────────────────────────────────────────────────
     
-    def set_font(run, size=10, bold=False, italic=False, color=None):
-        run.font.name = "Calibri"
+    def set_font(run, size=10, bold=False, italic=False, color=(0, 0, 0)):
+        run.font.name = "Georgia"
         run.font.size = Pt(size)
         run.font.bold = bold
         run.font.italic = italic
@@ -112,15 +105,15 @@ def build_resume_docx(
     def add_paragraph_spacing(para, space_before=0, space_after=0):
         para.paragraph_format.space_before = Pt(space_before)
         para.paragraph_format.space_after = Pt(space_after)
-        para.paragraph_format.line_spacing = 1.05
+        para.paragraph_format.line_spacing = 1.1
     
     def add_section_header(title: str):
-        """Add a formatted section header with a bottom border line and keep_with_next."""
+        """Add an authentic section header with a thin black bottom border line and keep_with_next."""
         para = doc.add_paragraph()
         para.paragraph_format.keep_with_next = True
-        add_paragraph_spacing(para, space_before=7, space_after=2)
+        add_paragraph_spacing(para, space_before=6, space_after=2)
         run = para.add_run(title.upper())
-        set_font(run, size=10.5, bold=True, color=(31, 73, 125))  # Dark blue
+        set_font(run, size=11, bold=True, color=(0, 0, 0))
         
         # Add bottom border to paragraph
         pPr = para._p.get_or_add_pPr()
@@ -129,7 +122,7 @@ def build_resume_docx(
         bottom.set(qn('w:val'), 'single')
         bottom.set(qn('w:sz'), '6')
         bottom.set(qn('w:space'), '1')
-        bottom.set(qn('w:color'), '1F497D')
+        bottom.set(qn('w:color'), '000000')  # Solid crisp black
         pBdr.append(bottom)
         pPr.append(pBdr)
         
@@ -158,12 +151,12 @@ def build_resume_docx(
         add_paragraph_spacing(para, space_before=0, space_after=1.5)
         return para
     
-    def add_two_column_line(left: str, right: str, left_bold=False, right_italic=False, keep_next=True):
+    def add_two_column_line(left: str, right: str, left_bold=False, left_italic=False, right_bold=False, right_italic=False, keep_next=True):
         """Add a line with text on left and right (e.g., role + dates) with keep_with_next."""
         para = doc.add_paragraph()
         if keep_next:
             para.paragraph_format.keep_with_next = True
-        add_paragraph_spacing(para, space_before=3, space_after=1)
+        add_paragraph_spacing(para, space_before=2, space_after=1)
         
         # Add right-aligned tab stop at exact right margin
         pPr = para._p.get_or_add_pPr()
@@ -175,13 +168,13 @@ def build_resume_docx(
         pPr.append(tabs)
         
         run_left = para.add_run(sanitize_text(left))
-        set_font(run_left, size=10, bold=left_bold)
+        set_font(run_left, size=10, bold=left_bold, italic=left_italic)
         
         if right:
             tab_run = para.add_run("\t")
             set_font(tab_run, size=9.5)
             run_right = para.add_run(sanitize_text(right))
-            set_font(run_right, size=9.5, italic=right_italic)
+            set_font(run_right, size=9.5, bold=right_bold, italic=right_italic)
         
         return para
     
@@ -192,44 +185,48 @@ def build_resume_docx(
     # Extract & clean role title (strip any brackets/parentheses like "(Databricks)")
     from scraper import clean_role_title
     raw_role = resume.get("target_role") or role or ""
-    clean_role = clean_role_title(raw_role).upper()
+    clean_role = clean_role_title(raw_role)
     
     name_para = doc.add_paragraph()
     name_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
     add_paragraph_spacing(name_para, space_before=0, space_after=1)
     
     run_name = name_para.add_run(name.upper())
-    set_font(run_name, size=17, bold=True, color=(31, 73, 125))
+    set_font(run_name, size=20, bold=True, color=(0, 0, 0))
     
-    if clean_role and clean_role not in ("UNKNOWN", "NONE"):
+    if clean_role and clean_role.upper() not in ("UNKNOWN", "NONE"):
         role_para = doc.add_paragraph()
         role_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
         add_paragraph_spacing(role_para, space_before=0, space_after=3)
-        run_role = role_para.add_run(clean_role)
-        set_font(run_role, size=11.5, bold=True, color=(31, 73, 125))
-
+        run_role = role_para.add_run(clean_role.title())
+        set_font(run_role, size=13.5, bold=False, italic=True, color=(0, 0, 0))
     
-    # ─── HEADER: Contact line ─────────────────────────────────────────────────
+    # ─── HEADER: Contact lines (matching authentic layout) ────────────────────
     contact_parts = []
     if contact.get("email"):
         contact_parts.append(contact["email"])
     if contact.get("phone"):
         contact_parts.append(contact["phone"])
-    if contact.get("linkedin"):
-        contact_parts.append(contact["linkedin"])
-    if contact.get("github"):
-        contact_parts.append(contact["github"])
-    if contact.get("portfolio"):
-        contact_parts.append(contact["portfolio"])
     if contact.get("location"):
         contact_parts.append(contact["location"])
+    if contact.get("portfolio"):
+        contact_parts.append(contact["portfolio"])
+    if contact.get("github"):
+        contact_parts.append(contact["github"])
     
     if contact_parts:
         contact_para = doc.add_paragraph()
         contact_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        add_paragraph_spacing(contact_para, space_before=0, space_after=6)
-        run = contact_para.add_run("  |  ".join(contact_parts))
-        set_font(run, size=9, color=(89, 89, 89))
+        add_paragraph_spacing(contact_para, space_before=0, space_after=1)
+        run = contact_para.add_run("   |   ".join(contact_parts))
+        set_font(run, size=9.5, color=(40, 40, 40))
+    
+    if contact.get("linkedin"):
+        li_para = doc.add_paragraph()
+        li_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        add_paragraph_spacing(li_para, space_before=0, space_after=4)
+        run_li = li_para.add_run(contact["linkedin"])
+        set_font(run_li, size=9.5, color=(40, 40, 40))
     
     # ─── SUMMARY ─────────────────────────────────────────────────────────────
     summary = resume.get("summary", "")
@@ -275,20 +272,20 @@ def build_resume_docx(
             if not title:
                 continue
             
-            # Role title + dates on same line
-            title_company = f"{title} - {company_name}" if company_name else title
-            add_two_column_line(title_company, dates, left_bold=True, right_italic=True)
+            # Authentic 2-line header matching original document:
+            # Line 1: Title (bold) on left, Dates (regular) on right
+            add_two_column_line(title, dates, left_bold=True, right_bold=False, keep_next=True)
             
-            # Location (if available)
-            if location:
-                add_normal_text(location, size=9.5, italic=True)
+            # Line 2: Company (italic) on left, Location (regular) on right
+            if company_name or location:
+                add_two_column_line(company_name, location, left_italic=True, right_italic=False, keep_next=True)
             
             # Bullet points
             for bullet in bullets:
                 if bullet and len(sanitize_text(bullet)) > 5:
                     add_bullet(bullet)
     
-    # ─── PROJECTS ────────────────────────────────────────────────────────────
+    # ─── PROJECTS ────────────────────────────────────────────────────
     projects = resume.get("projects", [])
     if projects:
         add_section_header("Projects")
@@ -314,7 +311,7 @@ def build_resume_docx(
             if description:
                 add_bullet(description)
     
-    # ─── EDUCATION ───────────────────────────────────────────────────────────
+    # ─── EDUCATION ───────────────────────────────────────────────────
     education = resume.get("education", [])
     if education:
         add_section_header("Education")
@@ -329,11 +326,12 @@ def build_resume_docx(
             if not institution and not degree:
                 continue
             
-            degree_field = f"{degree}" + (f" in {field}" if field else "")
-            add_two_column_line(institution, grad_date, left_bold=True, right_italic=True)
+            # Authentic format: Degree & Field on left, Grad Date on right
+            degree_title = f"{degree} in {field}" if (degree and field and not degree.lower().endswith("in")) else (degree or field or institution)
+            add_two_column_line(degree_title, grad_date, left_bold=True, right_bold=False, keep_next=True)
             
-            if degree_field:
-                add_normal_text(degree_field, size=10, italic=True)
+            if institution and degree_title != institution:
+                add_normal_text(institution, size=10, italic=True)
             if gpa:
                 add_normal_text(f"GPA: {gpa}", size=9.5)
     
