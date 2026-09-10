@@ -29,6 +29,10 @@ try:
 except Exception:
     pass
 
+# Suppress Google GenAI internal SDK AFC (Automatic Function Calling) advisory warnings
+logging.getLogger("google_genai.models").setLevel(logging.ERROR)
+logging.getLogger("google_genai").setLevel(logging.ERROR)
+
 logger = logging.getLogger("gemini_client")
 
 # Global pool state

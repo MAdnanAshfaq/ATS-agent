@@ -133,6 +133,7 @@ def chat_with_hollabuddy(
                 temperature=0.6,
                 top_p=0.92,
                 max_output_tokens=2048,
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
             )
             response = client.models.generate_content(
                 model=model_name,

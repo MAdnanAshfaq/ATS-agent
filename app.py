@@ -6,6 +6,7 @@ Cloudflare tunnel, and any live domain.
 """
 
 import json
+import logging
 import os
 import queue
 import re
@@ -34,6 +35,10 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+# Suppress noisy Google GenAI SDK AFC (Automatic Function Calling) advisory warnings
+logging.getLogger("google_genai.models").setLevel(logging.ERROR)
+logging.getLogger("google_genai").setLevel(logging.ERROR)
 
 BASE_DIR = Path(__file__).parent
 OUTPUT_DIR = BASE_DIR / "output"
