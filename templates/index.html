@@ -50,10 +50,28 @@
         </button>
       </nav>
 
-      <!-- System Readiness Indicator -->
-      <div class="system-status-pill" id="system-status-indicator">
-        <span class="status-dot dot-checking"></span>
-        <span class="status-text">Checking System...</span>
+      <!-- Header Actions: Status & User Profile -->
+      <div class="header-actions">
+        <!-- System Readiness Indicator -->
+        <div class="system-status-pill" id="system-status-indicator">
+          <span class="status-dot dot-checking"></span>
+          <span class="status-text">Checking System...</span>
+        </div>
+
+        <!-- User Profile & Logout -->
+        <div class="user-header-profile" id="user-header-profile">
+          <div class="user-avatar" title="{{ user.display_name or user.username }}">
+            <i class="fa-solid fa-user"></i>
+          </div>
+          <div class="user-meta">
+            <span class="user-display-name">{{ user.display_name or user.username }}</span>
+            <span class="user-email-text">{{ user.email }}</span>
+          </div>
+          <a href="/logout" class="btn-logout" title="Sign Out">
+            <i class="fa-solid fa-arrow-right-from-bracket"></i>
+            <span>Logout</span>
+          </a>
+        </div>
       </div>
     </div>
   </header>

@@ -93,10 +93,13 @@ def check_prerequisites() -> bool:
     return all_ok
 
 
-def load_base_resume() -> dict:
-    """Load the base resume from base_resume.json."""
-    resume_path = Path(__file__).parent / "base_resume.json"
-    with open(resume_path, "r", encoding="utf-8") as f:
+def load_base_resume(resume_path: str = None) -> dict:
+    """Load the base resume from base_resume.json (or a user-specified path)."""
+    if resume_path:
+        path = Path(resume_path)
+    else:
+        path = Path(__file__).parent / "base_resume.json"
+    with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -372,10 +375,11 @@ def _save_run_log(
     url, company, role, missing_keywords, embedded_keywords,
     still_missing, simplify_data, output_path, elapsed,
     score_before=None, score_after=None, score_delta=None,
-    cover_letter_text=""
+    cover_letter_text="", output_dir=None
 ):
     """Save a JSON log of this run."""
-    log_dir = Path(__file__).parent / "output" / "logs"
+    base_out = Path(output_dir) if output_dir else (Path(__file__).parent / "output")
+    log_dir = base_out / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

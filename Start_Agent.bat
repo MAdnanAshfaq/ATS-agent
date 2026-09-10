@@ -94,6 +94,7 @@ if exist "requirements.txt" (
         docx2pdf ^
         nest_asyncio ^
         requests ^
+        flask-login ^
         --quiet 2>&1
 )
 
@@ -132,6 +133,8 @@ start /b cmd /c "timeout /t 3 /nobreak >nul && start http://127.0.0.1:5000"
 echo.
 echo ====================================================
 echo  Server running at: http://127.0.0.1:5000
+echo  Public tunnel command:
+echo    npx cloudflared tunnel --url http://localhost:5000
 echo  Press Ctrl+C to stop.
 echo ====================================================
 echo.

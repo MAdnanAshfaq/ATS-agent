@@ -56,10 +56,13 @@ PLATFORM_SELECTORS = {
     },
     "ashbyhq.com": {
         "jd": [
-            "div[class*='ashby-job-posting']",
+            "[class*='ashby-job-posting-description']",
+            "[class*='descriptionText']",
+            "[class*='ashby-job-posting-right-pane']",
+            "div[class*='ashby-job-posting-description-contain']",
             "div[class*='JobPosting']",
             "div[class*='jobPosting']",
-            "div[class*='posting']",
+            "div[class*='ashby-job-posting']",
             "div[class*='job-description']",
             "main",
             "#app",

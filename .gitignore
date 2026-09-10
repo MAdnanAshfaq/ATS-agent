@@ -1,9 +1,14 @@
-# Credentials — never commit
+# Credentials & User Accounts — never commit
 .env
+data/users/
+data/users.json
 chrome_profile/
 chrome_profile_simplify/
 *.log
 debug_analyze.log
+
+# Node dependencies
+node_modules/
 
 # Generated files
 output/
@@ -24,6 +29,57 @@ doc_text.txt
 extract_doc.ps1
 parse_doc.ps1
 
+# Generated test/run folders in root
+*_Data_Engineer*/
+*_Senior_*Engineer*/
+*_Engineer*/
+*_Analytics_Engineer*/
+*_Data_Modeler*/
+*_Job_Description*/
+delivers_massive_amounts_o_Data_Engineer/
+team_member_Senior_Data_Engineer/
+Ats_Data_Warehouse_Integration_Engineer/
+Embed_Current_openings/
+Hlb90067_Senior_Analytics_Engineer/
+In_Tandem_Analytics_Engineer_Finance_Modeling/
+Infinity_Senior_Data_Engineer_Paradox_Machines/
+Livefront_Senior_Data_Engineer/
+Mountain_Park_Health_Center_Data_Engineer/
+Murmuration_Staff_Data_Platform_Engineer/
+Octave_Sr_Data_Engineer/
+Origamirisk_Data_Engineer/
+Praxisprecisionmedicines_Data_and_Analytics_Engineer_III/
+Prefect_Staff_Data_Engineer/
+Sungage_Financial_Senior_Data_Engineer/
+TP_Link_Systems_Inc_Big_Data_Engineer/
+Target_Company_Data_Engineer_III/
+Target_Company_Sr_Data_Engineer/
+Torc_Software_Engineer_II_Data_Engineering/
+Trend_Health_Partners_Data_Engineer_2/
+Uhg_Job_Description/
+VERSANT_Sr_Data_Engineer/
+Via99_Senior_Data_Platform_Engineer/
+enGen_Data_Engineer/
+Coreview_Data_Engineer/
+Dave_Data_Engineer_II/
+Finstock_Inc_Data_Engineer/
+Garnerhealth_Senior_Software_Engineer/
+Gravie_Senior_Data_Engineer/
+Independence_Pet_Group_Senior_Data_Engineer/
+Neumo_Senior_Data_Engineer/
+Siemens_Senior_Principal_Data_Engineer/
+Amerit_Fleet_Solutions_Data_Engineer/
+Ameritfleet_Data_Engineer/
+App_DataBricks_Data_Engineer_USA/
+App_Staff_Analytics_Engineer/
+Archimedes_Data_Engineer_Archimedes/
+Babylist_Senior_Data_Engineer/
+Buildsubmarines_Data_Engineer/
+Climate_First_Bank_Data_Engineer/
+Cummins_Data_Modeler/
+Empower_Retirement_LLC_Lead_Data_Engineer/
+
 # OS
 .DS_Store
 Thumbs.db
+

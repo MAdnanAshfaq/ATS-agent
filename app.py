@@ -1,7 +1,8 @@
 """
-app.py — Modern Web UI Server for Adnan's AI Job Application Agent.
-Provides real-time SSE streaming for live pipeline progress tracking,
-interactive keyword selection, custom experience point insertion, and dual-engine tailoring.
+app.py — Multi-user AI Job Application Agent Web Server.
+Each user has fully isolated account: resume, API keys, job history.
+Auth via flask-login (email + password). Compatible with localhost,
+Cloudflare tunnel, and any live domain.
 """
 
 import json
@@ -12,11 +13,14 @@ import subprocess
 import sys
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
-from flask import Flask, Response, jsonify, render_template, request, send_from_directory, send_file
+from flask import Flask, Response, jsonify, render_template, request, send_from_directory, send_file, redirect, url_for, flash
 from flask_cors import CORS
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+
+import auth as auth_module
 
 if hasattr(sys.stdout, 'reconfigure'):
     try:
@@ -34,12 +38,33 @@ if hasattr(sys.stderr, "reconfigure"):
 BASE_DIR = Path(__file__).parent
 OUTPUT_DIR = BASE_DIR / "output"
 ENV_PATH = BASE_DIR / ".env"
-RESUME_PATH = BASE_DIR / "base_resume.json"
+RESUME_PATH = BASE_DIR / "base_resume.json"  # Legacy global path (pre-auth)
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
-CORS(app)
+app.config["REMEMBER_COOKIE_DURATION"] = timedelta(days=30)
+app.config["REMEMBER_COOKIE_SECURE"] = False   # set True in production with HTTPS
+app.config["REMEMBER_COOKIE_HTTPONLY"] = True
+
+# Secret key — auto-generated and persisted to .env on first boot
+app.secret_key = auth_module.ensure_secret_key(ENV_PATH)
+
+CORS(app, supports_credentials=True)
+
+# Reverse proxy support (Cloudflare Tunnel, Nginx, Caddy, custom live domains)
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
+# ── Flask-Login setup ──────────────────────────────────────────────────────
+login_manager = LoginManager(app)
+login_manager.login_view = "login_page"        # redirect here when @login_required fails
+login_manager.login_message = "Please sign in to continue."
+login_manager.login_message_category = "error"
+
+@login_manager.user_loader
+def load_user(user_id: str):
+    return auth_module.load_user_by_id(user_id)
 
 # Active background runs & message queues for SSE
 active_runs = {}
@@ -89,9 +114,157 @@ def write_env_vars(env_vars: dict):
         f.write("\n".join(lines) + "\n")
 
 
+# ─── Per-User Data Helpers ────────────────────────────────────────────────────
+# All user-scoped data (resume, output, settings) is resolved through these.
+# Falls back to the legacy global path for backwards-compatibility.
+
+def get_user_resume_path() -> Path:
+    """Return the active user's base_resume.json path."""
+    if current_user and current_user.is_authenticated:
+        return current_user.resume_path
+    return RESUME_PATH  # legacy fallback
+
+def get_user_output_dir() -> Path:
+    """Return the active user's output directory."""
+    if current_user and current_user.is_authenticated:
+        return current_user.output_dir
+    return OUTPUT_DIR  # legacy fallback
+
+def get_user_settings() -> dict:
+    """Return the active user's API key settings."""
+    if current_user and current_user.is_authenticated:
+        return current_user.get_settings()
+    return get_env_vars()  # legacy fallback
+
+
+# ─── Auth Routes ─────────────────────────────────────────────────────────────
+
+@app.route("/login", methods=["GET", "POST"])
+def login_page():
+    """Login page. Redirects to / if already authenticated."""
+    if current_user.is_authenticated:
+        return redirect(url_for("index"))
+
+    if request.method == "POST":
+        email = (request.form.get("email") or "").strip()
+        password = request.form.get("password") or ""
+        remember = bool(request.form.get("remember"))
+        next_url = request.form.get("next") or request.args.get("next") or url_for("index")
+
+        user = auth_module.verify_login(email, password)
+        if user:
+            login_user(user, remember=remember)
+            # Safety check: only redirect to relative URLs
+            if not next_url.startswith("/"):
+                next_url = url_for("index")
+            return redirect(next_url)
+        else:
+            flash("Invalid email or password. Please try again.", "error")
+
+    return render_template("login.html")
+
+
+@app.route("/signup", methods=["POST"])
+def signup():
+    """Create a new user account with a required resume upload."""
+    if current_user.is_authenticated:
+        return redirect(url_for("index"))
+
+    email = (request.form.get("email") or "").strip()
+    password = request.form.get("password") or ""
+    display_name = (request.form.get("display_name") or "").strip()
+
+    # Register user
+    user, error = auth_module.register_user(email, password, display_name)
+    if error:
+        flash(error, "error")
+        return redirect(url_for("login_page") + "?mode=signup")
+
+    # Handle resume upload (required)
+    resume_file = request.files.get("resume_file")
+    if resume_file and resume_file.filename:
+        filename = resume_file.filename.lower()
+        save_path = user.data_dir / resume_file.filename
+        resume_file.save(str(save_path))
+
+        try:
+            if filename.endswith(".json"):
+                with open(save_path, "r", encoding="utf-8") as f:
+                    parsed_json = json.load(f)
+            elif filename.endswith((".pdf", ".docx")):
+                from pdf_to_resume import parse_resume_pdf
+                parsed_json = parse_resume_pdf(str(save_path))
+                if filename.endswith(".docx"):
+                    import shutil
+                    shutil.copy2(save_path, user.data_dir / "master_resume_original.docx")
+            else:
+                parsed_json = None
+
+            if parsed_json:
+                with open(user.resume_path, "w", encoding="utf-8") as f:
+                    json.dump(parsed_json, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"[Signup] Resume parse error for {email}: {e}")
+        finally:
+            try:
+                if save_path.exists():
+                    os.remove(save_path)
+            except Exception:
+                pass
+
+    login_user(user, remember=True)
+    return redirect(url_for("index"))
+
+
+@app.route("/logout")
+@login_required
+def logout():
+    """Log out and redirect to login page."""
+    logout_user()
+    flash("You've been signed out.", "success")
+    return redirect(url_for("login_page"))
+
+
+@app.route("/api/me")
+@login_required
+def api_me():
+    """Return current authenticated user's info."""
+    has_resume = current_user.has_resume()
+    resume_name = ""
+    if has_resume:
+        try:
+            with open(current_user.resume_path, "r", encoding="utf-8") as f:
+                rd = json.load(f)
+            resume_name = rd.get("name", "")
+        except Exception:
+            pass
+    return jsonify({
+        "username": current_user.username,
+        "email": current_user.email,
+        "display_name": current_user.display_name,
+        "has_resume": has_resume,
+        "resume_name": resume_name,
+    })
+
+
+@app.route("/api/change_password", methods=["POST"])
+@login_required
+def change_password():
+    data = request.json or {}
+    success, error = auth_module.change_password(
+        current_user.username,
+        data.get("current_password", ""),
+        data.get("new_password", ""),
+    )
+    if success:
+        return jsonify({"success": True, "message": "Password changed successfully."})
+    return jsonify({"success": False, "error": error}), 400
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  AI LAB — HuggingFace AI Content Detector  (standalone, isolated from ATS)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @app.route("/api/hf-detect", methods=["POST"])
 def hf_detect():
@@ -388,25 +561,29 @@ ORIGINAL TEXT:
 
 
 @app.route("/")
+@login_required
 def index():
-    return render_template("index.html")
+    return render_template("index.html", user=current_user)
 
 
 @app.route("/api/health")
+@login_required
 def health():
-    """Check all prerequisites needed to run the agent."""
-    env_vars = get_env_vars()
+    """Check all prerequisites needed to run the agent (per-user)."""
+    env_vars = get_user_settings()
+    user_resume_path = get_user_resume_path()
+    user_output_dir = get_user_output_dir()
 
     has_gemini_key = bool(env_vars.get("GEMINI_API_KEY") or env_vars.get("GEMINI_API_KEY_2"))
     has_gemini_backup = bool(env_vars.get("GEMINI_API_KEY_2"))
-    has_base_resume = RESUME_PATH.exists()
+    has_base_resume = user_resume_path.exists()
     has_simplify_email = bool(env_vars.get("SIMPLIFY_EMAIL"))
     has_simplify_password = bool(env_vars.get("SIMPLIFY_PASSWORD"))
 
     resume_summary = {}
     if has_base_resume:
         try:
-            with open(RESUME_PATH, "r", encoding="utf-8") as f:
+            with open(user_resume_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 resume_summary = {
                     "name": data.get("name", ""),
@@ -429,26 +606,27 @@ def health():
         },
         "resume_summary": resume_summary,
         "env_path": str(ENV_PATH),
-        "output_dir": env_vars.get("OUTPUT_DIR", str(OUTPUT_DIR)),
+        "output_dir": str(user_output_dir),
     })
 
 
 @app.route("/api/settings", methods=["GET", "POST"])
+@login_required
 def settings():
     if request.method == "POST":
         data = request.json or {}
-        env_vars = get_env_vars()
-        env_vars["GEMINI_API_KEY"] = data.get("GEMINI_API_KEY", env_vars.get("GEMINI_API_KEY", ""))
-        env_vars["GEMINI_API_KEY_2"] = data.get("GEMINI_API_KEY_2", env_vars.get("GEMINI_API_KEY_2", ""))
-        env_vars["SIMPLIFY_EMAIL"] = data.get("SIMPLIFY_EMAIL", env_vars.get("SIMPLIFY_EMAIL", ""))
-        env_vars["SIMPLIFY_PASSWORD"] = data.get("SIMPLIFY_PASSWORD", env_vars.get("SIMPLIFY_PASSWORD", ""))
-        if data.get("OUTPUT_DIR"):
-            env_vars["OUTPUT_DIR"] = data["OUTPUT_DIR"]
-
-        write_env_vars(env_vars)
+        updates = {
+            "GEMINI_API_KEY": data.get("GEMINI_API_KEY"),
+            "GEMINI_API_KEY_2": data.get("GEMINI_API_KEY_2"),
+            "SIMPLIFY_EMAIL": data.get("SIMPLIFY_EMAIL"),
+            "SIMPLIFY_PASSWORD": data.get("SIMPLIFY_PASSWORD"),
+            "HF_API_KEY": data.get("HF_API_KEY"),
+            "COLAB_DETECTOR_URL": data.get("COLAB_DETECTOR_URL"),
+        }
+        current_user.save_settings({k: v for k, v in updates.items() if v is not None})
         return jsonify({"success": True, "message": "Settings saved successfully"})
 
-    env_vars = get_env_vars()
+    env_vars = get_user_settings()
     # Mask API key for security
     raw_key = env_vars.get("GEMINI_API_KEY", "")
     masked_key = (raw_key[:6] + "..." + raw_key[-4:]) if len(raw_key) > 10 else raw_key
@@ -463,32 +641,38 @@ def settings():
         "GEMINI_API_KEY_2_MASKED": masked_key_2,
         "SIMPLIFY_EMAIL": env_vars.get("SIMPLIFY_EMAIL", ""),
         "SIMPLIFY_PASSWORD": env_vars.get("SIMPLIFY_PASSWORD", ""),
-        "OUTPUT_DIR": env_vars.get("OUTPUT_DIR", str(OUTPUT_DIR)),
+        "OUTPUT_DIR": str(get_user_output_dir()),
     })
 
 
 @app.route("/api/resume", methods=["GET", "POST"])
+@login_required
 def manage_resume():
+    user_resume_path = get_user_resume_path()
     if request.method == "POST":
         try:
             new_data = request.json
-            with open(RESUME_PATH, "w", encoding="utf-8") as f:
+            with open(user_resume_path, "w", encoding="utf-8") as f:
                 json.dump(new_data, f, indent=2, ensure_ascii=False)
             return jsonify({"success": True, "message": "Base resume updated"})
         except Exception as e:
             return jsonify({"success": False, "error": str(e)}), 400
 
-    if not RESUME_PATH.exists():
+    if not user_resume_path.exists():
         return jsonify({"error": "base_resume.json not found"}), 404
 
-    with open(RESUME_PATH, "r", encoding="utf-8") as f:
+    with open(user_resume_path, "r", encoding="utf-8") as f:
         data = json.load(f)
     return jsonify(data)
 
 
 @app.route("/api/upload_resume", methods=["POST"])
+@login_required
 def upload_resume():
     """Upload a new Master Resume (PDF / DOCX / JSON)."""
+    user_resume_path = get_user_resume_path()
+    user_data_dir = current_user.data_dir if current_user.is_authenticated else BASE_DIR
+
     if "resume_file" not in request.files:
         return jsonify({"success": False, "error": "No file attached"}), 400
 
@@ -497,7 +681,7 @@ def upload_resume():
         return jsonify({"success": False, "error": "Empty filename"}), 400
 
     filename = file.filename.lower()
-    save_path = BASE_DIR / file.filename
+    save_path = user_data_dir / file.filename
     file.save(save_path)
 
     try:
@@ -510,7 +694,7 @@ def upload_resume():
 
             # If uploaded file was .docx, save a copy as master_resume_original.docx for template patching
             if filename.endswith(".docx"):
-                orig_target = BASE_DIR / "master_resume_original.docx"
+                orig_target = user_data_dir / "master_resume_original.docx"
                 import shutil
                 shutil.copy2(save_path, orig_target)
                 print(f"[Upload] Saved Canva template copy to: {orig_target}")
@@ -524,7 +708,7 @@ def upload_resume():
         except Exception:
             pass
 
-        with open(RESUME_PATH, "w", encoding="utf-8") as f:
+        with open(user_resume_path, "w", encoding="utf-8") as f:
             json.dump(parsed_json, f, indent=2, ensure_ascii=False)
 
         name = parsed_json.get("name", "Your")
@@ -542,18 +726,21 @@ def upload_resume():
 
 
 @app.route("/api/delete_resume", methods=["DELETE"])
+@login_required
 def delete_resume():
     """Delete the current master resume (base_resume.json) and reset to empty."""
+    user_resume_path = get_user_resume_path()
+    user_data_dir = current_user.data_dir if current_user.is_authenticated else BASE_DIR
     try:
         # Write an empty sentinel so the UI reverts to the upload prompt
         empty = {"_empty": True, "name": "", "contact": {}, "summary": "",
                  "skills": [], "experience": [], "education": [],
                  "projects": [], "certifications": []}
-        with open(RESUME_PATH, "w", encoding="utf-8") as f:
+        with open(user_resume_path, "w", encoding="utf-8") as f:
             json.dump(empty, f, indent=2)
 
         # Also remove the canva docx template if it exists
-        orig_docx = BASE_DIR / "master_resume_original.docx"
+        orig_docx = user_data_dir / "master_resume_original.docx"
         if orig_docx.exists():
             try:
                 os.remove(orig_docx)
@@ -566,9 +753,11 @@ def delete_resume():
 
 
 @app.route("/api/history")
+@login_required
 def history():
-    """List all previously generated resume applications."""
-    logs_dir = OUTPUT_DIR / "logs"
+    """List all previously generated resume applications for the current user."""
+    user_output_dir = get_user_output_dir()
+    logs_dir = user_output_dir / "logs"
     applications = []
 
     if logs_dir.exists():
@@ -579,7 +768,7 @@ def history():
                     output_file = log_data.get("output_file", "")
                     rel_file = ""
                     if output_file and os.path.exists(output_file):
-                        rel_file = os.path.relpath(output_file, str(OUTPUT_DIR))
+                        rel_file = os.path.relpath(output_file, str(user_output_dir))
 
                     log_data["relative_file_path"] = rel_file
                     log_data["log_file_name"] = log_file.name
@@ -590,12 +779,13 @@ def history():
     return jsonify({"applications": applications, "count": len(applications)})
 
 
-def _delete_single_history_log(filename: str) -> bool:
+def _delete_single_history_log(filename: str, user_output_dir: Path = None) -> bool:
     """Helper: Hard delete log file, .docx, .pdf, cover letters, and the physical application folder on disk."""
     import shutil
     from resume_builder import slugify
 
-    logs_dir = OUTPUT_DIR / "logs"
+    effective_output_dir = user_output_dir or get_user_output_dir()
+    logs_dir = effective_output_dir / "logs"
     log_file = logs_dir / filename
     if not log_file.exists():
         return False
@@ -612,7 +802,7 @@ def _delete_single_history_log(filename: str) -> bool:
         if output_file:
             out_path = Path(output_file)
             parent_dir = out_path.parent
-            if parent_dir.exists() and parent_dir != OUTPUT_DIR and parent_dir != Path(__file__).resolve().parent:
+            if parent_dir.exists() and parent_dir != effective_output_dir and parent_dir != Path(__file__).resolve().parent:
                 shutil.rmtree(parent_dir, ignore_errors=True)
             elif out_path.exists():
                 try:
@@ -620,11 +810,11 @@ def _delete_single_history_log(filename: str) -> bool:
                 except Exception:
                     pass
         
-        # 2. Also search for any slugified folder in output/ and root workspace
+        # 2. Also search for any slugified folder in user output/ and root workspace
         if company and role:
             target_folder_name = f"{slugify(company)}_{slugify(role)}"[:80]
-            # Check in output/
-            out_sub = OUTPUT_DIR / target_folder_name
+            # Check in user output/
+            out_sub = effective_output_dir / target_folder_name
             if out_sub.exists():
                 shutil.rmtree(out_sub, ignore_errors=True)
             # Check in project root
@@ -639,14 +829,16 @@ def _delete_single_history_log(filename: str) -> bool:
         print(f"[History Delete Error] {filename}: {e}")
 @app.route("/api/history/<filename>", methods=["PUT", "POST"])
 @app.route("/api/history/update", methods=["POST"])
+@login_required
 def update_history_item(filename=None):
     """Update company name, role title, and job URL for a saved application."""
+    user_output_dir = get_user_output_dir()
     data = request.json or {}
     fname = filename or data.get("filename")
     if not fname:
         return jsonify({"success": False, "error": "Log filename is required"}), 400
 
-    logs_dir = OUTPUT_DIR / "logs"
+    logs_dir = user_output_dir / "logs"
     log_file = logs_dir / fname
     if not log_file.exists():
         return jsonify({"success": False, "error": f"History log {fname} not found"}), 404
@@ -679,16 +871,20 @@ def update_history_item(filename=None):
 
 
 @app.route("/api/history/<filename>", methods=["DELETE"])
+@login_required
 def delete_history_item(filename):
     """Delete a history run entry and hard delete its actual output folder on disk."""
-    if _delete_single_history_log(filename):
+    user_output_dir = get_user_output_dir()
+    if _delete_single_history_log(filename, user_output_dir):
         return jsonify({"success": True, "message": "History entry and physical output folder deleted permanently from disk"})
     return jsonify({"success": False, "error": "Failed to delete history item or file not found"}), 404
 
 
 @app.route("/api/history/delete_batch", methods=["POST"])
+@login_required
 def delete_history_batch():
     """Bulk delete multiple history run entries and hard delete their folders on disk."""
+    user_output_dir = get_user_output_dir()
     data = request.json or {}
     filenames = data.get("filenames", [])
     if not filenames or not isinstance(filenames, list):
@@ -696,7 +892,7 @@ def delete_history_batch():
 
     deleted_count = 0
     for fname in filenames:
-        if _delete_single_history_log(fname):
+        if _delete_single_history_log(fname, user_output_dir):
             deleted_count += 1
 
     return jsonify({
@@ -707,19 +903,21 @@ def delete_history_batch():
 
 
 @app.route("/api/history/clear_all", methods=["POST", "DELETE"])
+@login_required
 def clear_all_history():
     """Hard delete all history entries, logs, and all generated application folders on disk."""
     import shutil
-    logs_dir = OUTPUT_DIR / "logs"
+    user_output_dir = get_user_output_dir()
+    logs_dir = user_output_dir / "logs"
     deleted_count = 0
     if logs_dir.exists():
         for log_file in list(logs_dir.glob("run_*.json")):
-            if _delete_single_history_log(log_file.name):
+            if _delete_single_history_log(log_file.name, user_output_dir):
                 deleted_count += 1
                 
-    # Also clean any leftover application subfolders inside output/ (preserving logs/ and uploads/)
-    if OUTPUT_DIR.exists():
-        for item in OUTPUT_DIR.iterdir():
+    # Also clean any leftover application subfolders inside user output/ (preserving logs/ and uploads/)
+    if user_output_dir.exists():
+        for item in user_output_dir.iterdir():
             if item.is_dir() and item.name not in ("logs", "uploads", ".git"):
                 shutil.rmtree(item, ignore_errors=True)
                 
@@ -733,11 +931,14 @@ def clear_all_history():
 @app.route("/api/download/<path:filepath>")
 @app.route("/download/<path:filepath>")
 @app.route("/api/<path:filepath>")
+@login_required
 def download_file(filepath):
     """Download a generated resume .docx, .pdf, or .json file with robust path resolution."""
+    user_output_dir = get_user_output_dir()
+    user_resume_path = get_user_resume_path()
     # Guard reserved API endpoints
     first_seg = filepath.split("/")[0].lower()
-    if first_seg in ("health", "settings", "resume", "upload_resume", "delete_resume", "history", "analyze", "open-folder", "cover-letter", "run", "hf-detect", "humanize", "stream"):
+    if first_seg in ("health", "settings", "resume", "upload_resume", "delete_resume", "history", "analyze", "open-folder", "cover-letter", "run", "hf-detect", "humanize", "stream", "me", "change_password", "login", "logout", "signup"):
         return jsonify({"error": "Endpoint not found"}), 404
 
     import urllib.parse
@@ -746,7 +947,7 @@ def download_file(filepath):
     # 1. Direct absolute path check
     target_path = Path(clean_fp)
     if not (target_path.is_absolute() and target_path.exists()):
-        target_path = (OUTPUT_DIR / clean_fp).resolve()
+        target_path = (user_output_dir / clean_fp).resolve()
 
     # 2. Check inside BASE_DIR
     if not target_path.exists():
@@ -757,23 +958,22 @@ def download_file(filepath):
     # 3. Check stripped 'output/' prefix
     if not target_path.exists() and "output/" in clean_fp.lower():
         sub = clean_fp.split("output/", 1)[-1]
-        candidate_sub = (OUTPUT_DIR / sub).resolve()
+        candidate_sub = (user_output_dir / sub).resolve()
         if candidate_sub.exists():
             target_path = candidate_sub
 
-    # 4. Search recursively inside OUTPUT_DIR by exact filename
+    # 4. Search recursively inside user output_dir by exact filename
     if not target_path.exists():
         fname = Path(clean_fp).name
-        matches = list(OUTPUT_DIR.rglob(fname))
+        matches = list(user_output_dir.rglob(fname))
         if matches:
-            # Sort by modification time to get the newest
             matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
             target_path = matches[0].resolve()
 
     # 5. If PDF requested but doesn't exist, search for .docx counterpart and convert on the fly!
     if not target_path.exists() and clean_fp.lower().endswith(".pdf"):
         docx_name = Path(clean_fp).stem + ".docx"
-        docx_matches = list(OUTPUT_DIR.rglob(docx_name))
+        docx_matches = list(user_output_dir.rglob(docx_name))
         if docx_matches:
             docx_matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
             try:
@@ -787,8 +987,8 @@ def download_file(filepath):
     # 6. If Cover Letter requested with any name, find newest Cover_Letter in output
     if not target_path.exists() and "cover_letter" in clean_fp.lower():
         subfolder = Path(clean_fp).parent
-        search_dir = (OUTPUT_DIR / subfolder).resolve() if (OUTPUT_DIR / subfolder).exists() else OUTPUT_DIR
-        cl_matches = list(search_dir.rglob("*Cover_Letter*.docx")) or list(OUTPUT_DIR.rglob("*Cover_Letter*.docx"))
+        search_dir = (user_output_dir / subfolder).resolve() if (user_output_dir / subfolder).exists() else user_output_dir
+        cl_matches = list(search_dir.rglob("*Cover_Letter*.docx")) or list(user_output_dir.rglob("*Cover_Letter*.docx"))
         if cl_matches:
             cl_matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
             target_path = cl_matches[0].resolve()
@@ -796,15 +996,15 @@ def download_file(filepath):
     # 7. If generic resume requested and not found, find the newest generated resume in output
     if not target_path.exists() and "resume" in clean_fp.lower():
         ext = ".pdf" if clean_fp.lower().endswith(".pdf") else ".docx"
-        resume_matches = list(OUTPUT_DIR.rglob(f"*Resume*{ext}"))
+        resume_matches = list(user_output_dir.rglob(f"*Resume*{ext}"))
         if resume_matches:
             resume_matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
             target_path = resume_matches[0].resolve()
 
-    # 8. Fallback to base_resume.json if json requested
+    # 8. Fallback to user base_resume.json if json requested
     if not target_path.exists() and clean_fp.lower().endswith(".json"):
-        if (BASE_DIR / "base_resume.json").exists():
-            target_path = (BASE_DIR / "base_resume.json").resolve()
+        if user_resume_path.exists():
+            target_path = user_resume_path.resolve()
 
     if not target_path.exists() or not target_path.is_file():
         return jsonify({"error": f"File '{filepath}' not found"}), 404
@@ -828,6 +1028,7 @@ def download_file(filepath):
 
 
 @app.route("/api/analyze", methods=["POST"])
+@login_required
 def analyze_job():
     """
     Step 1 Analysis: Scrapes JD text, calls Simplify (or extract_keywords_from_jd),
@@ -852,7 +1053,7 @@ def analyze_job():
         from scraper import scrape_jd, sanitize_jd_url, clean_role_title
         from simplify_reader import read_simplify_score
 
-        base_resume = load_base_resume()
+        base_resume = load_base_resume(str(get_user_resume_path()))
 
         if is_direct_text:
             jd_text = direct_jd_text if (direct_jd_text and len(direct_jd_text) >= 20) else url
@@ -1044,16 +1245,18 @@ def analyze_job():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-
 @app.route("/api/open-folder", methods=["POST"])
+@login_required
 def open_folder():
+
     """Open specified output directory in Windows File Explorer."""
+    user_output_dir = get_user_output_dir()
     data = request.json or {}
-    folder_path = data.get("folder_path", str(OUTPUT_DIR))
+    folder_path = data.get("folder_path", str(user_output_dir))
 
     target = Path(folder_path).resolve()
     if not target.exists():
-        target = OUTPUT_DIR.resolve()
+        target = user_output_dir.resolve()
         target.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -1069,8 +1272,11 @@ def open_folder():
 
 
 @app.route("/api/cover-letter", methods=["POST"])
+@login_required
 def generate_cover_letter_api():
     """Generate a job-specific AI cover letter for the given job URL or role."""
+    user_output_dir = get_user_output_dir()
+    user_resume_path = get_user_resume_path()
     data = request.json or {}
     url = data.get("url", "").strip()
     company = data.get("company", "").strip()
@@ -1085,7 +1291,7 @@ def generate_cover_letter_api():
         from scraper import scrape_jd_sync
         from cover_letter_generator import generate_cover_letter
 
-        base_resume = load_base_resume()
+        base_resume = load_base_resume(str(user_resume_path))
 
         if url:
             # Check cache or scrape
@@ -1104,7 +1310,7 @@ def generate_cover_letter_api():
 
         from resume_builder import slugify
         folder_name = f"{slugify(company)}_{slugify(role)}"[:80]
-        target_dir = OUTPUT_DIR / folder_name
+        target_dir = user_output_dir / folder_name
 
         res = generate_cover_letter(
             base_resume=base_resume,
@@ -1115,7 +1321,7 @@ def generate_cover_letter_api():
             output_dir=str(target_dir),
         )
 
-        rel_docx = os.path.relpath(res["file_path_docx"], str(OUTPUT_DIR)).replace("\\", "/") if res.get("file_path_docx") else ""
+        rel_docx = os.path.relpath(res["file_path_docx"], str(user_output_dir)).replace("\\", "/") if res.get("file_path_docx") else ""
 
         return jsonify({
             "success": True,
@@ -1130,8 +1336,11 @@ def generate_cover_letter_api():
 
 
 @app.route("/api/cover-letter/save", methods=["POST"])
+@login_required
 def save_custom_cover_letter_api():
     """Save user-edited cover letter text to disk as .docx and .txt, and return the download path."""
+    user_output_dir = get_user_output_dir()
+    user_resume_path = get_user_resume_path()
     data = request.json or {}
     text = data.get("cover_letter_text", "").strip()
     company = data.get("company", "Target Company").strip()
@@ -1147,11 +1356,11 @@ def save_custom_cover_letter_api():
         from docx.shared import Pt, Inches, RGBColor
         from datetime import datetime as dt
 
-        base_resume = load_base_resume()
+        base_resume = load_base_resume(str(user_resume_path))
         candidate_name = base_resume.get("name", "Candidate Name")
 
         folder_name = f"{slugify(company)}_{slugify(role)}"[:80]
-        target_dir = OUTPUT_DIR / folder_name
+        target_dir = user_output_dir / folder_name
         target_dir.mkdir(parents=True, exist_ok=True)
 
         name_slug = slugify(candidate_name)
@@ -1201,7 +1410,7 @@ def save_custom_cover_letter_api():
 
         doc.save(str(file_path_docx))
 
-        rel_docx = os.path.relpath(str(file_path_docx), str(OUTPUT_DIR)).replace("\\", "/")
+        rel_docx = os.path.relpath(str(file_path_docx), str(user_output_dir)).replace("\\", "/")
 
         return jsonify({
             "success": True,
@@ -1214,8 +1423,10 @@ def save_custom_cover_letter_api():
 
 
 @app.route("/api/answer-questions", methods=["POST"])
+@login_required
 def api_answer_questions():
     """Answer application-specific questions (Greenhouse/Lever/Workday/Ashby) using Q&A Copilot."""
+    user_resume_path = get_user_resume_path()
     data = request.json or {}
     questions = data.get("questions", "")
     company = data.get("company", "Target Company").strip()
@@ -1229,7 +1440,7 @@ def api_answer_questions():
         from agent import load_base_resume
         from qa_generator import answer_application_questions
 
-        base_resume = load_base_resume()
+        base_resume = load_base_resume(str(user_resume_path))
 
         # If JD text is missing, check cache
         if not jd_text:
@@ -1257,6 +1468,7 @@ def api_answer_questions():
 
 
 @app.route("/api/run", methods=["POST"])
+@login_required
 def run_agent():
     """Start pipeline generation run and return run_id for streaming."""
     data = request.json or {}
@@ -1272,6 +1484,11 @@ def run_agent():
     custom_output = data.get("custom_output", "")
     score_before = data.get("score_before", None)
 
+    # Capture per-user paths at request time (thread-safe: closures copy the value)
+    user_resume_path = str(get_user_resume_path())
+    user_output_dir = str(get_user_output_dir())
+    user_settings = get_user_settings()
+
     if not url and not direct_jd_text:
         return jsonify({"error": "Please enter a job URL or paste the job description text."}), 400
     if not url and direct_jd_text:
@@ -1285,6 +1502,7 @@ def run_agent():
     thread = threading.Thread(
         target=_execute_agent_pipeline,
         args=(run_id, url, custom_keywords, no_simplify, passes, custom_output, msg_queue, score_before, custom_bullets, engine_mode, custom_company, custom_role, direct_jd_text),
+        kwargs={"user_resume_path": user_resume_path, "user_output_dir": user_output_dir, "user_settings": user_settings},
         daemon=True,
     )
     thread.start()
@@ -1292,9 +1510,27 @@ def run_agent():
     return jsonify({"run_id": run_id, "status": "started"})
 
 
-def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passes, custom_output, msg_queue, analyze_score_before=None, custom_bullets="", engine_mode="danis_engine", custom_company="", custom_role="", direct_jd_text=""):
+def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passes, custom_output, msg_queue, analyze_score_before=None, custom_bullets="", engine_mode="danis_engine", custom_company="", custom_role="", direct_jd_text="", user_resume_path=None, user_output_dir=None, user_settings=None):
     """Execute pipeline in thread and push step logs to SSE queue."""
     # analyze_score_before: real score from Analyze step (Gemini/Simplify) — authoritative before score
+
+    # Resolve per-user paths (provided by run_agent at request time)
+    _resume_path = Path(user_resume_path) if user_resume_path else RESUME_PATH
+    _output_dir = Path(user_output_dir) if user_output_dir else OUTPUT_DIR
+    _settings = user_settings or {}
+
+    # Inject user API keys into environment for this thread
+    if _settings.get("GEMINI_API_KEY"):
+        os.environ["GEMINI_API_KEY"] = _settings["GEMINI_API_KEY"]
+    if _settings.get("GEMINI_API_KEY_2"):
+        os.environ["GEMINI_API_KEY_2"] = _settings["GEMINI_API_KEY_2"]
+    if _settings.get("SIMPLIFY_EMAIL"):
+        os.environ["SIMPLIFY_EMAIL"] = _settings["SIMPLIFY_EMAIL"]
+    if _settings.get("SIMPLIFY_PASSWORD"):
+        os.environ["SIMPLIFY_PASSWORD"] = _settings["SIMPLIFY_PASSWORD"]
+    if _settings.get("HF_API_KEY"):
+        os.environ["HF_API_KEY"] = _settings["HF_API_KEY"]
+
     def send_log(step, stage, message, data=None, status="info"):
         msg_queue.put({
             "type": "progress",
@@ -1317,8 +1553,9 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
         from ai_detector import run_ai_detection_loop
         from resume_builder import build_resume_docx
 
-        base_resume = load_base_resume()
+        base_resume = load_base_resume(str(_resume_path))
         send_log(1, "Base Resume", f"Loaded master resume for {base_resume.get('name')}", status="success")
+
 
         # Step 2: Scrape JD (checks memory & disk cache first, or uses direct text)
         is_direct_text = ("\n" in url) or (" " in url and len(url.split()) > 5) or (not url.startswith(("http://", "https://")) and not ("." in url and "/" in url))
@@ -1562,6 +1799,15 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                 cleaned_resume[sec] = base_resume[sec]
 
         orig_docx_path = BASE_DIR / "master_resume_original.docx"
+        # Check user-specific master docx first (if they uploaded a Canva/custom template)
+        user_data_dir = _resume_path.parent
+        user_orig_docx = user_data_dir / "master_resume_original.docx"
+        if user_orig_docx.exists():
+            orig_docx_path = user_orig_docx
+
+        # If no custom output dir specified, use the user's output directory
+        effective_output = custom_output or str(_output_dir)
+
         if orig_docx_path.exists():
             try:
                 from docx_patcher import patch_docx_with_rewritten_resume
@@ -1571,7 +1817,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                     rewritten_resume=cleaned_resume,
                     company=company,
                     role=role,
-                    output_dir=custom_output,
+                    output_dir=effective_output,
                 )
                 send_log(7, "Word Document", "Patched original Canva template with rewritten content!", status="success")
             except Exception as patch_err:
@@ -1580,15 +1826,16 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                     resume=cleaned_resume,
                     company=company,
                     role=role,
-                    output_dir=custom_output,
+                    output_dir=effective_output,
                 )
         else:
             doc_path = build_resume_docx(
                 resume=cleaned_resume,
                 company=company,
                 role=role,
-                output_dir=custom_output,
+                output_dir=effective_output,
             )
+
 
         # Automatically convert to PDF for instant viewing/download
         try:
@@ -1616,7 +1863,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
         except Exception as cl_err:
             print(f"[Pipeline] Cover letter note: {cl_err}")
 
-        rel_path = os.path.relpath(doc_path, str(OUTPUT_DIR)).replace("\\", "/")
+        rel_path = os.path.relpath(doc_path, str(_output_dir)).replace("\\", "/")
 
         # Determine final score values for dashboard:
         # Priority: 1. analyze_score_before from Analyze step  2. simplify_score_before from pipeline  3. default 75
@@ -1642,7 +1889,8 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
             score_before=score_before_val,
             score_after=score_after_val,
             score_delta=score_delta_val,
-            cover_letter_text=cover_letter_text
+            cover_letter_text=cover_letter_text,
+            output_dir=_output_dir
         )
 
         # Final complete message
@@ -1688,6 +1936,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
 
 
 @app.route("/api/stream/<run_id>")
+@login_required
 def stream_run_logs(run_id):
     """Server-Sent Events endpoint streaming pipeline progress."""
     def event_stream():
