@@ -70,6 +70,13 @@ def _set_para_text_preserve_format(para, new_text: str):
         run.text = ""
 
 
+def _delete_paragraph(para):
+    """Physically remove paragraph element from document XML to prevent empty bullet points."""
+    p = para._element
+    if p.getparent() is not None:
+        p.getparent().remove(p)
+
+
 def _normalize(text: str) -> str:
     """Normalize text for comparison."""
     return re.sub(r'\s+', ' ', text.lower().strip())
@@ -260,16 +267,18 @@ def patch_docx_with_rewritten_resume(
 
                     # If no direct match, match keywords in label
                     if not matched_items:
-                        if "lang" in label_lower:
-                            matched_items = categorized.get("Languages", [])
-                        elif "cloud" in label_lower or "devops" in label_lower:
+                        if "database" in label_lower or "data warehouse" in label_lower or "storage" in label_lower:
+                            matched_items = categorized.get("Databases", [])
+                        elif "cloud" in label_lower or "devops" in label_lower or "infra" in label_lower:
                             matched_items = categorized.get("Cloud & DevOps", [])
+                        elif "framework" in label_lower or "librar" in label_lower:
+                            matched_items = categorized.get("Frameworks & Libraries", [])
+                        elif "lang" in label_lower:
+                            matched_items = categorized.get("Languages", [])
+                        elif "business" in label_lower or "methodolog" in label_lower or "process" in label_lower:
+                            matched_items = categorized.get("Business & Methodologies", [])
                         elif "tool" in label_lower or "platform" in label_lower:
                             matched_items = categorized.get("Tools & Platforms", [])
-                        elif "database" in label_lower:
-                            matched_items = categorized.get("Databases", [])
-                        elif "framework" in label_lower:
-                            matched_items = categorized.get("Frameworks & Libraries", [])
 
                     if matched_items:
                         new_content = f"{label}: {', '.join(matched_items)}"
@@ -369,14 +378,15 @@ def patch_docx_with_rewritten_resume(
             if is_bullet:
                 role_bullet_paras.append(p)
 
-        new_bullets = exp.get("bullets", [])
-        print(f"[Patcher] Role '{exp.get('company')}': {len(role_bullet_paras)} original bullets, {len(new_bullets)} new bullets")
+        valid_bullets = [
+            sanitize_text(b).lstrip("•·▪-* ").strip()
+            for b in exp.get("bullets", [])
+            if b and len(sanitize_text(b).strip()) >= 8
+        ]
+        print(f"[Patcher] Role '{exp.get('company')}': {len(role_bullet_paras)} original bullets, {len(valid_bullets)} valid new bullets")
 
         # 1-to-1 sequential mapping
-        for b_i, new_b in enumerate(new_bullets):
-            clean_b = sanitize_text(new_b)
-            if not clean_b:
-                continue
+        for b_i, clean_b in enumerate(valid_bullets):
             if b_i < len(role_bullet_paras):
                 target_para = role_bullet_paras[b_i]
                 _set_para_text_preserve_format(target_para, clean_b)
@@ -395,12 +405,21 @@ def patch_docx_with_rewritten_resume(
                         run.font.size = last_p.runs[0].font.size
                     total_replacements += 1
 
-        # If original had more bullets than new, clear excess paragraphs
-        if len(role_bullet_paras) > len(new_bullets):
-            for extra_p in role_bullet_paras[len(new_bullets):]:
-                extra_p.text = ""
+        # If original had more bullets than new, PHYSICALLY DELETE excess paragraphs (never leave empty bullets!)
+        if len(role_bullet_paras) > len(valid_bullets):
+            for extra_p in role_bullet_paras[len(valid_bullets):]:
+                _delete_paragraph(extra_p)
 
     print(f"[Patcher] Total bullet replacements made: {total_replacements}")
+
+    # Final sweep: purge any stray empty bullet points or orphaned list markers across entire document
+    for p in list(doc.paragraphs):
+        p_txt = _get_para_full_text(p).strip()
+        is_list = bool(p.style and p.style.name and p.style.name.startswith("List"))
+        if is_list:
+            clean_txt = p_txt.lstrip("•·▪-* ").strip()
+            if not clean_txt or len(clean_txt) < 3:
+                _delete_paragraph(p)
 
     # Save patched document
     doc.save(str(out_path))

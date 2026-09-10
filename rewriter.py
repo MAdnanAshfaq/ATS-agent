@@ -220,22 +220,31 @@ You MUST preserve ALL work experience entries present in MASTER_PROFILE.
 If MASTER_PROFILE contains multiple roles, your output "experience" array MUST contain ALL of them with their exact company names and dates.
 Never drop, truncate, or omit past jobs from the candidate's history.
 
-2. SKILLS LIST CONSTRAINTS (ATOMIC SKILLS ONLY):
-The "skills" array must ONLY contain concise technical tools, languages, frameworks, and methodologies (1 to 4 words each, e.g. "TypeScript", "React", "Python", "SQL", "Docker", "AWS", "CI/CD").
-NEVER put full sentences, duties, paragraphs, or responsibility bullet points into the "skills" list!
+2. HARD SKILLS PRESERVATION & ZERO LOSS OF MAIN SKILLS:
+You MUST preserve ALL primary hard technical skills (programming languages, databases, cloud infrastructure, frameworks, technical tools) from MASTER_PROFILE.
+NEVER delete the candidate's core technical stack!
+You may ONLY prune or replace generic/soft skills (e.g. "team player", "communication", "leadership", "problem solving") to make room for new technical keywords from the job description.
+Every hard skill from MASTER_PROFILE must remain in the "skills" array, supplemented by missing technical tools from the job description.
+The "skills" array must ONLY contain concise technical tools (1 to 4 words each). NEVER put full sentences, duties, or descriptions into "skills".
 
-3. MANDATORY BULLET INJECTION IN EXPERIENCE:
-Every missing skill/tool AND every user-specified responsibility point MUST be woven into the candidate's work experience bullets (primarily under the latest role).
-Write active, high-impact bullets starting with strong action verbs (e.g., "Engineered", "Architected", "Optimized", "Implemented", "Automated", "Delivered").
-Explicitly state HOW the tool/concept was applied, for what system or project, and what business/technical result was achieved.
+3. QUANTIFIED IMPACT & EVIDENCE-BACKED SENIORITY:
+Every rewritten bullet MUST include concrete numbers, percentages, dollar amounts, scale metrics, or time/cost savings (e.g., "reduced query latency by 45%", "scaled throughput to 5M+ daily requests", "automated CI/CD pipelines saving 8 hours weekly", "cut cloud compute costs by $60K/year").
+Avoid naked activity verbs ("built", "managed", "led", "assisted") without measurable scale or outcome.
+Do NOT make unsubstantiated claims in the summary. Any major methodology or capability claimed in the summary MUST be grounded in a specific project or achievement in the experience bullets.
 
-4. IDENTIFY & PURGE (Remove Previous Job Stuffing):
-Start strictly from MASTER_PROFILE. If there are hyper-specific keywords from previous application runs that do NOT appear in the current missing keywords list or the master profile, REMOVE or REPLACE them back to the clean master format.
+4. SUBSTANTIVE BULLETS & ZERO EMPTY BULLETS / PLACEHOLDERS:
+Every bullet point MUST be a complete, professional, high-impact sentence (15 to 28 words).
+NEVER output blank bullets, lone bullet symbols ("•"), incomplete phrases, or template placeholders (e.g. "[Company]", "[Metric]").
+Eliminate generic filler ("passionate about delivering quality", "detail-oriented team player").
+Vary action verbs across bullets — do NOT repeat the same opening verb (e.g. don't start multiple bullets with "Engineered" or "Implemented").
 
-5. NO AI BUZZWORDS:
-Do NOT use obvious AI buzzwords like "spearheaded", "leveraged", "dynamic", "testament", "transformative", "fostered", "pivotal", "groundbreaking", "innovative", "robust", or "seamless". Use clear, active human engineering language.
+5. DATE AUTHENTICITY & CURRENT EMPLOYMENT:
+Preserve authentic employment dates. For the candidate's most recent/current role, the date MUST specify "Present" (e.g., "2021 – Present" or "Jan 2022 – Present") unless the user explicitly specified a past departure date. Never leave a current role ending in the current year without "Present".
 
-6. OUTPUT SCHEMATIC:
+6. CROSS-SECTION CONSISTENCY:
+Ensure 100% consistency between skills and experience: any primary technical tool highlighted in the experience bullets MUST also appear in the skills section, and vice versa.
+
+7. OUTPUT SCHEMATIC:
 Return the updated resume strictly as a valid JSON object matching the exact keys and ALL experience roles of MASTER_PROFILE so the docx script runs smoothly.
 
 JSON OUTPUT FORMAT (return all experiences from MASTER_PROFILE):
@@ -394,7 +403,32 @@ def rewrite_resume(
                 else:
                     if s_str not in cleaned_skills:
                         cleaned_skills.append(s_str)
-            merged["skills"] = cleaned_skills
+
+            # ── HARD MAIN SKILLS PRESERVATION (Never delete candidate's core technical tools) ──
+            SOFT_SKILLS = {
+                "team player", "communication", "leadership", "critical thinking", "problem solving",
+                "cross-functional collaboration", "agile methodology", "time management", "detail-oriented",
+                "mentorship", "adaptability", "presentation skills", "stakeholder management",
+                "strategic planning", "creativity", "work ethic", "organizational skills",
+                "decision making", "interpersonal skills", "multitasking", "collaboration", "negotiation",
+                "conflict resolution", "analytical thinking", "active listening", "emotional intelligence"
+            }
+            base_skills = base_resume.get("skills", [])
+            hard_main_skills = [
+                s.strip() for s in base_skills 
+                if s and str(s).strip().lower() not in SOFT_SKILLS and len(str(s).split()) <= 4
+            ]
+
+            # Start with all original hard main skills from candidate's profile
+            final_skills = list(hard_main_skills)
+            final_skills_lower = {s.lower() for s in final_skills}
+
+            # Add newly rewritten technical skills from the job description
+            for s in cleaned_skills:
+                s_clean = s.strip()
+                if s_clean.lower() not in final_skills_lower and s_clean.lower() not in SOFT_SKILLS:
+                    final_skills.append(s_clean)
+                    final_skills_lower.add(s_clean.lower())
 
             # Weave any stray sentence responsibilities into the latest role bullets
             if sentence_skills and rewritten_exp:
@@ -407,7 +441,7 @@ def rewrite_resume(
                         latest_bullets.append(clean_b)
                 rewritten_exp[0]["bullets"] = latest_bullets
 
-            # Bullet sanitization across all roles (purge 2-word fragments, ensure complete sentences)
+            # Bullet sanitization across all roles (purge broken/empty bullets, ensure complete sentences)
             for exp_entry in rewritten_exp:
                 raw_bullets = exp_entry.get("bullets", [])
                 clean_b_list = []
@@ -417,7 +451,7 @@ def rewrite_resume(
                     b_clean = b.strip()
                     b_clean = re.sub(r'^[•·▪▸►\*\-]\s*', '', b_clean)
                     b_clean = re.sub(r'^\d+[\.\)]\s*', '', b_clean).strip()
-                    if len(b_clean) < 25 or len(b_clean.split()) < 4:
+                    if len(b_clean) < 20 or len(b_clean.split()) < 4:
                         continue
                     if b_clean and b_clean[0].islower():
                         b_clean = b_clean[0].upper() + b_clean[1:]
@@ -431,6 +465,34 @@ def rewrite_resume(
                             clean_b_list = orig.get("bullets", [])
                             break
                 exp_entry["bullets"] = clean_b_list
+
+            # ── CROSS-SECTION CONSISTENCY (Sync technical tools mentioned in bullets into skills) ──
+            TECH_VOCAB = (
+                "Python", "JavaScript", "TypeScript", "Java", "C++", "C#", "Go", "Rust", "SQL", "HTML", "CSS", "Bash",
+                "React", "React Native", "Vue", "Angular", "Next.js", "Node.js", "Express", "FastAPI", "Django", "Spring Boot",
+                "PostgreSQL", "MySQL", "MongoDB", "Redis", "Elasticsearch", "Snowflake", "BigQuery", "Redshift", "Databricks", "Spark", "PySpark",
+                "AWS", "Azure", "GCP", "Docker", "Kubernetes", "Terraform", "Ansible", "CI/CD", "Jenkins", "GitHub Actions", "Git",
+                "Kafka", "Airflow", "dbt", "GraphQL", "REST APIs", "Microservices", "Salesforce", "HubSpot", "Tableau", "Power BI"
+            )
+            all_bullets_str = " ".join(" ".join(e.get("bullets", [])) for e in rewritten_exp).lower()
+            for tech in TECH_VOCAB:
+                if re.search(r'\b' + re.escape(tech.lower()) + r'\b', all_bullets_str):
+                    if tech.lower() not in final_skills_lower:
+                        final_skills.append(tech)
+                        final_skills_lower.add(tech.lower())
+
+            merged["skills"] = final_skills
+
+            # ── DATE NORMALIZATION (Current role must specify 'Present') ──
+            for i, exp_entry in enumerate(rewritten_exp):
+                dates = exp_entry.get("dates", "")
+                if i == 0 and dates:
+                    # If ends with current year (e.g. "2021 - 2026" or "2021-2026") without "Present"
+                    if re.search(r'[-–—]\s*202[4-6]$', dates.strip()) and not re.search(r'\b(present|current)\b', dates, re.IGNORECASE):
+                        start_part = re.split(r'[-–—]', dates)[0].strip()
+                        exp_entry["dates"] = f"{start_part} – Present"
+                    elif " - " in dates:
+                        exp_entry["dates"] = dates.replace(" - ", " – ")
 
             merged["experience"] = rewritten_exp
 

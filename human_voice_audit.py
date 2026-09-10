@@ -151,6 +151,37 @@ def audit_resume_dict(resume: dict, tells: dict[str, Any] | None = None) -> dict
             overlong_bullets += 1
             findings.append(f"Bullet exceeds word cap ({len(b_words)} words > {hard_max_words}): '{bullet[:50]}...'")
 
+        # Check for broken, empty, or placeholder bullets (Red Flag #1)
+        clean_b = bullet.lstrip("•·▪-* ").strip()
+        if not clean_b or len(clean_b) < 10:
+            findings.append(f"Broken or empty bullet point detected: '{bullet}'")
+        if any(ph in bullet.lower() for ph in ("[todo]", "[company]", "<placeholder>", "insert metric", "[metric]")):
+            findings.append(f"Unfinished placeholder in bullet: '{bullet[:50]}...'")
+
+    # Quantified Impact Audit (Red Flag #4)
+    metric_regex = re.compile(r'(\b\d+[%kKmMbB]?\b|\$\d+|\b\d+\+\b|\b\d+\s*(?:hours|days|mins|minutes|seconds|ms|percent|users|customers|queries|nodes|servers|models|endpoints|million|billion)\b)')
+    quantified_bullets = [b for b in all_bullets if metric_regex.search(b)]
+    if len(all_bullets) >= 3:
+        quantified_pct = (len(quantified_bullets) / len(all_bullets)) * 100
+        if quantified_pct < 50:
+            findings.append(f"Low quantified impact: Only {len(quantified_bullets)}/{len(all_bullets)} bullets ({quantified_pct:.0f}%) contain numbers, percentages, or scale metrics (target >= 50%)")
+
+    # Repeated Verb Openers Audit (Red Flag #6)
+    openers = [re.sub(r'^[^\w]+|[^\w]+$', '', b.split()[0]).lower() for b in all_bullets if b.split()]
+    from collections import Counter
+    for op, cnt in Counter(openers).items():
+        if cnt >= 3:
+            findings.append(f"Repeated verb opener: '{op.title()}' starts {cnt} different bullets. Vary action verbs for natural human flow.")
+
+    # Employment Dates Check on Current Role (Red Flag #3)
+    exp_list = resume.get("experience", [])
+    if exp_list and isinstance(exp_list, list):
+        latest_role = exp_list[0]
+        if isinstance(latest_role, dict):
+            latest_dates = latest_role.get("dates", "")
+            if re.search(r'[-–—]\s*202[4-6]$', latest_dates.strip()) and not re.search(r'\b(present|current)\b', latest_dates, re.IGNORECASE):
+                findings.append(f"Suspicious employment date on current role: '{latest_dates}' lacks 'Present'.")
+
     # Burstiness & Mean Word Length
     if all_bullets:
         word_counts = [len(b.split()) for b in all_bullets]
@@ -167,14 +198,25 @@ def audit_resume_dict(resume: dict, tells: dict[str, Any] | None = None) -> dict
         mean_words = 0.0
         cv = 0.35
 
-    # 3. Audit Banned AI Lexicon across entire resume
+    # 3. Audit Banned AI Lexicon & Generic Filler across entire resume (Red Flag #6)
     full_text = json.dumps(resume, ensure_ascii=False).lower()
     banned_found = []
     for bw in banned_words:
-        # Match whole word
         if re.search(r'\b' + re.escape(bw) + r'\b', full_text):
             banned_found.append(bw)
             findings.append(f"Banned AI tell word detected: '{bw}'")
+
+    generic_fillers = [
+        "passionate about delivering high-quality results",
+        "detail-oriented team player",
+        "proven track record of success",
+        "seasoned professional with a passion",
+        "strong work ethic and communication skills",
+        "go-getter attitude"
+    ]
+    for filler in generic_fillers:
+        if filler in full_text:
+            findings.append(f"Generic templated filler detected: '{filler}'")
 
     # Scoring calculation
     penalty = (len(findings) * 12) + (cliche_found_count * 15) + (len(banned_found) * 15)

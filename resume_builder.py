@@ -134,8 +134,8 @@ def build_resume_docx(
     
     def add_bullet(text: str):
         """Add a clean bullet point."""
-        text = sanitize_text(text)
-        if not text:
+        text = sanitize_text(text).lstrip("•·▪-* ").strip()
+        if not text or len(text) < 8:
             return
         para = doc.add_paragraph(style='List Bullet')
         run = para.add_run(text)
@@ -357,7 +357,7 @@ def build_resume_docx(
 
 
 def _categorize_skills(skills: list) -> dict:
-    """Auto-categorize skills into groups for clean display."""
+    """Auto-categorize skills into groups for clean display with zero cross-contamination."""
     categories = {
         "Languages": [],
         "Frameworks & Libraries": [],
@@ -365,55 +365,69 @@ def _categorize_skills(skills: list) -> dict:
         "Cloud & DevOps": [],
         "Tools & Platforms": [],
         "Business & Methodologies": [],
-        "Other": [],
     }
-    
-    lang_keywords = {
-        'python', 'javascript', 'typescript', 'java', 'kotlin', 'swift', 'go', 'golang',
-        'rust', 'c++', 'c#', 'ruby', 'php', 'scala', 'r', 'sql', 'html', 'css', 'bash', 'shell'
-    }
-    framework_keywords = {
-        'react', 'vue', 'angular', 'next', 'nuxt', 'svelte', 'node', 'express', 'fastapi',
-        'django', 'flask', 'spring', 'rails', 'laravel', 'graphql', 'rest', 'grpc',
-        'tailwind', 'bootstrap', 'redux', 'react native', 'expo', 'pytorch', 'tensorflow'
-    }
+
     db_keywords = {
         'postgresql', 'postgres', 'mysql', 'mongodb', 'sqlite', 'redis', 'elasticsearch',
-        'dynamodb', 'cassandra', 'neo4j', 'supabase', 'firebase', 'pinecone', 'snowflake'
+        'dynamodb', 'cassandra', 'neo4j', 'supabase', 'firebase', 'pinecone', 'snowflake',
+        'bigquery', 'redshift', 'mariadb', 'oracle', 'sql server', 'databricks', 'delta lake'
     }
     cloud_keywords = {
         'aws', 'gcp', 'azure', 'docker', 'kubernetes', 'terraform', 'ansible', 'ci/cd',
         'github actions', 'jenkins', 'vercel', 'netlify', 'heroku', 'cloudflare',
-        'lambda', 'ec2', 's3', 'cloud run', 'gke', 'ecs'
+        'lambda', 'ec2', 's3', 'cloud run', 'gke', 'ecs', 'helm', 'kafka', 'airflow', 'prefect', 'dagster'
+    }
+    framework_keywords = {
+        'react', 'react.js', 'react native', 'vue', 'vue.js', 'angular', 'next.js', 'nextjs', 'nuxt',
+        'svelte', 'node.js', 'nodejs', 'express', 'express.js', 'fastapi', 'django', 'flask',
+        'spring boot', 'spring', 'rails', 'laravel', 'graphql', 'rest apis', 'rest api', 'grpc',
+        'tailwind', 'bootstrap', 'redux', 'pytorch', 'tensorflow', 'pyspark', 'pandas', 'numpy',
+        'scikit-learn', 'dbt'
+    }
+    lang_keywords = {
+        'python', 'javascript', 'typescript', 'java', 'kotlin', 'swift', 'golang', 'go',
+        'rust', 'c++', 'c#', 'ruby', 'php', 'scala', 'r', 'sql', 'pl/sql', 't-sql', 'html', 'css', 'bash', 'shell', 'c'
     }
     business_keywords = {
         'salesforce', 'hubspot', 'crm', 'agile', 'scrum', 'jira', 'confluence', 'tableau',
         'power bi', 'lead generation', 'seo', 'sem', 'google analytics', 'market research',
         'b2b', 'saas', 'enterprise sales', 'cold calling', 'account management', 'product management'
     }
-    
+
+    def _matches(candidate: str, kw_set: set[str]) -> bool:
+        c_lower = candidate.lower().strip()
+        for kw in kw_set:
+            if c_lower == kw:
+                return True
+            pattern = r'(?:^|[\s,/\(\)\-\_\:])' + re.escape(kw) + r'(?:$|[\s,/\(\)\-\_\:])'
+            if re.search(pattern, c_lower):
+                return True
+        return False
+
     for skill in skills:
-        skill_clean = sanitize_text(skill)
+        skill_clean = sanitize_text(skill).lstrip("•·▪-* ").strip()
         words = skill_clean.split()
-        # Strictly skip sentences or duty descriptions (> 4 words or ends with period)
-        if len(words) > 4 or skill_clean.endswith(".") or len(skill_clean) > 35:
+        if not skill_clean or len(words) > 4 or skill_clean.endswith(".") or len(skill_clean) > 35:
             continue
 
-        skill_lower = skill_clean.lower()
-        
-        if any(kw in skill_lower for kw in lang_keywords):
-            categories["Languages"].append(skill_clean)
-        elif any(kw in skill_lower for kw in framework_keywords):
-            categories["Frameworks & Libraries"].append(skill_clean)
-        elif any(kw in skill_lower for kw in db_keywords):
+        # Priority 1: Databases (must precede Languages so SQL/PostgreSQL/MySQL/MongoDB aren't hijacked)
+        if _matches(skill_clean, db_keywords):
             categories["Databases"].append(skill_clean)
-        elif any(kw in skill_lower for kw in cloud_keywords):
+        # Priority 2: Cloud & DevOps (Docker, Kubernetes, AWS, etc.)
+        elif _matches(skill_clean, cloud_keywords):
             categories["Cloud & DevOps"].append(skill_clean)
-        elif any(kw in skill_lower for kw in business_keywords):
+        # Priority 3: Frameworks & Libraries (React, Next.js, Node, PySpark, etc.)
+        elif _matches(skill_clean, framework_keywords):
+            categories["Frameworks & Libraries"].append(skill_clean)
+        # Priority 4: Languages (Python, Java, Go, TypeScript, etc.)
+        elif _matches(skill_clean, lang_keywords):
+            categories["Languages"].append(skill_clean)
+        # Priority 5: Business & Methodologies (Agile, Scrum, Salesforce, etc.)
+        elif _matches(skill_clean, business_keywords):
             categories["Business & Methodologies"].append(skill_clean)
         elif len(skill_clean) > 1:
             categories["Tools & Platforms"].append(skill_clean)
-    
+
     # Remove empty categories
     return {k: v for k, v in categories.items() if v}
 
