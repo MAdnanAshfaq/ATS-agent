@@ -58,6 +58,11 @@
           <span class="status-text">Checking System...</span>
         </div>
 
+        <!-- Optional Desktop Launcher for Offline Self-Hosting -->
+        <a href="/api/download_launcher" class="btn btn-secondary btn-sm" title="Download Start_Agent.bat for offline local desktop use. Note: Cloud web users don't need to install anything!">
+          <i class="fa-solid fa-terminal"></i> <span>Get Launcher (.bat)</span>
+        </a>
+
         <!-- User Profile & Logout -->
         <div class="user-header-profile" id="user-header-profile">
           <div class="user-avatar" title="{{ user.display_name or user.username }}">
@@ -656,6 +661,9 @@
 
           <!-- Download Action Buttons -->
           <div class="action-buttons-row">
+            <button id="preview-resume-btn" class="btn btn-blue btn-xl" onclick="previewCurrentResume()">
+              <i class="fa-solid fa-eye"></i> Preview Resume
+            </button>
             <button id="download-doc-btn" class="btn btn-emerald btn-xl" onclick="downloadCurrentResume('docx')">
               <i class="fa-solid fa-file-word"></i> Download .docx
             </button>
@@ -890,6 +898,9 @@
         </div>
         <div class="action-btn-group" id="resume-actions-bar">
           <input type="file" id="master-resume-file-input" accept=".pdf,.docx,.json" style="display:none" onchange="uploadMasterResumeFile(event)">
+          <button class="btn btn-outline" onclick="previewMasterResume()">
+            <i class="fa-solid fa-eye text-cyan"></i> Preview Master Resume
+          </button>
           <button class="btn btn-outline" onclick="document.getElementById('master-resume-file-input').click()">
             <i class="fa-solid fa-file-arrow-up text-cyan"></i> Replace Resume
           </button>
@@ -1457,6 +1468,152 @@
         <button type="button" id="hist-refine-submit-btn" class="btn btn-primary btn-sm" onclick="submitHistoryRefinement()">
           <i class="fa-solid fa-bolt" id="hist-refine-icon"></i>
           <span id="hist-refine-btn-text">Apply Fixes & Rebuild</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- In-Browser Universal Resume Preview Modal -->
+  <div id="resume-preview-modal" class="modal-backdrop" style="display:none; position: fixed; inset: 0; background: rgba(5,7,12,0.88); backdrop-filter: blur(10px); z-index: 10000; align-items: center; justify-content: center; padding: 20px;">
+    <div class="modal-card" style="background: var(--surface-card); border: 1px solid var(--border-base); border-radius: var(--r-xl); width: 95%; max-width: 1050px; height: 90vh; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); overflow: hidden; animation: modalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);">
+      <div class="modal-header" style="border-bottom: 1px solid var(--border-base); padding: 14px 20px; display: flex; justify-content: space-between; align-items: center; background: rgba(18, 22, 34, 0.95);">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="width: 38px; height: 38px; border-radius: var(--r-md); background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.35); display: flex; align-items: center; justify-content: center; color: var(--cyan); font-size: 16px;">
+            <i class="fa-solid fa-file-pdf"></i>
+          </div>
+          <div>
+            <h3 style="margin: 0; font-size: 15px; font-weight: 700; color: var(--t0);" id="preview-modal-title">Resume Preview</h3>
+            <p style="margin: 2px 0 0; font-size: 11.5px; color: var(--t2);" id="preview-modal-subtitle">In-Browser Document Inspector</p>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <a id="preview-download-pdf-btn" href="#" class="btn btn-secondary btn-sm" download title="Download PDF">
+            <i class="fa-solid fa-download"></i> PDF
+          </a>
+          <a id="preview-download-docx-btn" href="#" class="btn btn-secondary btn-sm" download title="Download Word DOCX">
+            <i class="fa-solid fa-file-word"></i> DOCX
+          </a>
+          <a id="preview-external-btn" href="#" target="_blank" class="btn btn-secondary btn-sm" title="Open in New Tab">
+            <i class="fa-solid fa-arrow-up-right-from-square"></i>
+          </a>
+          <button type="button" class="btn-icon-subtle" onclick="closePreviewModal()" style="font-size: 16px;" title="Close Preview">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+      </div>
+      <div class="modal-body" style="flex: 1; padding: 0; background: #1a1d28; position: relative; overflow: hidden;">
+        <div id="preview-loader" style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: var(--t1); background: var(--surface-card);">
+          <div class="spinner-large"></div>
+          <span style="font-size: 13px; font-weight: 500;">Rendering formatted document...</span>
+        </div>
+        <iframe id="resume-preview-frame" style="width: 100%; height: 100%; border: none; background: #262935;" onload="document.getElementById('preview-loader').style.display='none';"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── HOLLABUDDY FLOATING AI COPILOT LAUNCHER & DRAWER ────────────────── -->
+  <!-- Cute Floating Launcher Widget (Available anytime, instant) -->
+  <div id="hollabuddy-launcher" class="hollabuddy-launcher" onclick="toggleHollaBuddy()" title="Chat with HollaBuddy AI Career Copilot">
+    <div class="hollabuddy-avatar-wrap">
+      <div class="hollabuddy-bot-icon">
+        <i class="fa-solid fa-robot"></i>
+      </div>
+      <span class="hollabuddy-pulse-ring"></span>
+      <span class="hollabuddy-status-dot"></span>
+    </div>
+    <div class="hollabuddy-launcher-pill">
+      <span class="hollabuddy-name-label">HollaBuddy</span>
+      <span class="hollabuddy-status-label">Career AI</span>
+    </div>
+  </div>
+
+  <!-- HollaBuddy Expandable Chat Drawer -->
+  <div id="hollabuddy-drawer" class="hollabuddy-drawer hidden">
+    <!-- Header -->
+    <div class="hollabuddy-drawer-header">
+      <div class="hollabuddy-header-left">
+        <div class="hollabuddy-header-avatar">
+          <i class="fa-solid fa-robot"></i>
+        </div>
+        <div>
+          <div class="hollabuddy-header-title">
+            <span>HollaBuddy</span>
+            <span class="hollabuddy-version-tag">Copilot</span>
+          </div>
+          <div class="hollabuddy-header-sub" id="hollabuddy-context-sub">
+            <i class="fa-solid fa-bolt text-emerald"></i> Resume Connected · Instant Answers
+          </div>
+        </div>
+      </div>
+      <div class="hollabuddy-header-actions">
+        <button type="button" class="btn-icon-subtle" onclick="clearHollaBuddyChat()" title="Clear Chat History">
+          <i class="fa-solid fa-rotate-left"></i>
+        </button>
+        <button type="button" class="btn-icon-subtle" onclick="toggleHollaBuddy(false)" title="Minimize HollaBuddy">
+          <i class="fa-solid fa-chevron-down"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Active Job / Mode Banner -->
+    <div class="hollabuddy-context-banner" id="hollabuddy-context-banner">
+      <span class="badge badge-cyan" id="hollabuddy-mode-badge"><i class="fa-solid fa-briefcase"></i> Standalone Career Copilot</span>
+      <span class="hollabuddy-banner-tip">Available anytime — no analyzer required!</span>
+    </div>
+
+    <!-- Quick Suggestion Prompt Chips -->
+    <div class="hollabuddy-chips-bar" id="hollabuddy-chips-bar">
+      <button type="button" class="hollabuddy-chip" onclick="sendHollaBuddyPrompt('Draft a 30-second elevator pitch highlighting my key background')">
+        🎯 30s Elevator Pitch
+      </button>
+      <button type="button" class="hollabuddy-chip" onclick="sendHollaBuddyPrompt('Why should we hire you? Give me a copy-ready, high-impact answer grounded in my real metrics.')">
+        💼 Why hire me?
+      </button>
+      <button type="button" class="hollabuddy-chip" onclick="sendHollaBuddyPrompt('Help me answer this application question: What has been your most significant technical accomplishment?')">
+        📝 Technical Win
+      </button>
+      <button type="button" class="hollabuddy-chip" onclick="sendHollaBuddyPrompt('What are my top 3 strongest core competencies based on my master resume?')">
+        🔥 Top 3 Strengths
+      </button>
+      <button type="button" class="hollabuddy-chip" onclick="sendHollaBuddyPrompt('Give me a polite salary expectation answer when asked what my required rate is.')">
+        💵 Salary Script
+      </button>
+    </div>
+
+    <!-- Messages Container -->
+    <div class="hollabuddy-messages" id="hollabuddy-messages">
+      <!-- Default Greeting Bubble -->
+      <div class="hollabuddy-msg hollabuddy-msg-bot">
+        <div class="hollabuddy-msg-avatar">
+          <i class="fa-solid fa-robot"></i>
+        </div>
+        <div class="hollabuddy-bubble">
+          <p>Hey there! I'm <strong>HollaBuddy</strong>, your personal career copilot and interview wingman! 🚀</p>
+          <p style="margin-top:6px;">I have your master resume in my memory. You can ask me <strong>anything</strong> at any time—interview questions, application answers, salary negotiation, or elevator pitches. What are we tackling today?</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading Indicator -->
+    <div id="hollabuddy-typing" class="hollabuddy-typing hidden">
+      <div class="typing-dot"></div>
+      <div class="typing-dot"></div>
+      <div class="typing-dot"></div>
+      <span>HollaBuddy is thinking...</span>
+    </div>
+
+    <!-- Input Footer -->
+    <div class="hollabuddy-drawer-footer">
+      <div class="hollabuddy-input-wrap">
+        <textarea
+          id="hollabuddy-input"
+          class="hollabuddy-textarea"
+          rows="1"
+          placeholder="Ask HollaBuddy anything about your resume or job applications..."
+          onkeydown="handleHollaBuddyKey(event)"
+        ></textarea>
+        <button type="button" id="hollabuddy-send-btn" class="hollabuddy-send-btn" onclick="sendHollaBuddyMessage()" title="Send Message (Enter)">
+          <i class="fa-solid fa-paper-plane"></i>
         </button>
       </div>
     </div>

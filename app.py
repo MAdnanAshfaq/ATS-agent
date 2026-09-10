@@ -1106,6 +1106,156 @@ def download_file(filepath):
     )
 
 
+@app.route("/api/preview/<path:filepath>")
+@login_required
+def preview_file(filepath):
+    """
+    Preview a generated resume, cover letter, or master resume directly in-browser.
+    Converts .docx to .pdf on the fly if needed and sends inline for iframe rendering.
+    """
+    user_output_dir = get_user_output_dir()
+    user_resume_path = get_user_resume_path()
+    user_data_dir = current_user.data_dir if current_user.is_authenticated else BASE_DIR
+
+    import urllib.parse
+    clean_fp = urllib.parse.unquote(filepath).replace("\\", "/").strip("/")
+
+    # Check for master resume preview requests
+    if clean_fp in ("master", "master_resume", "master.pdf", "master_resume_original.pdf"):
+        user_orig_pdf = user_data_dir / "master_resume_original.pdf"
+        if user_orig_pdf.exists():
+            return send_file(str(user_orig_pdf), as_attachment=False, mimetype="application/pdf")
+        user_orig_docx = user_data_dir / "master_resume_original.docx"
+        if user_orig_docx.exists():
+            from resume_builder import convert_to_pdf
+            try:
+                pdf_p = convert_to_pdf(str(user_orig_docx))
+                return send_file(str(pdf_p), as_attachment=False, mimetype="application/pdf")
+            except Exception as e:
+                print(f"[Preview] Convert master docx error: {e}")
+
+    # Standard path resolution
+    target_path = Path(clean_fp)
+    if not (target_path.is_absolute() and target_path.exists()):
+        target_path = (user_output_dir / clean_fp).resolve()
+
+    if not target_path.exists():
+        candidate_base = (BASE_DIR / clean_fp).resolve()
+        if candidate_base.exists():
+            target_path = candidate_base
+
+    if not target_path.exists() and "output/" in clean_fp.lower():
+        sub = clean_fp.split("output/", 1)[-1]
+        candidate_sub = (user_output_dir / sub).resolve()
+        if candidate_sub.exists():
+            target_path = candidate_sub
+
+    if not target_path.exists():
+        fname = Path(clean_fp).name
+        matches = list(user_output_dir.rglob(fname))
+        if matches:
+            matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            target_path = matches[0].resolve()
+
+    # If PDF requested or target is docx, ensure we have a PDF for inline browser viewing
+    if clean_fp.lower().endswith(".docx") or target_path.suffix.lower() == ".docx":
+        pdf_cand = target_path.with_suffix(".pdf")
+        if pdf_cand.exists():
+            target_path = pdf_cand
+        else:
+            try:
+                from resume_builder import convert_to_pdf
+                pdf_res = convert_to_pdf(str(target_path))
+                if pdf_res and Path(pdf_res).exists():
+                    target_path = Path(pdf_res).resolve()
+            except Exception as e:
+                print(f"[Preview] On-the-fly conversion error: {e}")
+    elif not target_path.exists() and clean_fp.lower().endswith(".pdf"):
+        docx_name = Path(clean_fp).stem + ".docx"
+        docx_matches = list(user_output_dir.rglob(docx_name))
+        if docx_matches:
+            docx_matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            try:
+                from resume_builder import convert_to_pdf
+                pdf_res = convert_to_pdf(str(docx_matches[0]))
+                if pdf_res and Path(pdf_res).exists():
+                    target_path = Path(pdf_res).resolve()
+            except Exception as e:
+                print(f"[Preview] On-the-fly PDF conversion error: {e}")
+
+    if not target_path.exists() or not target_path.is_file():
+        return jsonify({"error": f"Preview file '{filepath}' not found"}), 404
+
+    return send_file(
+        str(target_path),
+        as_attachment=False,
+        download_name=target_path.name,
+        mimetype="application/pdf" if target_path.suffix.lower() == ".pdf" else "application/octet-stream",
+    )
+
+
+@app.route("/api/download_launcher")
+def download_launcher():
+    """Download the Start_Agent.bat script for local desktop self-hosting."""
+    bat_path = BASE_DIR / "Start_Agent.bat"
+    if bat_path.exists():
+        return send_file(
+            str(bat_path),
+            as_attachment=True,
+            download_name="Start_Agent.bat",
+            mimetype="text/plain",
+        )
+    return jsonify({"error": "Start_Agent.bat not found"}), 404
+
+
+@app.route("/api/hollabuddy/chat", methods=["POST"])
+@login_required
+def hollabuddy_chat():
+    """
+    HollaBuddy AI Career Copilot Chat Endpoint.
+    Instantly contextualized with candidate's master resume and optional active job context.
+    Does NOT require running the job analyzer first.
+    """
+    data = request.json or {}
+    message = data.get("message", "").strip()
+    history = data.get("history", [])
+    company = data.get("company", "").strip()
+    role = data.get("role", "").strip()
+    url = data.get("url", "").strip()
+    jd_text = data.get("jd_text", "").strip()
+
+    if not message:
+        return jsonify({"error": "Message cannot be empty."}), 400
+
+    user_resume_path = get_user_resume_path()
+    from agent import load_base_resume
+    base_resume = load_base_resume(str(user_resume_path))
+
+    job_context = None
+    if company or role or jd_text or url:
+        job_context = {
+            "company": company,
+            "role": role,
+            "url": url,
+            "jd_text": jd_text
+        }
+    elif url:
+        from scraper import get_cached_jd
+        cached = get_cached_jd(url)
+        if cached:
+            job_context = cached
+
+    from hollabuddy import chat_with_hollabuddy
+    user_settings = get_user_settings() if hasattr(current_user, 'data_dir') else None
+    res = chat_with_hollabuddy(
+        message=message,
+        history=history,
+        base_resume=base_resume,
+        job_context=job_context,
+        user_settings=user_settings,
+    )
+    return jsonify({"success": True, **res})
+
 
 @app.route("/api/analyze", methods=["POST"])
 @login_required

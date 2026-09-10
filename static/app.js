@@ -577,6 +577,9 @@ function renderHistoryCards(apps, query = "") {
         </div>
       </div>
       <div class="history-actions">
+        <button class="btn btn-blue btn-sm" onclick="openPreviewModal('${escapeHtml(app.relative_file_path)}', '${escapeHtml(app.company)}', '${escapeHtml(app.role)}')" title="Preview resume in browser before downloading">
+          <i class="fa-solid fa-eye"></i> Preview
+        </button>
         <a href="/api/download/${app.relative_file_path}" class="btn btn-emerald btn-sm" download>
           <i class="fa-solid fa-download"></i> .docx
         </a>
@@ -2914,6 +2917,321 @@ async function submitHistoryRefinement() {
     if (btn) btn.disabled = false;
     if (icon) icon.className = "fa-solid fa-bolt";
     if (btnText) btnText.textContent = "Apply Fixes & Rebuild";
+  }
+}
+
+/* ==========================================================================
+   Universal In-Browser Resume Preview Modal
+   ========================================================================== */
+function openPreviewModal(filePath, company = "Tailored Resume", role = "Document Preview") {
+  if (!filePath) {
+    showToast("No resume document file available for preview", "warning");
+    return;
+  }
+  const modal = document.getElementById("resume-preview-modal");
+  const frame = document.getElementById("resume-preview-frame");
+  const loader = document.getElementById("preview-loader");
+  const title = document.getElementById("preview-modal-title");
+  const subtitle = document.getElementById("preview-modal-subtitle");
+  const pdfBtn = document.getElementById("preview-download-pdf-btn");
+  const docxBtn = document.getElementById("preview-download-docx-btn");
+  const extBtn = document.getElementById("preview-external-btn");
+
+  if (!modal || !frame) return;
+
+  if (title) title.textContent = company || "Resume Document";
+  if (subtitle) subtitle.textContent = role ? `${role} · In-Browser Inspector` : "In-Browser Document Inspector";
+
+  // Normalize path
+  let cleanPath = filePath;
+  const previewUrl = `/api/preview/${encodeURIComponent(cleanPath).replace(/%2F/g, '/')}`;
+  const pdfDownloadUrl = `/api/download/${encodeURIComponent(cleanPath.replace(/\.docx$/i, '.pdf')).replace(/%2F/g, '/')}`;
+  const docxDownloadUrl = `/api/download/${encodeURIComponent(cleanPath.replace(/\.pdf$/i, '.docx')).replace(/%2F/g, '/')}`;
+
+  if (pdfBtn) pdfBtn.href = pdfDownloadUrl;
+  if (docxBtn) docxBtn.href = docxDownloadUrl;
+  if (extBtn) extBtn.href = previewUrl;
+
+  if (loader) loader.style.display = "flex";
+  frame.src = previewUrl;
+
+  modal.style.display = "flex";
+  document.body.style.overflow = "hidden";
+}
+
+function closePreviewModal() {
+  const modal = document.getElementById("resume-preview-modal");
+  const frame = document.getElementById("resume-preview-frame");
+  if (modal) modal.style.display = "none";
+  if (frame) frame.src = "about:blank";
+  document.body.style.overflow = "";
+}
+
+function previewCurrentResume() {
+  if (!window.lastResult || !window.lastResult.relative_path) {
+    showToast("Please run an application first or select an item from History to preview", "warning");
+    return;
+  }
+  const company = window.lastResult.company || "Tailored Resume";
+  const role = window.lastResult.role || "Document Preview";
+  openPreviewModal(window.lastResult.relative_path, company, role);
+}
+
+function previewMasterResume() {
+  openPreviewModal("master_resume", "Master Resume Profile", "Authentic Candidate Base Profile");
+}
+
+// Close preview modal on ESC
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    const pModal = document.getElementById("resume-preview-modal");
+    if (pModal && pModal.style.display === "flex") {
+      closePreviewModal();
+    }
+  }
+});
+
+/* ==========================================================================
+   HollaBuddy AI Career Copilot & Interview Wingman Controller
+   ========================================================================== */
+let hollabuddyChatHistory = [];
+let hollabuddyActiveJob = null;
+
+function toggleHollaBuddy(forceOpen) {
+  const drawer = document.getElementById("hollabuddy-drawer");
+  const launcher = document.getElementById("hollabuddy-launcher");
+  if (!drawer) return;
+
+  const isOpen = !drawer.classList.contains("hidden");
+  const shouldOpen = forceOpen !== undefined ? forceOpen : !isOpen;
+
+  if (shouldOpen) {
+    drawer.classList.remove("hidden");
+    if (launcher) launcher.classList.add("active");
+    setTimeout(() => {
+      const input = document.getElementById("hollabuddy-input");
+      if (input) input.focus();
+    }, 150);
+    updateHollaBuddyJobContext();
+  } else {
+    drawer.classList.add("hidden");
+    if (launcher) launcher.classList.remove("active");
+  }
+}
+
+function updateHollaBuddyJobContext() {
+  const badge = document.getElementById("hollabuddy-mode-badge");
+  const sub = document.getElementById("hollabuddy-context-sub");
+
+  let activeCo = analyzeCompany;
+  let activeRo = analyzeRole;
+  if (!activeCo && window.lastResult) {
+    activeCo = window.lastResult.company;
+    activeRo = window.lastResult.role;
+  }
+
+  if (activeCo && activeRo) {
+    hollabuddyActiveJob = {
+      company: activeCo,
+      role: activeRo,
+      url: document.getElementById("job-url-input") ? document.getElementById("job-url-input").value : "",
+      jd_text: analyzeJdText || "",
+    };
+    if (badge) {
+      badge.innerHTML = `<i class="fa-solid fa-crosshairs text-cyan"></i> Active Target: <strong>${escapeHtml(activeRo)}</strong> @ ${escapeHtml(activeCo)}`;
+    }
+    if (sub) {
+      sub.innerHTML = `<i class="fa-solid fa-circle-check text-emerald"></i> Resume & ${escapeHtml(activeCo)} Context Connected`;
+    }
+  } else {
+    hollabuddyActiveJob = null;
+    if (badge) {
+      badge.innerHTML = `<i class="fa-solid fa-briefcase text-cyan"></i> Standalone Career Copilot (Available Anytime)`;
+    }
+    if (sub) {
+      sub.innerHTML = `<i class="fa-solid fa-bolt text-emerald"></i> Master Resume Connected · Instant Answers`;
+    }
+  }
+}
+
+function handleHollaBuddyKey(e) {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendHollaBuddyMessage();
+  }
+}
+
+function sendHollaBuddyPrompt(promptText) {
+  const input = document.getElementById("hollabuddy-input");
+  if (input) {
+    input.value = promptText;
+  }
+  // Make sure drawer is open
+  toggleHollaBuddy(true);
+  sendHollaBuddyMessage();
+}
+
+async function sendHollaBuddyMessage() {
+  const input = document.getElementById("hollabuddy-input");
+  if (!input) return;
+  const message = input.value.trim();
+  if (!message) return;
+
+  input.value = "";
+  input.style.height = "auto";
+
+  // Append user message
+  appendHollaBuddyMessage("user", message);
+
+  // Show typing indicator
+  const typing = document.getElementById("hollabuddy-typing");
+  const sendBtn = document.getElementById("hollabuddy-send-btn");
+  if (typing) typing.classList.remove("hidden");
+  if (sendBtn) sendBtn.disabled = true;
+
+  scrollHollaBuddyToBottom();
+
+  try {
+    const payload = {
+      message: message,
+      history: hollabuddyChatHistory,
+      company: hollabuddyActiveJob ? hollabuddyActiveJob.company : "",
+      role: hollabuddyActiveJob ? hollabuddyActiveJob.role : "",
+      url: hollabuddyActiveJob ? hollabuddyActiveJob.url : "",
+      jd_text: hollabuddyActiveJob ? hollabuddyActiveJob.jd_text : "",
+    };
+
+    const res = await fetch("/api/hollabuddy/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || "Failed to get reply from HollaBuddy");
+    }
+
+    hollabuddyChatHistory.push({ role: "user", content: message });
+    hollabuddyChatHistory.push({ role: "assistant", content: data.reply });
+
+    appendHollaBuddyMessage("assistant", data.reply, data.suggested_followups);
+
+  } catch (err) {
+    console.error("[HollaBuddy Error]", err);
+    appendHollaBuddyMessage("assistant", `⚠️ Connection note: ${err.message}. Make sure your Gemini API key is configured in Settings.`);
+  } finally {
+    if (typing) typing.classList.add("hidden");
+    if (sendBtn) sendBtn.disabled = false;
+    scrollHollaBuddyToBottom();
+  }
+}
+
+function appendHollaBuddyMessage(role, text, followups = []) {
+  const container = document.getElementById("hollabuddy-messages");
+  if (!container) return;
+
+  const msgDiv = document.createElement("div");
+  msgDiv.className = `hollabuddy-msg hollabuddy-msg-${role === "user" ? "user" : "bot"}`;
+
+  if (role === "user") {
+    msgDiv.innerHTML = `
+      <div class="hollabuddy-bubble hollabuddy-bubble-user">
+        <p>${escapeHtml(text)}</p>
+      </div>
+      <div class="hollabuddy-msg-avatar hollabuddy-user-avatar">
+        <i class="fa-solid fa-user"></i>
+      </div>
+    `;
+  } else {
+    const formattedHtml = formatHollaBuddyMarkdown(text);
+
+    let followupsHtml = "";
+    if (followups && followups.length > 0) {
+      followupsHtml = `
+        <div class="hollabuddy-followups">
+          ${followups.map(f => `<button type="button" class="hollabuddy-followup-chip" onclick="sendHollaBuddyPrompt('${escapeHtml(f).replace(/'/g, "\\'")}')">${escapeHtml(f)}</button>`).join("")}
+        </div>
+      `;
+    }
+
+    msgDiv.innerHTML = `
+      <div class="hollabuddy-msg-avatar">
+        <i class="fa-solid fa-robot"></i>
+      </div>
+      <div class="hollabuddy-bubble hollabuddy-bubble-bot">
+        <div class="hollabuddy-bubble-content">${formattedHtml}</div>
+        <div class="hollabuddy-bubble-actions">
+          <button type="button" class="hollabuddy-copy-btn" onclick="copyHollaBuddyText(this, ${JSON.stringify(text)})" title="Copy answer to clipboard">
+            <i class="fa-regular fa-copy"></i> Copy Answer
+          </button>
+        </div>
+        ${followupsHtml}
+      </div>
+    `;
+  }
+
+  container.appendChild(msgDiv);
+  scrollHollaBuddyToBottom();
+}
+
+function formatHollaBuddyMarkdown(text) {
+  if (!text) return "";
+  let html = escapeHtml(text);
+
+  // Bold **text**
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  // Italic *text*
+  html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  // Code block ```code```
+  html = html.replace(/```([\s\S]*?)```/g, '<pre class="hollabuddy-code"><code>$1</code></pre>');
+  // Inline code `code`
+  html = html.replace(/`([^`]+)`/g, '<code class="hollabuddy-inline-code">$1</code>');
+  // Bullet lines
+  html = html.replace(/^\s*[-•*]\s+(.*)$/gm, '<li>$1</li>');
+  html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+  // Paragraphs / line breaks
+  html = html.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>');
+
+  return `<p>${html}</p>`;
+}
+
+function copyHollaBuddyText(btn, text) {
+  const clean = text.replace(/```[a-z]*\n?/gi, '').trim();
+  navigator.clipboard.writeText(clean).then(() => {
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = `<i class="fa-solid fa-check text-emerald"></i> Copied!`;
+    btn.classList.add("copied");
+    setTimeout(() => {
+      btn.innerHTML = originalHtml;
+      btn.classList.remove("copied");
+    }, 2000);
+  }).catch(() => {
+    showToast("Failed to copy to clipboard", "warning");
+  });
+}
+
+function clearHollaBuddyChat() {
+  hollabuddyChatHistory = [];
+  const container = document.getElementById("hollabuddy-messages");
+  if (container) {
+    container.innerHTML = `
+      <div class="hollabuddy-msg hollabuddy-msg-bot">
+        <div class="hollabuddy-msg-avatar">
+          <i class="fa-solid fa-robot"></i>
+        </div>
+        <div class="hollabuddy-bubble">
+          <p>Chat cleared! I'm still right here with your master resume loaded. What can I help you draft or prepare?</p>
+        </div>
+      </div>
+    `;
+  }
+}
+
+function scrollHollaBuddyToBottom() {
+  const container = document.getElementById("hollabuddy-messages");
+  if (container) {
+    container.scrollTop = container.scrollHeight;
   }
 }
 
