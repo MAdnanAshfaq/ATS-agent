@@ -163,9 +163,10 @@ WRITING ENHANCEMENT RULES (Rules 0–16 from ResumeHQ):
   * BANNED AI WORDS (Strictly Prohibited): {banned_list}.
 - Rule 6 (Summary Constraints): Max 3 sentences, max 70 words. No "Results-driven" or "Passionate professional" openers.
 
-ALL CANONICAL EXPERIENCES MUST BE PRESERVED:
-If the master profile has 2 or more jobs, your output MUST contain all of them.
-MANDATORY COMPANY NAMES: The ONLY allowed company names in the "experience" array are: {[e.get('company') for e in base_resume.get('experience', [])]}. NEVER replace, invent, or substitute company names. Preserve the exact company names and dates!
+ALL CANONICAL EXPERIENCES & BULLET COUNTS MUST BE PRESERVED:
+- If the master profile has multiple jobs, your output MUST contain ALL of them.
+- MANDATORY BULLET COUNT: For EACH role, output the EXACT same number of bullet points as present in the master resume. NEVER compress, truncate, or drop bullets!
+- MANDATORY COMPANY NAMES: The ONLY allowed company names in the "experience" array are: {[e.get('company') for e in base_resume.get('experience', [])]}. NEVER replace, invent, or substitute company names. Preserve the exact company names and dates!
 
 BULLET STRUCTURE REQUIREMENTS:
 - Every bullet MUST be a complete, self-contained accomplishment sentence of at least 15 words.
@@ -173,7 +174,7 @@ BULLET STRUCTURE REQUIREMENTS:
 - Start every bullet with a capitalized strong action verb and end with a period.
 
 SKILLS CONSTRAINTS:
-The "skills" array must ONLY contain concise technical tools, languages, and frameworks (< 4 words each, e.g. "TypeScript", "React", "Python", "SQL", "Docker", "AWS", "CI/CD"). NEVER put full sentences into skills!
+The "skills" array must retain all candidate master skills and include new relevant keywords (< 4 words each). NEVER drop or prune the candidate's core hard skills!
 
 JSON OUTPUT FORMAT:
 {{
@@ -203,7 +204,7 @@ Keywords & Tech: {json.dumps(missing_keywords)}
 {custom_section}
 
 MASTER RESUME:
-{json.dumps(base_resume, indent=2, ensure_ascii=False)[:5000]}
+{json.dumps(base_resume, indent=2, ensure_ascii=False)}
 
 Draft the optimized resume now as valid JSON."""
 

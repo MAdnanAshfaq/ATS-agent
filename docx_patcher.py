@@ -233,14 +233,14 @@ def patch_docx_with_rewritten_resume(
         skills_start_idx = None
         for i, para in enumerate(all_paras):
             text = _normalize(_get_para_full_text(para))
-            if text in ("technical skills", "skills", "skills & competencies", "core competencies"):
+            if any(h in text for h in ("skills", "competencies", "expertise", "proficiencies", "areas of knowledge", "tools")) and len(text) < 45:
                 skills_start_idx = i
                 break
 
         if skills_start_idx is not None:
             # Look at paragraphs following the skills header until next section header
             skill_paras = []
-            for j in range(skills_start_idx + 1, min(skills_start_idx + 8, len(all_paras))):
+            for j in range(skills_start_idx + 1, min(skills_start_idx + 15, len(all_paras))):
                 cand_text = _get_para_full_text(all_paras[j]).strip()
                 if not cand_text:
                     continue
@@ -248,72 +248,98 @@ def patch_docx_with_rewritten_resume(
                     break
                 skill_paras.append(all_paras[j])
 
-            # Check if paragraphs have labeled categories (e.g. "Languages:", "Cloud & DevOps:")
+            # Check if paragraphs have labeled categories (e.g. "Languages:", "Cloud & DevOps:", "Sales Strategy:")
             labeled_rows = []
             for p in skill_paras:
                 p_txt = _get_para_full_text(p).strip()
                 c_idx = p_txt.find(":")
-                if c_idx != -1 and c_idx < 30:
-                    labeled_rows.append((p, p_txt[:c_idx].strip()))
+                if c_idx != -1 and c_idx < 40:
+                    label = p_txt[:c_idx].strip()
+                    orig_content = p_txt[c_idx + 1:].strip()
+                    labeled_rows.append((p, label, orig_content))
 
             if labeled_rows:
-                used_categories = set()
-                # In-place update each labeled row matching category
-                for p, label in labeled_rows:
-                    label_lower = label.lower()
-                    matched_items = []
-                    matched_cat_name = None
-                    for cat_name, cat_items in categorized.items():
-                        if cat_name.lower() in label_lower or label_lower in cat_name.lower():
-                            matched_items.extend(cat_items)
-                            matched_cat_name = cat_name
+                # ── UNIVERSAL & PROFESSION-AGNOSTIC SKILLS PRESERVATION ──
+                # 1. Parse existing items in each labeled row directly from candidate's template
+                row_items_map = {}
+                placed_skills_lower = set()
 
-                    # If no direct match, match keywords in label
-                    if not matched_items:
-                        if "database" in label_lower or "data warehouse" in label_lower or "storage" in label_lower:
-                            matched_items = categorized.get("Databases", [])
-                            matched_cat_name = "Databases"
-                        elif "cloud" in label_lower or "devops" in label_lower or "infra" in label_lower:
-                            matched_items = categorized.get("Cloud & DevOps", [])
-                            matched_cat_name = "Cloud & DevOps"
-                        elif "framework" in label_lower or "librar" in label_lower:
-                            matched_items = categorized.get("Frameworks & Libraries", [])
-                            matched_cat_name = "Frameworks & Libraries"
-                        elif "lang" in label_lower:
-                            matched_items = categorized.get("Languages", [])
-                            matched_cat_name = "Languages"
-                        elif "business" in label_lower or "methodolog" in label_lower or "process" in label_lower:
-                            matched_items = categorized.get("Business & Methodologies", [])
-                            matched_cat_name = "Business & Methodologies"
-                        elif "tool" in label_lower or "platform" in label_lower:
-                            matched_items = categorized.get("Tools & Platforms", [])
-                            matched_cat_name = "Tools & Platforms"
+                for p, label, orig_content in labeled_rows:
+                    existing_items = [
+                        re.sub(r'^[•·▪\-*\s]+|[•·▪\-*\s]+$', '', it).strip()
+                        for it in re.split(r'[,|;•·▪]\s*', orig_content)
+                        if it.strip() and len(it.strip()) <= 45
+                    ]
+                    row_items_map[label] = list(existing_items)
+                    for it in existing_items:
+                        placed_skills_lower.add(it.lower())
 
-                    if matched_cat_name:
-                        used_categories.add(matched_cat_name)
+                # 2. Distribute any newly added/tailored skills that were not already in a row
+                unplaced_skills = [s for s in clean_skills if s.lower() not in placed_skills_lower]
 
-                    if matched_items:
-                        seen = set()
-                        deduped = [x for x in matched_items if not (x.lower() in seen or seen.add(x.lower()))]
+                for s in unplaced_skills:
+                    s_lower = s.lower()
+                    best_label = None
+
+                    # Check which row label best matches this skill
+                    for _, label, _ in labeled_rows:
+                        l_lower = label.lower()
+                        # Direct category dictionary match
+                        if s in categorized.get("Languages", []) and ("lang" in l_lower or "code" in l_lower or "programming" in l_lower):
+                            best_label = label
+                            break
+                        if s in categorized.get("Databases", []) and ("data" in l_lower or "db" in l_lower or "storage" in l_lower or "warehouse" in l_lower):
+                            best_label = label
+                            break
+                        if s in categorized.get("Cloud & DevOps", []) and ("cloud" in l_lower or "devops" in l_lower or "infra" in l_lower or "platform" in l_lower):
+                            best_label = label
+                            break
+                        if s in categorized.get("Frameworks & Libraries", []) and ("framework" in l_lower or "librar" in l_lower or "tech" in l_lower or "stack" in l_lower):
+                            best_label = label
+                            break
+                        if s in categorized.get("Business & Methodologies", []) and ("business" in l_lower or "methodolog" in l_lower or "process" in l_lower or "management" in l_lower or "sales" in l_lower or "strategy" in l_lower):
+                            best_label = label
+                            break
+                        # Word boundary / keyword match in label
+                        if any(len(w) > 3 and w in l_lower for w in s_lower.split()):
+                            best_label = label
+                            break
+
+                    # Fallback: find row with general name (tools, platforms, competencies, skills)
+                    if not best_label:
+                        for _, label, _ in labeled_rows:
+                            l_lower = label.lower()
+                            if any(k in l_lower for k in ("tool", "platform", "competenc", "skill", "technolog", "software", "system")):
+                                best_label = label
+                                break
+                    # Last fallback: append to the last row
+                    if not best_label and labeled_rows:
+                        best_label = labeled_rows[-1][1]
+
+                    if best_label and best_label in row_items_map:
+                        if s.lower() not in {it.lower() for it in row_items_map[best_label]}:
+                            row_items_map[best_label].append(s)
+                            placed_skills_lower.add(s.lower())
+
+                # 3. Update each labeled row in-place preserving formatting
+                for p, label, _ in labeled_rows:
+                    items = row_items_map.get(label, [])
+                    seen = set()
+                    deduped = [x for x in items if not (x.lower() in seen or seen.add(x.lower()))]
+                    if deduped:
                         new_content = f"{label}: {', '.join(deduped)}"
                         _set_para_text_preserve_format(p, new_content)
                         print(f"[Patcher] Updated skills row '{label}': {len(deduped)} items")
 
-                # If there are categories from categorized that were not in labeled_rows,
-                # merge any unrepresented skills into the last labeled row so NO SKILL IS EVER OMITTED!
-                unrepresented = [cat for cat in categorized if cat not in used_categories and categorized[cat]]
-                if unrepresented and labeled_rows:
-                    last_p, last_label = labeled_rows[-1]
+                # If any skills from clean_skills are STILL unplaced, append to the last row
+                final_unplaced = [s for s in clean_skills if s.lower() not in placed_skills_lower]
+                if final_unplaced and labeled_rows:
+                    last_p, last_label, _ = labeled_rows[-1]
                     curr_text = _get_para_full_text(last_p)
-                    missing_items = []
-                    for cat in unrepresented:
-                        missing_items.extend(categorized[cat])
-                    seen_curr = set(curr_text.lower().split())
-                    to_append = [m for m in missing_items if m.lower() not in seen_curr]
-                    if to_append:
-                        extended_text = curr_text.rstrip(", ") + ", " + ", ".join(to_append)
-                        _set_para_text_preserve_format(last_p, extended_text)
-                        print(f"[Patcher] Preserved {len(to_append)} unrepresented skills into '{last_label}'")
+                    extended_text = curr_text.rstrip(", ") + ", " + ", ".join(final_unplaced)
+                    _set_para_text_preserve_format(last_p, extended_text)
+                    print(f"[Patcher] Appended {len(final_unplaced)} remaining skills to '{last_label}'")
+
             elif skill_paras:
                 # Single or multi-paragraph unlabelled skills list
                 all_skills_str = ", ".join(clean_skills)

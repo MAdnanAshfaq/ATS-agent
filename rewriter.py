@@ -244,7 +244,10 @@ Preserve authentic employment dates. For the candidate's most recent/current rol
 6. CROSS-SECTION CONSISTENCY:
 Ensure 100% consistency between skills and experience: any primary technical tool highlighted in the experience bullets MUST also appear in the skills section, and vice versa.
 
-7. OUTPUT SCHEMATIC:
+7. MANDATORY BULLET COUNT RETENTION:
+For EACH role in the experience section, output the EXACT same number of bullet points as present in the base resume. NEVER compress, truncate, or drop any accomplishments.
+
+8. OUTPUT SCHEMATIC:
 Return the updated resume strictly as a valid JSON object matching the exact keys and ALL experience roles of MASTER_PROFILE so the docx script runs smoothly.
 
 JSON OUTPUT FORMAT (return all experiences from MASTER_PROFILE):
@@ -278,10 +281,10 @@ JSON OUTPUT FORMAT (return all experiences from MASTER_PROFILE):
 {custom_bullets_section}
 
 JOB DESCRIPTION:
-{jd_text[:4000]}
+{jd_text}
 
 BASE RESUME:
-{json.dumps(prompt_resume, indent=2, ensure_ascii=False)[:4000]}
+{json.dumps(prompt_resume, indent=2, ensure_ascii=False)}
 {raw_text_context}
 
 IMPORTANT: Before returning, verify every single missing keyword appears in your output.
