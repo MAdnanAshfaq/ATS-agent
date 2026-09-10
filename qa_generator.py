@@ -36,7 +36,7 @@ def answer_application_questions(
     base_resume: dict,
     jd_text: str = "",
     company: str = "Target Company",
-    role: str = "Data Engineer",
+    role: str = "Software Engineer",
 ) -> List[Dict[str, Any]]:
     """
     Generate interview-true, human-voiced answers to application-specific questions.
@@ -96,7 +96,7 @@ def answer_application_questions(
     base_resume: dict,
     jd_text: str = "",
     company: str = "Target Company",
-    role: str = "Data Engineer",
+    role: str = "Software Engineer",
 ) -> List[Dict[str, Any]]:
     """
     Generate interview-true, human-voiced answers to application-specific questions.
@@ -137,30 +137,29 @@ You MUST generate a separate, deeply tailored, senior-level answer for EACH ques
 STRICT EDITORIAL & TECHNICAL GUARDRAILS (Rules 0–16 from ResumeHQ):
 
 1. ANSWER THE EXACT QUESTION DIRECTLY (ZERO RESUME DUMPING):
-   - Never simply regurgitate resume bullet points or dump a laundry list of 8 technologies into a single paragraph.
+   - Never simply regurgitate resume bullet points or dump a laundry list of technologies into a single paragraph.
    - Start immediately with a clear, assertive direct thesis answering what was asked.
 
-2. ACCURATE TECHNICAL DISTINCTION (ML SYSTEMS vs. BI / DASHBOARDS):
-   - If asked about "ML systems" or "production data systems":
-     - Detail the actual data engineering architecture that feeds the ML lifecycle: feature-readiness pipelines, point-in-time joins, data contracts, validation gates, batch inference ingestion, and gold feature tables powering predictive models (such as patient risk stratification or cost-of-care models).
-     - NEVER conflate BI dashboards (e.g. Power BI semantic models, Direct Lake, DAX measures) with Machine Learning systems. Keep BI in its place.
+2. ACCURATE TECHNICAL & DOMAIN DISTINCTION:
+   - Detail the actual system architecture, component delivery, API contracts, deployment pipelines, or business outcomes directly from the candidate's verified experience.
+   - Ground answers in the candidate's authentic stack and domain (e.g. React/Node/Postgres for Full Stack, PySpark/Cloud for Data, Go/Kubernetes for DevOps, Salesforce/Enterprise CRM for Sales/Go-To-Market).
+   - Never conflate simple reporting tools with deep core production systems.
 
-3. REALISTIC & GROUNDED AI USAGE (ZERO HALLUCINATED CAPABILITIES):
-   - When asked about using AI (Copilot, LLMs) to improve your work:
-     - Ground the answer in what AI tools actually do well: accelerating boilerplate PySpark schema structs, complex regex extractions, repetitive unit test mocks, or SQL window function drafts.
-     - NEVER claim AI tools did "performance tuning", "Delta table partitioning", "storage migration", or "architecture design"—hiring managers know AI cannot do that and will instantly flag it as fake.
-     - For "what would you change": Describe a realistic engineering edge case (e.g. AI generating outer joins that failed silently on null keys, hallucinating non-existent Spark methods, or missing healthcare-specific code constraints), explaining how it reinforced your rule to always write automated unit tests and never deploy AI code without manual edge-case auditing.
-   - NEVER misuse ML terminology: "Data drift" refers to real-world statistical distribution changes in production data over time. NEVER say "data drift" when referring to schema nulls, dirty data, or pre-deployment unit test errors.
+3. REALISTIC & GROUNDED AI USAGE:
+   - When asked about using AI tools (Copilot, ChatGPT, LLMs) to improve your work:
+     - Ground the answer in what AI tools actually do well: accelerating boilerplate code, unit test mocks, regex, complex queries, or documentation drafting.
+     - NEVER claim AI tools did high-level systems architecture, production security compliance, or deep performance optimization that require human judgment.
+     - For "what would you change" or challenges: Describe a realistic edge case (e.g. AI generating subtly incorrect assumptions or outdated API signatures), explaining how it reinforced your rule to always write automated tests and never deploy AI code without thorough validation.
 
 4. FOR SHORT FACTUAL / COMPLIANCE QUESTIONS:
-   - "Do you have 7+ years...", "Are you authorized to work in the US...", "Do you require sponsorship...":
-   - Give an immediate, crisp response followed by 1 factual supporting statement.
-   - Example: "Yes. I have 8 years of production data engineering experience designing medallion lakehouses and high-throughput pipelines in PySpark, SQL, and Azure."
+   - "Do you have X+ years...", "Are you authorized to work in the US...", "Do you require sponsorship...":
+   - Give an immediate, crisp response followed by 1 factual supporting statement grounded in the candidate's resume.
+   - Example: "Yes. I have 6+ years of professional engineering experience building production systems with [candidate's core stack]."
    - Example: "Yes, I am legally authorized to work in the United States."
    - Example: "No, I do not require sponsorship now or in the future."
 
 5. FOR "WHY US" / MISSION / CULTURE QUESTIONS:
-   - Connect your real technical background directly to {company}'s specific platform and data scale. No sycophantic praise or throat-clearing fluff.
+   - Connect your real professional background directly to {company}'s specific platform, product, or mission. No sycophantic praise or throat-clearing fluff.
 
 6. TONE, WORD ECONOMY & ZERO BANNED WORDS:
    - Word count: 75–130 words per substantive question. Dense with technical reality, zero fluff.

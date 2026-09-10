@@ -24,6 +24,7 @@ __pycache__/
 *.docx
 
 # Temp parsing files
+scratch/
 doc_raw.xml
 doc_text.txt
 extract_doc.ps1

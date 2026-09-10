@@ -217,17 +217,17 @@ YOUR ARCHITECTURAL PROTOCOLS:
 
 1. MANDATORY MULTI-ROLE PRESERVATION (DO NOT DELETE PREVIOUS JOBS):
 You MUST preserve ALL work experience entries present in MASTER_PROFILE.
-For example, if MASTER_PROFILE has 2 jobs (Strive Health AND Cornerstone OnDemand), your output "experience" array MUST contain BOTH jobs.
+If MASTER_PROFILE contains multiple roles, your output "experience" array MUST contain ALL of them with their exact company names and dates.
 Never drop, truncate, or omit past jobs from the candidate's history.
 
 2. SKILLS LIST CONSTRAINTS (ATOMIC SKILLS ONLY):
-The "skills" array must ONLY contain concise technical tools, languages, frameworks, and databases (1 to 4 words each, e.g. "Python", "ANSI SQL", "PL/SQL", "Databricks", "Star Schema", "Apache Spark", "CI/CD").
+The "skills" array must ONLY contain concise technical tools, languages, frameworks, and methodologies (1 to 4 words each, e.g. "TypeScript", "React", "Python", "SQL", "Docker", "AWS", "CI/CD").
 NEVER put full sentences, duties, paragraphs, or responsibility bullet points into the "skills" list!
 
 3. MANDATORY BULLET INJECTION IN EXPERIENCE:
 Every missing skill/tool AND every user-specified responsibility point MUST be woven into the candidate's work experience bullets (primarily under the latest role).
-Write active, high-impact engineering bullets starting with strong action verbs (e.g., "Engineered", "Architected", "Optimized", "Implemented", "Automated", "Tuned").
-Explicitly state HOW the tool/concept was applied, for what architecture or pipeline, and what business/technical result was achieved.
+Write active, high-impact bullets starting with strong action verbs (e.g., "Engineered", "Architected", "Optimized", "Implemented", "Automated", "Delivered").
+Explicitly state HOW the tool/concept was applied, for what system or project, and what business/technical result was achieved.
 
 4. IDENTIFY & PURGE (Remove Previous Job Stuffing):
 Start strictly from MASTER_PROFILE. If there are hyper-specific keywords from previous application runs that do NOT appear in the current missing keywords list or the master profile, REMOVE or REPLACE them back to the clean master format.
@@ -236,26 +236,19 @@ Start strictly from MASTER_PROFILE. If there are hyper-specific keywords from pr
 Do NOT use obvious AI buzzwords like "spearheaded", "leveraged", "dynamic", "testament", "transformative", "fostered", "pivotal", "groundbreaking", "innovative", "robust", or "seamless". Use clear, active human engineering language.
 
 6. OUTPUT SCHEMATIC:
-Return the updated resume strictly as a valid JSON object matching the exact keys and ALL experience roles of MASTER_PROFILE so the python-docx script runs smoothly.
+Return the updated resume strictly as a valid JSON object matching the exact keys and ALL experience roles of MASTER_PROFILE so the docx script runs smoothly.
 
 JSON OUTPUT FORMAT (return all experiences from MASTER_PROFILE):
 {{
-  "target_role": "A generic, professional version of the job title (e.g. 'Data Engineer')",
+  "target_role": "A generic, professional version of the job title matching {role}",
   "summary": "2-4 sentence professional summary targeting {role} at {company}",
   "skills": ["skill1", "skill2", ...],
   "experience": [
     {{
-      "title": "Data Engineer II",
-      "company": "Strive Health", 
-      "dates": "2021 – 2026",
-      "location": "West Warwick, RI",
-      "bullets": ["bullet1", "bullet2", ...]
-    }},
-    {{
-      "title": "Junior Data Engineer",
-      "company": "Cornerstone OnDemand", 
-      "dates": "2018 – 2021",
-      "location": null,
+      "title": "Role Title",
+      "company": "Exact Company Name from MASTER_PROFILE", 
+      "dates": "Exact Dates from MASTER_PROFILE",
+      "location": "Location or Remote",
       "bullets": ["bullet1", "bullet2", ...]
     }}
   ],
@@ -388,7 +381,14 @@ def rewrite_resume(
                     "plan", "maintain", "build", "work", "support", "embrace", "implement", "develop"
                 )):
                     sentence_skills.append(s_str.rstrip("."))
-                    for token in ("ANSI SQL", "PL/SQL", "Physical Data Modeling", "SQL Tuning", "Star Schema", "Big Data", "Data Engineering", "Data Modeling", "Production Support", "Agile"):
+                    tech_tokens = (
+                        "Python", "JavaScript", "TypeScript", "Java", "C++", "C#", "Go", "Rust", "SQL", "HTML", "CSS", "Bash",
+                        "React", "React Native", "Vue", "Angular", "Next.js", "Node.js", "Express", "FastAPI", "Django", "Spring Boot",
+                        "PostgreSQL", "MySQL", "MongoDB", "Redis", "Elasticsearch", "Snowflake", "BigQuery", "Databricks", "Spark",
+                        "AWS", "Azure", "GCP", "Docker", "Kubernetes", "Terraform", "CI/CD", "Jenkins", "GitHub Actions", "Git",
+                        "Agile", "Scrum", "REST APIs", "GraphQL", "Microservices", "Salesforce", "HubSpot", "Jira", "Tableau", "Power BI"
+                    )
+                    for token in tech_tokens:
                         if token.lower() in s_str.lower() and token not in cleaned_skills:
                             cleaned_skills.append(token)
                 else:

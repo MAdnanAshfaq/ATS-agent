@@ -37,6 +37,7 @@ def build_resume_docx(
     company: str,
     role: str,
     output_dir: str = None,
+    font_family: str = None,
 ) -> str:
     """
     Build a clean Word document from the resume dict.
@@ -89,13 +90,16 @@ def build_resume_docx(
         section.left_margin = Inches(0.55)
         section.right_margin = Inches(0.55)
     
+    # Determine primary font (dynamic based on uploaded PDF/DOCX or user preference)
+    active_font = font_family or resume.get("_detected_font") or "Calibri"
+
     # Content width: 8.5 - 2*0.55 = 7.40 inches = 10656 twips
     CONTENT_WIDTH_TWIPS = '10656'
     
     # ─── Helper functions ─────────────────────────────────────────────────────
     
     def set_font(run, size=10, bold=False, italic=False, color=(0, 0, 0)):
-        run.font.name = "Georgia"
+        run.font.name = active_font
         run.font.size = Pt(size)
         run.font.bold = bold
         run.font.italic = italic
@@ -360,6 +364,7 @@ def _categorize_skills(skills: list) -> dict:
         "Databases": [],
         "Cloud & DevOps": [],
         "Tools & Platforms": [],
+        "Business & Methodologies": [],
         "Other": [],
     }
     
@@ -381,6 +386,11 @@ def _categorize_skills(skills: list) -> dict:
         'github actions', 'jenkins', 'vercel', 'netlify', 'heroku', 'cloudflare',
         'lambda', 'ec2', 's3', 'cloud run', 'gke', 'ecs'
     }
+    business_keywords = {
+        'salesforce', 'hubspot', 'crm', 'agile', 'scrum', 'jira', 'confluence', 'tableau',
+        'power bi', 'lead generation', 'seo', 'sem', 'google analytics', 'market research',
+        'b2b', 'saas', 'enterprise sales', 'cold calling', 'account management', 'product management'
+    }
     
     for skill in skills:
         skill_clean = sanitize_text(skill)
@@ -399,6 +409,8 @@ def _categorize_skills(skills: list) -> dict:
             categories["Databases"].append(skill_clean)
         elif any(kw in skill_lower for kw in cloud_keywords):
             categories["Cloud & DevOps"].append(skill_clean)
+        elif any(kw in skill_lower for kw in business_keywords):
+            categories["Business & Methodologies"].append(skill_clean)
         elif len(skill_clean) > 1:
             categories["Tools & Platforms"].append(skill_clean)
     

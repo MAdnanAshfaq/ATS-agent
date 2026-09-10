@@ -908,7 +908,7 @@ function renderVisualResume(data) {
         <div class="vr-grid-2">
           <div class="vr-field">
             <label class="vr-label">Full Name</label>
-            <input type="text" id="vr-name" class="vr-input" value="${escapeHtml(name)}" placeholder="e.g. Haseeb Khan">
+            <input type="text" id="vr-name" class="vr-input" value="${escapeHtml(name)}" placeholder="e.g. Alex Morgan">
           </div>
           <div class="vr-field">
             <label class="vr-label">Location</label>
@@ -987,7 +987,7 @@ function renderVisualResume(data) {
               <div class="vr-grid-2">
                 <div class="vr-field">
                   <label class="vr-label">Job Title</label>
-                  <input type="text" class="vr-input vr-exp-title" value="${escapeHtml(exp.title || '')}" placeholder="e.g. Senior Data Engineer">
+                  <input type="text" class="vr-input vr-exp-title" value="${escapeHtml(exp.title || '')}" placeholder="e.g. Senior Software Engineer">
                 </div>
                 <div class="vr-field">
                   <label class="vr-label">Company Name</label>
@@ -1719,7 +1719,7 @@ function openManualJdModal(company = "", role = "", source = "pipeline") {
 
   // Clean company & role placeholders
   const isBadComp = !company || company.toLowerCase().includes("careers navitus") || company.toLowerCase().includes("target company");
-  const isBadRole = !role || role.toLowerCase().includes("confirm you are human") || role.toLowerCase().includes("data engineer");
+  const isBadRole = !role || role.toLowerCase().includes("confirm you are human");
 
   const cleanComp = (!isBadComp) ? company : (analyzeCompany || "");
   const cleanRole = (!isBadRole) ? role : (analyzeRole || "");
@@ -1849,7 +1849,7 @@ function renderSimplifyCard(data) {
     if (roleName.tagName === "INPUT") roleName.value = rName;
     else roleName.innerText = rName;
   }
-  if (resumeFile) resumeFile.innerText = data.resume_name || "Haseeb_Khan_Resume";
+  if (resumeFile) resumeFile.innerText = data.resume_name || "Master_Resume";
 
   // 3. Job Title Row
   const titleJd = document.getElementById("matrix-title-jd");
@@ -1857,7 +1857,7 @@ function renderSimplifyCard(data) {
   const titleStatus = document.getElementById("matrix-title-status");
 
   if (titleJd) titleJd.innerText = data.job_title_jd || data.role;
-  if (titleResume) titleResume.innerText = data.job_title_resume || "Data Engineer II";
+  if (titleResume) titleResume.innerText = data.job_title_resume || "Current Role";
   if (titleStatus) {
     if (data.job_title_match) {
       titleStatus.className = "matrix-status-dot dot-match";
@@ -2267,7 +2267,7 @@ async function downloadEditedCoverLetter() {
   }
 
   const company = (window.currentCoverLetterParams?.company || window.lastResult?.company || "Target Company").trim();
-  const role = (window.currentCoverLetterParams?.role || window.lastResult?.role || "Data Engineer").trim();
+  const role = (window.currentCoverLetterParams?.role || window.lastResult?.role || "Target Role").trim();
 
   try {
     const res = await fetch("/api/cover-letter/save", {
@@ -2605,7 +2605,7 @@ async function generateApplicationAnswers() {
 
   const questions = input.value.trim();
   const company = (analyzeCompany || currentCompany || document.getElementById("matrix-company-title")?.textContent || "Target Company").trim();
-  const role = (analyzeRole || currentRole || document.getElementById("matrix-role-title")?.textContent || "Data Engineer").trim();
+  const role = (analyzeRole || currentRole || document.getElementById("matrix-role-title")?.textContent || "Target Role").trim();
   const jd_text = analyzeJdText || currentJdText || document.getElementById("jd-url")?.value || "";
 
   btn.disabled = true;

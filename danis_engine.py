@@ -173,7 +173,7 @@ BULLET STRUCTURE REQUIREMENTS:
 - Start every bullet with a capitalized strong action verb and end with a period.
 
 SKILLS CONSTRAINTS:
-The "skills" array must ONLY contain concise technical tools (< 4 words each, e.g. "Python", "ANSI SQL", "PL/SQL", "Databricks", "Star Schema"). NEVER put full sentences into skills!
+The "skills" array must ONLY contain concise technical tools, languages, and frameworks (< 4 words each, e.g. "TypeScript", "React", "Python", "SQL", "Docker", "AWS", "CI/CD"). NEVER put full sentences into skills!
 
 JSON OUTPUT FORMAT:
 {{

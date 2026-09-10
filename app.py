@@ -212,9 +212,29 @@ def signup():
             elif filename.endswith((".pdf", ".docx")):
                 from pdf_to_resume import parse_resume_pdf
                 parsed_json = parse_resume_pdf(str(save_path))
+                orig_docx = user.data_dir / "master_resume_original.docx"
+                orig_pdf = user.data_dir / "master_resume_original.pdf"
+                import shutil
                 if filename.endswith(".docx"):
-                    import shutil
-                    shutil.copy2(save_path, user.data_dir / "master_resume_original.docx")
+                    shutil.copy2(save_path, orig_docx)
+                    try:
+                        from resume_builder import convert_to_pdf
+                        convert_to_pdf(str(orig_docx))
+                    except Exception:
+                        pass
+                elif filename.endswith(".pdf"):
+                    shutil.copy2(save_path, orig_pdf)
+                    try:
+                        from resume_builder import build_resume_docx
+                        detected_font = parsed_json.get("_detected_font", "Calibri")
+                        built = build_resume_docx(parsed_json, "Master", "Resume", output_dir=str(user.data_dir), font_family=detected_font)
+                        if built and os.path.exists(built):
+                            shutil.copy2(built, orig_docx)
+                            temp_folder = Path(built).parent
+                            if temp_folder != user.data_dir and temp_folder.name.startswith("Master_"):
+                                shutil.rmtree(temp_folder, ignore_errors=True)
+                    except Exception as b_err:
+                        print(f"[Signup] Note building docx from PDF: {b_err}")
             else:
                 parsed_json = None
 
@@ -727,13 +747,14 @@ def upload_resume():
                 print(f"[Upload] Saved uploaded PDF to: {orig_pdf_target}")
                 try:
                     from resume_builder import build_resume_docx
-                    built_docx = build_resume_docx(parsed_json, "Master", "Resume", output_dir=str(user_data_dir))
+                    detected_font = parsed_json.get("_detected_font", "Calibri")
+                    built_docx = build_resume_docx(parsed_json, "Master", "Resume", output_dir=str(user_data_dir), font_family=detected_font)
                     if built_docx and os.path.exists(built_docx):
                         shutil.copy2(built_docx, orig_docx_target)
                         temp_folder = Path(built_docx).parent
                         if temp_folder != user_data_dir and temp_folder.name.startswith("Master_"):
                             shutil.rmtree(temp_folder, ignore_errors=True)
-                        print(f"[Upload] Generated baseline master_resume_original.docx from PDF: {orig_docx_target}")
+                        print(f"[Upload] Generated baseline master_resume_original.docx ({detected_font}) from PDF: {orig_docx_target}")
                 except Exception as b_err:
                     print(f"[Upload] Note generating original docx from PDF: {b_err}")
         else:
@@ -823,10 +844,16 @@ def history():
     return jsonify({"applications": applications, "count": len(applications)})
 
 
+def _safe_slugify(text: str) -> str:
+    """Safe slugify without external dependency."""
+    text = re.sub(r'[^\w\s-]', '', str(text))
+    text = re.sub(r'[\s_-]+', '_', text)
+    return text.strip('_')
+
+
 def _delete_single_history_log(filename: str, user_output_dir: Path = None) -> bool:
     """Helper: Hard delete log file, .docx, .pdf, cover letters, and the physical application folder on disk."""
     import shutil
-    from resume_builder import slugify
 
     effective_output_dir = user_output_dir or get_user_output_dir()
     logs_dir = effective_output_dir / "logs"
@@ -856,7 +883,7 @@ def _delete_single_history_log(filename: str, user_output_dir: Path = None) -> b
         
         # 2. Also search for any slugified folder in user output/ and root workspace
         if company and role:
-            target_folder_name = f"{slugify(company)}_{slugify(role)}"[:80]
+            target_folder_name = f"{_safe_slugify(company)}_{_safe_slugify(role)}"[:80]
             # Check in user output/
             out_sub = effective_output_dir / target_folder_name
             if out_sub.exists():
@@ -871,6 +898,9 @@ def _delete_single_history_log(filename: str, user_output_dir: Path = None) -> b
         return True
     except Exception as e:
         print(f"[History Delete Error] {filename}: {e}")
+        return False
+
+
 @app.route("/api/history/<filename>", methods=["PUT", "POST"])
 @app.route("/api/history/update", methods=["POST"])
 @login_required
@@ -918,32 +948,38 @@ def update_history_item(filename=None):
 @login_required
 def delete_history_item(filename):
     """Delete a history run entry and hard delete its actual output folder on disk."""
-    user_output_dir = get_user_output_dir()
-    if _delete_single_history_log(filename, user_output_dir):
-        return jsonify({"success": True, "message": "History entry and physical output folder deleted permanently from disk"})
-    return jsonify({"success": False, "error": "Failed to delete history item or file not found"}), 404
+    try:
+        user_output_dir = get_user_output_dir()
+        if _delete_single_history_log(filename, user_output_dir):
+            return jsonify({"success": True, "message": "History entry and physical output folder deleted permanently from disk"})
+        return jsonify({"success": False, "error": "Failed to delete history item or file not found"}), 404
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route("/api/history/delete_batch", methods=["POST"])
 @login_required
 def delete_history_batch():
     """Bulk delete multiple history run entries and hard delete their folders on disk."""
-    user_output_dir = get_user_output_dir()
-    data = request.json or {}
-    filenames = data.get("filenames", [])
-    if not filenames or not isinstance(filenames, list):
-        return jsonify({"success": False, "error": "No filenames provided for bulk deletion"}), 400
+    try:
+        user_output_dir = get_user_output_dir()
+        data = request.json or {}
+        filenames = data.get("filenames", [])
+        if not filenames or not isinstance(filenames, list):
+            return jsonify({"success": False, "error": "No filenames provided for bulk deletion"}), 400
 
-    deleted_count = 0
-    for fname in filenames:
-        if _delete_single_history_log(fname, user_output_dir):
-            deleted_count += 1
+        deleted_count = 0
+        for fname in filenames:
+            if _delete_single_history_log(fname, user_output_dir):
+                deleted_count += 1
 
-    return jsonify({
-        "success": True,
-        "message": f"Successfully deleted {deleted_count} history entries and system folders from disk.",
-        "deleted_count": deleted_count
-    })
+        return jsonify({
+            "success": True,
+            "message": f"Successfully deleted {deleted_count} history entries and system folders from disk.",
+            "deleted_count": deleted_count
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route("/api/history/clear_all", methods=["POST", "DELETE"])

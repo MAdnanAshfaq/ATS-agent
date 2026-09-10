@@ -223,7 +223,7 @@
           <h3 class="feature-title">Master Resume Synced</h3>
           <p class="feature-desc">Grounds every generated bullet point in your verified experience. Zero hallucinations, zero invented roles.</p>
           <div class="feature-meta">
-            <span><i class="fa-regular fa-file-word"></i> Haseeb_Khan_Resume.docx</span>
+            <span><i class="fa-regular fa-file-word"></i> Master_Resume.docx</span>
             <button type="button" class="feature-link-btn" onclick="switchTab('resume')">Edit Profile →</button>
           </div>
         </div>
@@ -310,7 +310,7 @@
                     <i class="fa-solid fa-pen-to-square" style="font-size:11px; color:#94a3b8;" title="Company name is editable"></i>
                   </div>
                   <div style="display:flex; align-items:center; gap:6px; margin-top:2px;">
-                    <input type="text" id="matrix-role-name" class="matrix-role-name" value="Data Engineer" placeholder="Role Title" oninput="onRoleEdited(this.value)" title="Click to edit Job Title" />
+                    <input type="text" id="matrix-role-name" class="matrix-role-name" value="" placeholder="Role Title" oninput="onRoleEdited(this.value)" title="Click to edit Job Title" />
                     <i class="fa-solid fa-pen-to-square" style="font-size:10px; color:#94a3b8;" title="Role title is editable"></i>
                   </div>
                 </div>
@@ -321,7 +321,7 @@
                 <i class="fa-regular fa-file-lines text-muted" style="font-size:18px;"></i>
                 <div style="flex:1;">
                   <div style="font-size:11px; color:#64748b;">Your resume</div>
-                  <div style="font-weight:700; color:#0f172a; font-size:13px;" id="matrix-resume-filename">Haseeb_Khan_Resume</div>
+                  <div style="font-weight:700; color:#0f172a; font-size:13px;" id="matrix-resume-filename">Master_Resume</div>
                 </div>
                 <span class="matrix-select-pill">Select <i class="fa-solid fa-caret-down"></i></span>
               </div>
@@ -335,10 +335,10 @@
               <span class="matrix-status-dot dot-match" id="matrix-title-status"><i class="fa-solid fa-check"></i></span>
             </div>
             <div class="matrix-cell-jd">
-              <span id="matrix-title-jd" class="matrix-text-strong">Data Engineer</span>
+              <span id="matrix-title-jd" class="matrix-text-strong">Target Role</span>
             </div>
             <div class="matrix-cell-resume">
-              <span id="matrix-title-resume" class="matrix-text-secondary">Data Engineer II</span>
+              <span id="matrix-title-resume" class="matrix-text-secondary">Current Role</span>
             </div>
           </div>
 
@@ -459,9 +459,9 @@
               Paste specific job duties, complex tasks, or project accomplishments you want naturally written into your work experience bullets:
             </p>
             <textarea id="matrix-custom-bullets-input" class="matrix-custom-bullets-textarea" rows="3" placeholder="e.g.
-• Use ANSI SQL and/or PL/SQL to perform complex data analysis and database tuning
-• Expertise in Data Engineering and implement multiple end-to-end DW projects in Big Data environment
-• Support embedded analytics partners and coordinate agile end-to-end delivery of solutions"></textarea>
+• Spearhead core feature development and optimize system throughput and response times
+• Implement automated CI/CD pipelines, unit testing, and production monitoring
+• Collaborate cross-functionally with product and engineering teams to accelerate milestone delivery"></textarea>
           </div>
         </div>
 
@@ -709,7 +709,7 @@
                 id="refine-instruction-input" 
                 class="refine-textarea" 
                 rows="2" 
-                placeholder="Type anything to change... (e.g. 'In Strive Health, focus more on PySpark performance tuning; remove AWS from skills; make summary 2 lines only')"
+                placeholder="Type anything to change... (e.g. 'In recent role, emphasize architecture and performance scaling; remove outdated tooling; tighten summary to 2 lines')"
               ></textarea>
               <button type="button" class="btn btn-primary btn-lg refine-submit-btn" id="refine-submit-btn" onclick="submitResumeRefinement()">
                 <span id="refine-btn-spinner" class="spinner-inline hidden"></span>
@@ -1300,7 +1300,7 @@
           </div>
           <div>
             <label class="form-label" style="font-size: 11px; margin-bottom: 4px; display:block; color:var(--t2);">Target Role Title</label>
-            <input type="text" id="manual-jd-role" class="form-input" placeholder="e.g. Data Engineer" style="padding: 8px 12px; font-size: 13px; width:100%;">
+            <input type="text" id="manual-jd-role" class="form-input" placeholder="e.g. Software Engineer, Account Executive" style="padding: 8px 12px; font-size: 13px; width:100%;">
           </div>
         </div>
 
@@ -1365,7 +1365,7 @@
           <label class="form-label" style="font-size: 12px; margin-bottom: 6px; display:flex; align-items:center; gap:6px; color:var(--t1); font-weight:600;">
             <i class="fa-solid fa-briefcase" style="color:var(--ok);"></i> Job Role / Title
           </label>
-          <input type="text" id="edit-history-role" class="form-input" placeholder="e.g. Sr. Data Engineer" style="width:100%; font-size:13px;">
+          <input type="text" id="edit-history-role" class="form-input" placeholder="e.g. Senior Software Engineer" style="width:100%; font-size:13px;">
         </div>
 
         <div>
@@ -1437,7 +1437,7 @@
           <label class="form-label" style="font-size: 12px; margin-bottom: 6px; display:flex; align-items:center; gap:6px; color:var(--t1); font-weight:600;">
             <i class="fa-solid fa-comment-dots text-cyan"></i> What would you like to change?
           </label>
-          <textarea id="hist-refine-input" class="form-input" rows="3" placeholder="e.g. In Strive Health, focus more on PySpark data pipelines; remove mention of AWS; tighten the summary." style="width:100%; font-size:13px; resize:vertical;"></textarea>
+          <textarea id="hist-refine-input" class="form-input" rows="3" placeholder="e.g. In recent role, emphasize architecture and performance scaling; remove outdated tooling; tighten the summary." style="width:100%; font-size:13px; resize:vertical;"></textarea>
         </div>
 
         <div id="hist-refine-status-box" class="refine-status-box hidden">

@@ -78,6 +78,57 @@ RESUME TEXT:
 
 # ─── PDF / DOCX Text Extraction ───────────────────────────────────────────────
 
+def detect_pdf_font_and_page_count(pdf_path: str) -> tuple[str, int]:
+    """Inspect PDF metadata and char fonts to determine the authentic primary font and page count."""
+    try:
+        import pdfplumber
+        from collections import Counter
+        font_counts = Counter()
+        page_count = 0
+        with pdfplumber.open(pdf_path) as pdf:
+            page_count = len(pdf.pages)
+            for page in pdf.pages:
+                for char in getattr(page, 'chars', []):
+                    fname = char.get("fontname")
+                    if fname:
+                        font_counts[fname] += 1
+
+        if font_counts:
+            # Map raw postscript/subset font names to standard document fonts
+            for raw_font, _ in font_counts.most_common(6):
+                clean = re.sub(r'^[A-Z]{6}\+', '', raw_font).lower()
+                if any(k in clean for k in ('alegreya', 'georgia', 'merriweather', 'garamond')):
+                    return "Georgia", page_count
+                elif any(k in clean for k in ('times', 'cambria', 'serif')):
+                    return "Times New Roman", page_count
+                elif any(k in clean for k in ('arial', 'helvetica', 'roboto', 'open sans', 'lato', 'montserrat')):
+                    return "Arial", page_count
+                elif any(k in clean for k in ('calibri', 'segoe', 'aptos', 'inter', 'sans')):
+                    return "Calibri", page_count
+        return "Calibri", max(1, page_count)
+    except Exception as e:
+        print(f"[PDF Parser] Font detection note: {e}")
+        return "Calibri", 1
+
+
+def detect_docx_font(docx_path: str) -> str:
+    """Detect dominant font name in a DOCX file."""
+    try:
+        from docx import Document
+        from collections import Counter
+        doc = Document(docx_path)
+        font_counts = Counter()
+        for p in doc.paragraphs:
+            for r in p.runs:
+                if r.font and r.font.name:
+                    font_counts[r.font.name] += 1
+        if font_counts:
+            return font_counts.most_common(1)[0][0]
+    except Exception:
+        pass
+    return "Calibri"
+
+
 def extract_text_from_pdf(pdf_path: str) -> str:
     """Extract raw text from a PDF file."""
     print(f"[PDF Parser] Reading PDF: {pdf_path}")
@@ -162,10 +213,14 @@ def parse_resume_pdf(file_path: str) -> dict:
     """Parse a PDF or DOCX resume into structured JSON using Gemini."""
     path_lower = file_path.lower()
 
+    detected_font = "Calibri"
+    page_count = 1
     if path_lower.endswith(".pdf"):
         raw_text = extract_text_from_pdf(file_path)
+        detected_font, page_count = detect_pdf_font_and_page_count(file_path)
     elif path_lower.endswith(".docx"):
         raw_text = extract_text_from_docx(file_path)
+        detected_font = detect_docx_font(file_path)
     else:
         raise ValueError(f"Unsupported file type: {file_path}")
 
@@ -173,11 +228,15 @@ def parse_resume_pdf(file_path: str) -> dict:
     try:
         result = parse_with_gemini(raw_text)
         result["_raw_text"] = raw_text  # Keep raw text for agent use
+        result["_detected_font"] = detected_font
+        result["_page_count"] = page_count
         return result
     except Exception as e:
         print(f"[PDF Parser] Gemini failed, using regex fallback: {e}")
         result = parse_text_to_json_fallback(raw_text)
         result["_raw_text"] = raw_text
+        result["_detected_font"] = detected_font
+        result["_page_count"] = page_count
         return result
 
 
