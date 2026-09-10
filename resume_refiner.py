@@ -57,7 +57,7 @@ JSON Schema:
     "experience": [
       {
         "company": "Company Name",
-        "role": "Role Title",
+        "title": "Role Title",
         "dates": "Date Range",
         "bullets": ["Bullet 1", "Bullet 2"]
       }
@@ -179,6 +179,21 @@ INSTRUCTIONS:
             refined["contact"] = current_resume["contact"]
         if "experience" not in refined and "experience" in current_resume:
             refined["experience"] = current_resume["experience"]
+
+        # Normalize experience entries (ensure title exists and multi-role is preserved)
+        ref_exp = refined.get("experience", [])
+        for exp_e in ref_exp:
+            if isinstance(exp_e, dict) and not exp_e.get("title") and exp_e.get("role"):
+                exp_e["title"] = exp_e["role"]
+
+        # Preserve any past jobs from base_resume that LLM might have omitted
+        base_exp = base_resume.get("experience", [])
+        existing_companies = {e.get("company", "").lower().strip() for e in ref_exp if isinstance(e, dict)}
+        for orig_e in base_exp:
+            orig_comp = orig_e.get("company", "").lower().strip()
+            if orig_comp not in existing_companies:
+                ref_exp.append(orig_e)
+        refined["experience"] = ref_exp
 
         return refined, change_summary
 

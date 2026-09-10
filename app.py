@@ -710,18 +710,38 @@ def upload_resume():
             from pdf_to_resume import parse_resume_pdf
             parsed_json = parse_resume_pdf(str(save_path))
 
-            # If uploaded file was .docx, save a copy as master_resume_original.docx for template patching
+            orig_docx_target = user_data_dir / "master_resume_original.docx"
+            orig_pdf_target = user_data_dir / "master_resume_original.pdf"
+            import shutil
+
             if filename.endswith(".docx"):
-                orig_target = user_data_dir / "master_resume_original.docx"
-                import shutil
-                shutil.copy2(save_path, orig_target)
-                print(f"[Upload] Saved Canva template copy to: {orig_target}")
+                shutil.copy2(save_path, orig_docx_target)
+                print(f"[Upload] Saved uploaded DOCX template to: {orig_docx_target}")
+                try:
+                    from resume_builder import convert_to_pdf
+                    convert_to_pdf(str(orig_docx_target))
+                except Exception as pdf_e:
+                    print(f"[Upload] Note converting original docx to pdf: {pdf_e}")
+            elif filename.endswith(".pdf"):
+                shutil.copy2(save_path, orig_pdf_target)
+                print(f"[Upload] Saved uploaded PDF to: {orig_pdf_target}")
+                try:
+                    from resume_builder import build_resume_docx
+                    built_docx = build_resume_docx(parsed_json, "Master", "Resume", output_dir=str(user_data_dir))
+                    if built_docx and os.path.exists(built_docx):
+                        shutil.copy2(built_docx, orig_docx_target)
+                        temp_folder = Path(built_docx).parent
+                        if temp_folder != user_data_dir and temp_folder.name.startswith("Master_"):
+                            shutil.rmtree(temp_folder, ignore_errors=True)
+                        print(f"[Upload] Generated baseline master_resume_original.docx from PDF: {orig_docx_target}")
+                except Exception as b_err:
+                    print(f"[Upload] Note generating original docx from PDF: {b_err}")
         else:
             return jsonify({"success": False, "error": "Unsupported file format. Please upload PDF, DOCX, or JSON."}), 400
 
         # Remove temp upload file if distinct from master_resume_original
         try:
-            if save_path.exists() and save_path.name != "master_resume_original.docx":
+            if save_path.exists() and save_path.name not in ("master_resume_original.docx", "master_resume_original.pdf"):
                 os.remove(save_path)
         except Exception:
             pass
@@ -757,11 +777,17 @@ def delete_resume():
         with open(user_resume_path, "w", encoding="utf-8") as f:
             json.dump(empty, f, indent=2)
 
-        # Also remove the canva docx template if it exists
+        # Also remove the docx and pdf templates if they exist
         orig_docx = user_data_dir / "master_resume_original.docx"
+        orig_pdf = user_data_dir / "master_resume_original.pdf"
         if orig_docx.exists():
             try:
                 os.remove(orig_docx)
+            except Exception:
+                pass
+        if orig_pdf.exists():
+            try:
+                os.remove(orig_pdf)
             except Exception:
                 pass
 
@@ -1231,6 +1257,7 @@ def analyze_job():
             "industries_match": matrix_data.get("industries_match", False),
             "matching_keywords": matching_keywords,
             "missing_keywords": missing_keywords,
+            "missing_keyword_contexts": matrix_data.get("missing_keyword_contexts", {}),
             "total_keywords": len(matching_keywords) + len(missing_keywords),
             "summary_feedback": matrix_data.get("summary_feedback", "Your current summary does not effectively showcase your qualifications and alignment with this job."),
             "summary_match": matrix_data.get("summary_match", False),
@@ -1245,6 +1272,7 @@ def analyze_job():
             "score": score,
             "matching_keywords": matching_keywords,
             "missing_keywords": missing_keywords,
+            "missing_keyword_contexts": matrix_data.get("missing_keyword_contexts", {}),
             "source": source,
             "jd_data": jd_data,
             "matrix": res_payload,
@@ -1872,7 +1900,19 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                 send_log(3, "Simplify ATS Score", f"Simplify error: {e}. Using JD keyword fallback.",
                          status="warning")
 
-        # Step 4 & 5: Resume Tailoring & Verification
+        # Step 4 & 5: Resume Tailoring & Verification with JD Domain Context
+        keyword_contexts = {}
+        try:
+            cached_item = GLOBAL_ANALYSIS_CACHE.get(url, {})
+            keyword_contexts = cached_item.get("missing_keyword_contexts", {})
+            if not keyword_contexts and missing_keywords and jd_text:
+                from llm_matcher import extract_keyword_contexts_from_jd
+                keyword_contexts = extract_keyword_contexts_from_jd(missing_keywords, jd_text)
+            if keyword_contexts:
+                send_log(4, "Domain Context", f"Extracted sentence-level JD context for {len(keyword_contexts)} keywords.", status="working")
+        except Exception as ctx_err:
+            print(f"[Pipeline] Keyword context extraction note: {ctx_err}")
+
         if engine_mode == "danis_engine":
             send_log(4, "Dani's Multi-Agent Engine", "Launching 4-role team: Researcher → Writer (Rules 0–16) → Auditor → Editor...", status="working")
             from danis_engine import execute_danis_engine_pipeline
@@ -1884,6 +1924,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                 role=role,
                 custom_bullets=custom_bullets,
                 log_callback=send_log,
+                keyword_contexts=keyword_contexts,
             )
             send_log(5, "Dani's Engine", "Multi-role resume generation & human-voice audit passed!", status="success")
         else:
@@ -1899,6 +1940,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                 company=company,
                 role=role,
                 custom_bullets=custom_bullets,
+                keyword_contexts=keyword_contexts,
             )
             send_log(4, "Gemini Rewrite", "Resume rewritten with keyword injection!", status="success")
 

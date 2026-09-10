@@ -266,7 +266,7 @@ def build_resume_docx(
         add_section_header("Professional Experience")
         
         for role_entry in experience:
-            title = sanitize_text(role_entry.get("title", ""))
+            title = sanitize_text(role_entry.get("title") or role_entry.get("role", ""))
             company_name = sanitize_text(role_entry.get("company", ""))
             dates = sanitize_text(role_entry.get("dates", ""))
             location = sanitize_text(role_entry.get("location", ""))

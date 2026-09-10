@@ -1,21 +1,26 @@
 """
-docx_patcher.py - In-place DOCX editor that preserves original styling.
+docx_patcher.py - In-place DOCX editor that preserves original styling with 100% fidelity.
 
 Instead of building a new DOCX from scratch, this module:
-1. Loads the user's original formatted DOCX (Canva / Word template)
-2. Finds the old experience bullet text using fuzzy matching
-3. Replaces ONLY the text content while keeping all Run formatting intact
-   (fonts, colors, sizes, bold/italic, spacing, column layouts, etc.)
-4. Saves as a new file in the output folder
-
-This way the final resume keeps 100% of the original Canva design.
+1. Loads the user's original formatted DOCX (Canva / Word / Master template)
+2. In-place patches:
+   - Professional Summary (without altering section styling)
+   - Technical Skills rows (categorized or atomic, preserving bold labels)
+   - 1-to-1 sequential experience bullets per role across all canonical companies
+3. Preserves all original layout, fonts, colors, margins, and section borders.
+4. Saves directly to the job's output directory.
 """
+from __future__ import annotations
+
 import json
 import os
 import re
 import shutil
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Optional
+
+from resume_builder import _categorize_skills, sanitize_text
 
 
 def slugify(text: str) -> str:
@@ -31,32 +36,47 @@ def _get_para_full_text(para) -> str:
 
 def _set_para_text_preserve_format(para, new_text: str):
     """
-    Replace paragraph text while preserving the formatting of the first run.
-    Clears all extra runs, keeps formatting of run[0].
+    Replace paragraph text while preserving the formatting of runs.
+    If the paragraph has a label prefix (e.g. bold 'Languages: '),
+    it preserves run[0]'s label and formatting, and puts new text into run[1].
+    Otherwise, preserves run[0]'s formatting and puts new text in run[0].
     """
     if not para.runs:
         para.add_run(new_text)
         return
 
-    # Keep the first run's formatting, put all new text in it
-    first_run = para.runs[0]
-    first_run.text = new_text
+    full_orig = _get_para_full_text(para).strip()
 
-    # Clear all other runs
+    # Check if there is a bold/distinct label prefix (e.g. "Languages:", "Cloud & DevOps:", "Tools & Platforms:")
+    colon_idx = full_orig.find(":")
+    if colon_idx != -1 and colon_idx < 35 and len(para.runs) > 1:
+        label_prefix = full_orig[:colon_idx + 1].strip()
+        r0_text = para.runs[0].text.strip()
+        # If run[0] matches the label prefix
+        if r0_text.startswith(label_prefix) or label_prefix.startswith(r0_text):
+            # Strip label from new_text if already present in new_text
+            val = new_text
+            if val.startswith(label_prefix):
+                val = val[len(label_prefix):].strip()
+            para.runs[0].text = label_prefix + " "
+            para.runs[1].text = val
+            for r in para.runs[2:]:
+                r.text = ""
+            return
+
+    # Standard replacement: keep formatting of run[0], clear others
+    para.runs[0].text = new_text
     for run in para.runs[1:]:
         run.text = ""
 
 
 def _normalize(text: str) -> str:
-    """Normalize text for fuzzy comparison."""
+    """Normalize text for comparison."""
     return re.sub(r'\s+', ' ', text.lower().strip())
 
 
 def _fuzzy_match_score(a: str, b: str) -> float:
-    """
-    Simple word-overlap ratio between two strings.
-    Returns 0.0 - 1.0 where 1.0 is identical.
-    """
+    """Simple word-overlap ratio between two strings."""
     a_words = set(_normalize(a).split())
     b_words = set(_normalize(b).split())
     if not a_words or not b_words:
@@ -65,9 +85,19 @@ def _fuzzy_match_score(a: str, b: str) -> float:
     return len(intersection) / max(len(a_words), len(b_words))
 
 
+def _iter_table_paragraphs(table):
+    """Recursively yield all paragraphs in all table cells."""
+    for row in table.rows:
+        for cell in row.cells:
+            for para in cell.paragraphs:
+                yield para
+            for nested_table in cell.tables:
+                yield from _iter_table_paragraphs(nested_table)
+
+
 def _get_all_paragraphs_from_doc(doc):
     """
-    Yield all paragraphs from both the body AND table cells, in document order.
+    Yield all paragraphs from both body AND table cells, in document order.
     Critical for DOCX files with table-based layouts (common in Canva exports).
     """
     from docx.table import Table
@@ -84,15 +114,17 @@ def _get_all_paragraphs_from_doc(doc):
     yield from iter_blocks(doc)
 
 
-def _iter_table_paragraphs(table):
-    """Recursively yield all paragraphs in all table cells."""
-    for row in table.rows:
-        for cell in row.cells:
-            for para in cell.paragraphs:
-                yield para
-            # Nested tables
-            for nested_table in cell.tables:
-                yield from _iter_table_paragraphs(nested_table)
+def _is_section_header(text: str) -> bool:
+    """Check if a paragraph text looks like a major section header."""
+    norm = _normalize(text)
+    headers = {
+        "professional summary", "summary", "executive summary", "career profile", "profile",
+        "technical skills", "skills", "skills & competencies", "core competencies",
+        "professional experience", "work experience", "experience", "employment history",
+        "education", "academic background", "certifications", "licenses & certifications",
+        "projects", "key projects"
+    }
+    return norm in headers or (len(norm) < 30 and any(h == norm for h in headers))
 
 
 def patch_docx_with_rewritten_resume(
@@ -103,11 +135,11 @@ def patch_docx_with_rewritten_resume(
     output_dir: str = None,
 ) -> str:
     """
-    Patch the original DOCX with rewritten content, preserving all formatting.
+    Patch the original DOCX with rewritten content, preserving 100% of formatting.
 
     Args:
-        original_docx_path: Path to the user's original uploaded DOCX
-        rewritten_resume: The Gemini-rewritten resume dict (from rewriter.py)
+        original_docx_path: Path to the user's original uploaded/baseline DOCX
+        rewritten_resume: The tailored resume dict
         company: For output folder naming
         role: For output folder naming
         output_dir: Base output directory
@@ -130,7 +162,6 @@ def patch_docx_with_rewritten_resume(
 
     # Derive candidate name for file
     name = rewritten_resume.get("name", "Resume").replace(" ", "_")
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_filename = f"{name}_{slugify(company)}_{slugify(role)}.docx"
     out_path = folder_path / out_filename
 
@@ -138,109 +169,239 @@ def patch_docx_with_rewritten_resume(
     shutil.copy2(original_docx_path, out_path)
     print(f"[Patcher] Copied original DOCX to: {out_path}")
 
-    # Open the copy for editing
     doc = Document(str(out_path))
-
-    # Collect all paragraphs (body + tables)
     all_paras = list(_get_all_paragraphs_from_doc(doc))
     print(f"[Patcher] Found {len(all_paras)} paragraphs in original DOCX")
 
-    # ── Build lookup of old bullet text from original → new bullet text ──────
-    # We match by: for each rewritten role, for each new bullet,
-    # find the paragraph in the original that is the closest match and replace it.
+    # ── 1. Patch Target Role (if present in header) ───────────────────────────
+    target_role = rewritten_resume.get("target_role") or role or ""
+    if target_role and len(all_paras) > 1:
+        p1_text = _get_para_full_text(all_paras[1]).strip()
+        # If paragraph 1 is a role subtitle (short, uppercase, not contact)
+        if 2 <= len(p1_text) <= 50 and "@" not in p1_text and not p1_text.startswith("+"):
+            from scraper import clean_role_title
+            clean_r = clean_role_title(target_role).upper()
+            if clean_r:
+                _set_para_text_preserve_format(all_paras[1], clean_r)
+                print(f"[Patcher] Updated target role subtitle to: {clean_r}")
 
-    rewritten_experience = rewritten_resume.get("experience", [])
-
-    # Collect all (para_text, para_object) pairs that look like bullet lines
-    # (non-empty, not headers, length between 20–500 chars)
-    bullet_paras = [
-        (p, _get_para_full_text(p))
-        for p in all_paras
-        if 20 <= len(_get_para_full_text(p).strip()) <= 500
-    ]
-
-    matched_indices = set()
-    replacements_made = 0
-
-    for exp in rewritten_experience:
-        new_bullets = exp.get("bullets", [])
-        old_title = exp.get("title", "")
-        old_company = exp.get("company", "")
-
-        # Find the anchor: the title paragraph for this role
-        # This lets us do replacement only within the right section
-        anchor_score_threshold = 0.5
-        anchor_idx = None
-
-        for i, (para, text) in enumerate(bullet_paras):
-            title_score = _fuzzy_match_score(old_title, text)
-            company_score = _fuzzy_match_score(old_company, text)
-            if title_score >= anchor_score_threshold or company_score >= anchor_score_threshold:
-                anchor_idx = i
-                break
-
-        # Window: search within reasonable range after the role header
-        if anchor_idx is not None:
-            search_start = anchor_idx
-            search_end = min(anchor_idx + 25, len(bullet_paras))
-        else:
-            search_start = 0
-            search_end = len(bullet_paras)
-
-        # Now match each new bullet to the closest original bullet in range
-        for new_bullet in new_bullets:
-            best_score = 0.35  # minimum threshold to replace
-            best_idx = None
-
-            for i in range(search_start, search_end):
-                if i in matched_indices:
-                    continue
-                _, orig_text = bullet_paras[i]
-                score = _fuzzy_match_score(new_bullet, orig_text)
-                if score > best_score:
-                    best_score = score
-                    best_idx = i
-
-            if best_idx is not None:
-                para_obj, old_text = bullet_paras[best_idx]
-                print(f"[Patcher] Replacing (score={best_score:.2f}):")
-                print(f"          OLD: {old_text[:80]}...")
-                print(f"          NEW: {new_bullet[:80]}...")
-                _set_para_text_preserve_format(para_obj, new_bullet)
-                matched_indices.add(best_idx)
-                replacements_made += 1
-
-    print(f"[Patcher] Total replacements: {replacements_made}")
-
-    # Also update summary if present
-    rewritten_summary = rewritten_resume.get("summary", "")
+    # ── 2. Patch Professional Summary ─────────────────────────────────────────
+    rewritten_summary = rewritten_resume.get("summary", "").strip()
     if rewritten_summary:
-        for para, text in bullet_paras:
-            score = _fuzzy_match_score(rewritten_summary[:80], text[:80])
-            if score >= 0.45:
-                _set_para_text_preserve_format(para, rewritten_summary)
-                print(f"[Patcher] Updated summary paragraph")
+        summary_patched = False
+        for i, para in enumerate(all_paras):
+            text = _normalize(_get_para_full_text(para))
+            if text in ("professional summary", "summary", "executive summary", "profile", "career profile"):
+                # The next non-empty paragraph is the summary content
+                for j in range(i + 1, min(i + 4, len(all_paras))):
+                    cand_text = _get_para_full_text(all_paras[j]).strip()
+                    if cand_text and not _is_section_header(cand_text):
+                        _set_para_text_preserve_format(all_paras[j], rewritten_summary)
+                        print(f"[Patcher] Updated summary paragraph under header '{text}'")
+                        summary_patched = True
+                        break
+            if summary_patched:
                 break
+
+        # Fallback: find paragraph with highest overlap or length > 50 before experience
+        if not summary_patched:
+            for para in all_paras[:8]:
+                text = _get_para_full_text(para).strip()
+                if len(text) > 60 and not _is_section_header(text) and "@" not in text:
+                    _set_para_text_preserve_format(para, rewritten_summary)
+                    print(f"[Patcher] Updated summary paragraph (fallback detection)")
+                    break
+
+    # ── 3. Patch Technical Skills Rows ────────────────────────────────────────
+    rewritten_skills = rewritten_resume.get("skills", [])
+    if rewritten_skills:
+        clean_skills = [sanitize_text(s) for s in rewritten_skills if s and len(sanitize_text(s)) <= 40]
+        categorized = _categorize_skills(clean_skills)
+
+        # Locate the skills section
+        skills_start_idx = None
+        for i, para in enumerate(all_paras):
+            text = _normalize(_get_para_full_text(para))
+            if text in ("technical skills", "skills", "skills & competencies", "core competencies"):
+                skills_start_idx = i
+                break
+
+        if skills_start_idx is not None:
+            # Look at paragraphs following the skills header until next section header
+            skill_paras = []
+            for j in range(skills_start_idx + 1, min(skills_start_idx + 8, len(all_paras))):
+                cand_text = _get_para_full_text(all_paras[j]).strip()
+                if not cand_text:
+                    continue
+                if _is_section_header(cand_text):
+                    break
+                skill_paras.append(all_paras[j])
+
+            # Check if paragraphs have labeled categories (e.g. "Languages:", "Cloud & DevOps:")
+            labeled_rows = []
+            for p in skill_paras:
+                p_txt = _get_para_full_text(p).strip()
+                c_idx = p_txt.find(":")
+                if c_idx != -1 and c_idx < 30:
+                    labeled_rows.append((p, p_txt[:c_idx].strip()))
+
+            if labeled_rows:
+                # In-place update each labeled row matching category
+                for p, label in labeled_rows:
+                    label_lower = label.lower()
+                    matched_items = []
+                    for cat_name, cat_items in categorized.items():
+                        if cat_name.lower() in label_lower or label_lower in cat_name.lower():
+                            matched_items.extend(cat_items)
+
+                    # If no direct match, match keywords in label
+                    if not matched_items:
+                        if "lang" in label_lower:
+                            matched_items = categorized.get("Languages", [])
+                        elif "cloud" in label_lower or "devops" in label_lower:
+                            matched_items = categorized.get("Cloud & DevOps", [])
+                        elif "tool" in label_lower or "platform" in label_lower:
+                            matched_items = categorized.get("Tools & Platforms", [])
+                        elif "database" in label_lower:
+                            matched_items = categorized.get("Databases", [])
+                        elif "framework" in label_lower:
+                            matched_items = categorized.get("Frameworks & Libraries", [])
+
+                    if matched_items:
+                        new_content = f"{label}: {', '.join(matched_items)}"
+                        _set_para_text_preserve_format(p, new_content)
+                        print(f"[Patcher] Updated skills row '{label}': {len(matched_items)} items")
+            elif skill_paras:
+                # Single or multi-paragraph unlabelled skills list
+                all_skills_str = ", ".join(clean_skills)
+                _set_para_text_preserve_format(skill_paras[0], all_skills_str)
+                print(f"[Patcher] Updated generic skills paragraph with {len(clean_skills)} skills")
+
+    # ── 4. Patch Experience Bullets (Zero-Exempt 1-to-1 Sequential Mapping) ───
+    rewritten_exp = rewritten_resume.get("experience", [])
+    total_replacements = 0
+
+    # Collect indices of role header paragraphs
+    role_anchors = []
+    for exp_idx, exp in enumerate(rewritten_exp):
+        comp = _normalize(exp.get("company", ""))
+        title = _normalize(exp.get("title", ""))
+        best_para_idx = None
+        best_score = 0.0
+
+        for i, para in enumerate(all_paras):
+            text = _normalize(_get_para_full_text(para))
+            if not text or _is_section_header(text):
+                continue
+            # Score against company and title
+            score = 0.0
+            if comp and comp in text:
+                score += 0.6
+            if title and title in text:
+                score += 0.4
+            if score > best_score and score >= 0.5:
+                best_score = score
+                best_para_idx = i
+
+        if best_para_idx is not None:
+            role_anchors.append((exp_idx, best_para_idx, exp))
+            print(f"[Patcher] Located role '{exp.get('company')}' at paragraph {best_para_idx}")
+
+    # Sort role anchors by paragraph index
+    role_anchors.sort(key=lambda x: x[1])
+
+    # Now for each role, define its paragraph range and patch bullets
+    for r_i, (exp_idx, anchor_idx, exp) in enumerate(role_anchors):
+        # Determine end index: next role anchor or next section header
+        if r_i + 1 < len(role_anchors):
+            end_idx = role_anchors[r_i + 1][1]
+        else:
+            # Last role: find next section header or end of document
+            end_idx = len(all_paras)
+            for j in range(anchor_idx + 1, len(all_paras)):
+                p_text = _get_para_full_text(all_paras[j]).strip()
+                if _is_section_header(p_text):
+                    end_idx = j
+                    break
+
+        # Collect bullet paragraphs in range (anchor_idx + 1 .. end_idx)
+        role_bullet_paras = []
+        for p_idx in range(anchor_idx + 1, end_idx):
+            p = all_paras[p_idx]
+            p_text = _get_para_full_text(p).strip()
+            # Skip empty, location lines (very short), or dates
+            if not p_text or len(p_text) < 15:
+                continue
+            # Check if it looks like a bullet or description
+            is_bullet = (
+                p.style.name.startswith("List")
+                or p_text.startswith(('•', '·', '▪', '-', '*'))
+                or len(p_text) >= 30
+            )
+            if is_bullet:
+                role_bullet_paras.append(p)
+
+        new_bullets = exp.get("bullets", [])
+        print(f"[Patcher] Role '{exp.get('company')}': {len(role_bullet_paras)} original bullets, {len(new_bullets)} new bullets")
+
+        # 1-to-1 sequential mapping
+        for b_i, new_b in enumerate(new_bullets):
+            clean_b = sanitize_text(new_b)
+            if not clean_b:
+                continue
+            if b_i < len(role_bullet_paras):
+                target_para = role_bullet_paras[b_i]
+                _set_para_text_preserve_format(target_para, clean_b)
+                total_replacements += 1
+            else:
+                # If there are more new bullets than original paragraphs, clone bullet formatting
+                if role_bullet_paras:
+                    last_p = role_bullet_paras[-1]
+                    new_p = doc.add_paragraph(style=last_p.style)
+                    new_p.paragraph_format.left_indent = last_p.paragraph_format.left_indent
+                    new_p.paragraph_format.space_after = last_p.paragraph_format.space_after
+                    new_p.paragraph_format.line_spacing = last_p.paragraph_format.line_spacing
+                    run = new_p.add_run(clean_b)
+                    if last_p.runs:
+                        run.font.name = last_p.runs[0].font.name
+                        run.font.size = last_p.runs[0].font.size
+                    total_replacements += 1
+
+        # If original had more bullets than new, clear excess paragraphs
+        if len(role_bullet_paras) > len(new_bullets):
+            for extra_p in role_bullet_paras[len(new_bullets):]:
+                extra_p.text = ""
+
+    print(f"[Patcher] Total bullet replacements made: {total_replacements}")
 
     # Save patched document
     doc.save(str(out_path))
-    print(f"[Patcher] Saved patched DOCX: {out_path}")
+    print(f"[Patcher] Successfully saved patched DOCX: {out_path}")
 
     return str(out_path)
 
 
-def get_original_docx_path() -> str | None:
+def get_original_docx_path(user_data_dir: Optional[str | Path] = None) -> str | None:
     """
-    Returns the path to the user's original uploaded DOCX, stored as
-    'master_resume_original.docx' alongside base_resume.json.
-    Returns None if not found.
+    Returns the path to the user's original uploaded DOCX.
+    Checks user_data_dir first, then falls back to repository root.
     """
+    candidates = []
+    if user_data_dir:
+        u_dir = Path(user_data_dir)
+        candidates.extend([
+            u_dir / "master_resume_original.docx",
+            u_dir / "master_resume_original.pdf",
+        ])
+
     base_dir = Path(__file__).parent
-    candidates = [
+    candidates.extend([
         base_dir / "master_resume_original.docx",
         base_dir / "master_resume_original.pdf",
-    ]
+    ])
+
     for p in candidates:
-        if p.exists():
+        if p.exists() and str(p).endswith(".docx"):
             return str(p)
+
     return None

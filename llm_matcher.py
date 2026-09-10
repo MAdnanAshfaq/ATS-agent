@@ -103,7 +103,52 @@ def is_keyword_in_resume(kw: str, resume_full_text: str, resume_skills_list: lis
         if match_count >= len(sub_parts) * 0.5:
             return True
 
-    return False
+def extract_keyword_contexts_from_jd(keywords: list, jd_text: str) -> dict:
+    """
+    Deterministically scan the Job Description and extract the exact sentence
+    or bullet point where each keyword appears to provide 100% domain clarity.
+    E.g. distinguishes predictive time-series forecasting from weather or financial forecasting.
+    """
+    if not jd_text or not keywords:
+        return {}
+
+    # Split into sentences or lines
+    lines = [line.strip() for line in re.split(r'[\r\n]+', jd_text) if len(line.strip()) >= 15]
+    sentences = []
+    for line in lines:
+        sub_sents = [s.strip() for s in re.split(r'(?<=[.!?])\s+', line) if len(s.strip()) >= 15]
+        sentences.extend(sub_sents if sub_sents else [line])
+
+    contexts = {}
+    for kw in keywords:
+        kw_clean = kw.strip()
+        if not kw_clean:
+            continue
+        pattern = re.compile(r'\b' + re.escape(kw_clean) + r'\b', re.IGNORECASE)
+        best_sentence = ""
+        for s in sentences:
+            if pattern.search(s):
+                # Prefer sentences that are substantial (between 30 and 220 chars)
+                if not best_sentence or (30 <= len(s) <= 220 and len(s) > len(best_sentence)):
+                    best_sentence = s
+                    if 40 <= len(best_sentence) <= 180:
+                        break
+        if best_sentence:
+            # Clean up bullet markers from sentence start
+            clean_s = re.sub(r'^[•\-\*\d\.\)]+\s*', '', best_sentence).strip()
+            contexts[kw_clean] = clean_s[:250]
+        else:
+            # Fallback search anywhere in jd_text with window
+            m = pattern.search(jd_text)
+            if m:
+                start = max(0, m.start() - 40)
+                end = min(len(jd_text), m.end() + 100)
+                snip = jd_text[start:end].replace('\n', ' ').strip()
+                contexts[kw_clean] = f"...{snip}..."
+            else:
+                contexts[kw_clean] = ""
+
+    return contexts
 
 
 def analyze_jd_and_resume_with_gemini(jd_text: str, base_resume: dict) -> dict:
@@ -151,6 +196,7 @@ YOUR TASK:
 4. Categorize all extracted skills into:
    - "matching_keywords": present in the candidate's resume
    - "missing_keywords": missing from the candidate's resume
+   - "missing_keyword_contexts": An object mapping EACH missing keyword to the EXACT sentence, requirement bullet, or phrase in the Job Description where that term or concept was specified (e.g. {"forecasting": "Build scalable time-series feature pipelines and ML models for predictive demand forecasting across 500k daily transactions."}). This provides critical technical domain context so the AI knows precisely how the technology is applied.
 5. Extract the following comparison data:
    - "job_title_jd": Target job title from the JD (e.g. "Software Engineer", "Data Engineer", "Frontend Developer", etc. NEVER return 'Not Specified' or 'None').
    - "job_title_resume": Candidate's current/recent job title from resume (e.g. "Data Engineer II")
@@ -169,6 +215,7 @@ YOUR TASK:
 CRITICAL RULES:
 - STRICTLY EXCLUDE legal disclaimers, EEOC text, veteran disclosures, disability forms, and soft skill filler words.
 - ALWAYS extract actionable technical skills. Never return empty lists for a technical role.
+- For EVERY missing keyword, find and include the exact context sentence from the JD in "missing_keyword_contexts".
 
 JOB DESCRIPTION:
 {jd_text[:6000]}
@@ -192,6 +239,13 @@ Return ONLY a valid JSON object matching this schema:
   "industries_match": false,
   "matching_keywords": ["Python", "SQL", "Git"],
   "missing_keywords": ["REST APIs", "Docker", "CI/CD", "AWS", "System Design"],
+  "missing_keyword_contexts": {{
+    "REST APIs": "Design and consume internal REST APIs for microservice communication.",
+    "Docker": "Containerize backend microservices using Docker for deployment.",
+    "CI/CD": "Maintain automated CI/CD pipelines in GitHub Actions.",
+    "AWS": "Deploy serverless workloads on AWS Lambda and S3.",
+    "System Design": "Participate in architecture reviews and distributed system design."
+  }},
   "summary_feedback": "Your current summary does not effectively showcase your qualifications and alignment with this job.",
   "summary_match": false
 }}"""
@@ -364,6 +418,16 @@ Return ONLY a valid JSON object matching this schema:
         resume_name_tag = f"{cand_name.replace(' ', '_')}_Resume"
         cand_title = base_resume.get("experience", [{}])[0].get("title", "Software Engineer") if base_resume.get("experience") else "Software Engineer"
 
+        # Build exact JD context mapping for every missing keyword
+        llm_contexts = parsed.get("missing_keyword_contexts") or {}
+        deterministic_contexts = extract_keyword_contexts_from_jd(final_missing, jd_text)
+        final_missing_contexts = {}
+        for kw in final_missing:
+            ctx = llm_contexts.get(kw, "")
+            if not ctx or len(ctx.strip()) < 15:
+                ctx = deterministic_contexts.get(kw, "")
+            final_missing_contexts[kw] = ctx.strip()
+
         res = {
             "score": score,
             "score_scale_10": score_10,
@@ -379,12 +443,13 @@ Return ONLY a valid JSON object matching this schema:
             "industries_match": bool(parsed.get("industries_match", False)),
             "matching_keywords": final_matching,
             "missing_keywords": final_missing,
+            "missing_keyword_contexts": final_missing_contexts,
             "total_keywords": tot,
             "summary_feedback": parsed.get("summary_feedback") or "Your current summary does not effectively showcase your qualifications and alignment with this job.",
             "summary_match": bool(parsed.get("summary_match", False)),
         }
 
-        print(f"[LLM Matcher] ATS Matrix Result: Score {score_10}/10 ({rating}) | {len(final_matching)} matched / {tot} total keywords")
+        print(f"[LLM Matcher] ATS Matrix Result: Score {score_10}/10 ({rating}) | {len(final_matching)} matched / {tot} total keywords | {len(final_missing_contexts)} contexts extracted")
         return res
 
     except Exception as e:
@@ -404,6 +469,8 @@ Return ONLY a valid JSON object matching this schema:
         "industries": ["Technology"],
         "industries_match": False,
         "matching_keywords": [],
+        "missing_keywords": [],
+        "missing_keyword_contexts": {},
         "missing_keywords": [],
         "total_keywords": 0,
         "summary_feedback": "Review your summary against the target job requirements.",

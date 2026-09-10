@@ -126,8 +126,6 @@ def verify_dynamic_keywords(rewritten_json_output: dict, simplify_keywords: list
 def _check_keyword_coverage(resume: dict, keywords: list) -> tuple[list, list]:
     """Wrapper for verify_dynamic_keywords to maintain backwards compatibility."""
     return verify_dynamic_keywords(resume, keywords)
-
-
 def _build_prompt(
     base_resume: dict,
     jd_text: str,
@@ -137,6 +135,7 @@ def _build_prompt(
     attempt: int,
     still_missing_from_last_attempt: Optional[list] = None,
     custom_bullets: str = "",
+    keyword_contexts: Optional[dict[str, str]] = None,
 ) -> tuple[str, str]:
     """
     Build the system + user prompt for Gemini.
@@ -161,6 +160,24 @@ The user explicitly wants the above responsibilities/accomplishments integrated 
 Naturally weave, expand, and adapt them into high-impact, professional, active-voice bullet points for {role} at {company}.
 """
 
+    context_section = ""
+    if keyword_contexts:
+        ctx_items = []
+        for kw, ctx in keyword_contexts.items():
+            if ctx and ctx.strip():
+                ctx_items.append(f'- "{kw}": JD Context: "{ctx.strip()}"')
+            else:
+                ctx_items.append(f'- "{kw}"')
+        if ctx_items:
+            context_section = f"""
+===================================================================
+MISSING KEYWORDS WITH EXACT JOB DESCRIPTION CONTEXT:
+===================================================================
+Pay careful attention to the EXACT domain meaning and context in which these keywords appear in the job description:
+{chr(10).join(ctx_items)}
+Do NOT treat keywords generically or misapply their technical meaning.
+"""
+
     kw_list_str = json.dumps(missing_keywords, indent=2)
 
     if attempt == 1 or not still_missing_from_last_attempt:
@@ -168,9 +185,10 @@ Naturally weave, expand, and adapt them into high-impact, professional, active-v
 MISSING KEYWORDS TO INJECT ({len(missing_keywords)} total):
 {kw_list_str}
 
+{context_section}
+
 Inject ALL of these keywords naturally across summary, skills, experience bullets, and projects.
-Every single keyword must appear at least once in the rewritten output.
-"""
+Every single keyword must appear at least once in the rewritten output."""""
     else:
         still_missing_str = (
             json.dumps(still_missing_from_last_attempt, indent=2)
@@ -278,6 +296,7 @@ def rewrite_resume(
     role: str,
     max_retries: int = 3,
     custom_bullets: str = "",
+    keyword_contexts: Optional[dict[str, str]] = None,
 ) -> dict:
     """
     Rewrite the resume to inject ALL missing keywords using Gemini.
@@ -311,6 +330,7 @@ def rewrite_resume(
             attempt=attempt,
             still_missing_from_last_attempt=still_missing,
             custom_bullets=custom_bullets,
+            keyword_contexts=keyword_contexts,
         )
 
         print(f"[Rewriter] Attempt {attempt}/{max_retries} with {model}...")
@@ -356,7 +376,6 @@ def rewrite_resume(
                 if orig_comp not in existing_companies:
                     print(f"[Rewriter] Retaining missing past experience: {orig_e.get('title')} at {orig_e.get('company')}")
                     rewritten_exp.append(orig_e)
-            merged["experience"] = rewritten_exp
 
             # Clean skills array: remove full sentences or duties and extract atomic skills
             cleaned_skills = []
@@ -378,15 +397,42 @@ def rewrite_resume(
             merged["skills"] = cleaned_skills
 
             # Weave any stray sentence responsibilities into the latest role bullets
-            if sentence_skills and merged.get("experience"):
-                latest_bullets = merged["experience"][0].get("bullets", [])
+            if sentence_skills and rewritten_exp:
+                latest_bullets = rewritten_exp[0].get("bullets", [])
                 for sent in sentence_skills:
                     if not any(sent.lower()[:30] in b.lower() for b in latest_bullets):
                         clean_b = sent[0].upper() + sent[1:]
                         if not clean_b.endswith("."):
                             clean_b += "."
                         latest_bullets.append(clean_b)
-                merged["experience"][0]["bullets"] = latest_bullets
+                rewritten_exp[0]["bullets"] = latest_bullets
+
+            # Bullet sanitization across all roles (purge 2-word fragments, ensure complete sentences)
+            for exp_entry in rewritten_exp:
+                raw_bullets = exp_entry.get("bullets", [])
+                clean_b_list = []
+                for b in raw_bullets:
+                    if not b or not isinstance(b, str):
+                        continue
+                    b_clean = b.strip()
+                    b_clean = re.sub(r'^[•·▪▸►\*\-]\s*', '', b_clean)
+                    b_clean = re.sub(r'^\d+[\.\)]\s*', '', b_clean).strip()
+                    if len(b_clean) < 25 or len(b_clean.split()) < 4:
+                        continue
+                    if b_clean and b_clean[0].islower():
+                        b_clean = b_clean[0].upper() + b_clean[1:]
+                    if b_clean and not b_clean.endswith(('.', '!', '?')):
+                        b_clean += '.'
+                    if b_clean not in clean_b_list:
+                        clean_b_list.append(b_clean)
+                if not clean_b_list and exp_entry.get("company"):
+                    for orig in base_exp:
+                        if orig.get("company") == exp_entry.get("company"):
+                            clean_b_list = orig.get("bullets", [])
+                            break
+                exp_entry["bullets"] = clean_b_list
+
+            merged["experience"] = rewritten_exp
 
             # Verify keyword coverage
             embedded, still_missing = _check_keyword_coverage(merged, missing_keywords)

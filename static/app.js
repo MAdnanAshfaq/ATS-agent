@@ -10,6 +10,7 @@ let analyzeCompany = "";
 let analyzeRole = "";
 let analyzeScoreBefore = null;
 let analyzeJdText = "";
+let analyzedMissingKeywordContexts = {};
 
 function escapeHtml(str) {
   if (!str) return "";
@@ -1938,8 +1939,9 @@ function renderSimplifyCard(data) {
     }
   }
 
-  // Missing chips (Interactive Selectable + Addable)
+  // Missing chips (Interactive Selectable + Addable with JD sentence context)
   analyzedMissingKeywords = missing;
+  analyzedMissingKeywordContexts = data.missing_keyword_contexts || {};
   selectedMissingKeywords = new Set(missing);
 
   if (missingContainer) {
@@ -1952,7 +1954,8 @@ function renderSimplifyCard(data) {
       }
     } else {
       missing.forEach(kw => {
-        renderMatrixMissingChip(kw, missingContainer);
+        const ctx = analyzedMissingKeywordContexts[kw] || "";
+        renderMatrixMissingChip(kw, missingContainer, ctx);
       });
     }
   }
@@ -1974,14 +1977,28 @@ function renderSimplifyCard(data) {
   card.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
-function renderMatrixMissingChip(kw, container) {
+function renderMatrixMissingChip(kw, container, contextText = "") {
   const chip = document.createElement("div");
   const isSelected = selectedMissingKeywords.has(kw);
   chip.className = "chip-missing-selectable " + (isSelected ? "" : "deselected");
   chip.dataset.keyword = kw;
-  chip.innerHTML = `<i class="fa-solid ${isSelected ? 'fa-circle-check text-emerald' : 'fa-circle text-muted'} icon-state"></i> <span>${kw}</span>`;
 
-  chip.addEventListener("click", () => {
+  let contextSnippet = "";
+  if (contextText) {
+    const escapedCtx = contextText.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    chip.title = `JD Context: "${contextText}"`;
+    contextSnippet = `<span class="chip-ctx-indicator" style="margin-left:6px; color:#38bdf8; font-size:11px; cursor:help;" title="JD Context: ${escapedCtx}"><i class="fa-solid fa-circle-info"></i></span>`;
+  }
+
+  chip.innerHTML = `<i class="fa-solid ${isSelected ? 'fa-circle-check text-emerald' : 'fa-circle text-muted'} icon-state"></i> <span>${kw}</span>${contextSnippet}`;
+
+  chip.addEventListener("click", (e) => {
+    // If user clicked the info icon specifically, don't toggle selection
+    if (e.target.closest(".chip-ctx-indicator")) {
+      e.stopPropagation();
+      showToast(`JD Context: "${contextText}"`, "info");
+      return;
+    }
     if (selectedMissingKeywords.has(kw)) {
       selectedMissingKeywords.delete(kw);
       chip.classList.add("deselected");

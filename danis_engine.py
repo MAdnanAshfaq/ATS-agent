@@ -99,6 +99,7 @@ def run_writer_phase(
     custom_bullets: str,
     client: genai.Client,
     model_name: str = "gemini-2.5-flash",
+    keyword_contexts: Optional[dict[str, str]] = None,
 ) -> dict[str, Any]:
     """
     Role 2: Writer.
@@ -119,6 +120,25 @@ The user explicitly wants these accomplishments/responsibilities added into thei
 Weave these points into the candidate's recent work experience bullets, writing them in active engineering voice.
 """
 
+    context_section = ""
+    if keyword_contexts:
+        ctx_items = []
+        for kw, ctx in keyword_contexts.items():
+            if ctx and ctx.strip():
+                ctx_items.append(f'- "{kw}": JD Context: "{ctx.strip()}"')
+            else:
+                ctx_items.append(f'- "{kw}"')
+        if ctx_items:
+            context_section = f"""
+===================================================================
+MISSING KEYWORDS WITH EXACT JOB DESCRIPTION CONTEXT:
+===================================================================
+Pay careful attention to the EXACT domain meaning and context in which these keywords appear in the job description.
+Do NOT treat keywords generically or hallucinate unrelated domain meanings (e.g. if 'forecasting' is used for predictive time-series data pipelines, do NOT write weather or financial forecasting):
+{chr(10).join(ctx_items)}
+Weave these technologies into relevant work experience bullets adhering strictly to how the target company uses them.
+"""
+
     system_prompt = f"""You are the Writer in Dani's Multi-Agent Resume Team.
 Your job is to tailor the candidate's resume with strict adherence to human voice, authenticity, and high HR impact.
 
@@ -128,7 +148,8 @@ EDITORIAL PRIORITY ORDER (NEVER INVERT):
 3. HR IMPACT: Real quantified numbers, front-loaded impact (first 3 words carry weight).
 4. DEEP ATS & BULLET WEAVING (CRITICAL):
    - NEVER simply dump required keywords only into the "skills" list.
-   - You MUST actively weave key required frameworks, database tools, and cloud platforms from the JD and missing keywords directly into at least 2–3 work experience bullets across the candidate's canonical roles (e.g. demonstrating active hands-on design, migration, ETL, or deployment in real engineering context).
+   - You MUST actively weave key required frameworks, database tools, and cloud platforms from the JD and missing keywords directly into work experience bullets across the candidate's canonical roles (e.g. demonstrating active hands-on design, migration, ETL, or deployment in real engineering context).
+   - CRITICAL DOMAIN CONTEXT: When weaving missing keywords, you MUST match their precise technical domain meaning as used in the Job Description context provided. Never misapply a technical keyword.
 
 WRITING ENHANCEMENT RULES (Rules 0–16 from ResumeHQ):
 - Rule 0 (Human Voice Gate): Would a sharp engineer say this out loud in an interview without cringing?
@@ -144,7 +165,12 @@ WRITING ENHANCEMENT RULES (Rules 0–16 from ResumeHQ):
 
 ALL CANONICAL EXPERIENCES MUST BE PRESERVED:
 If the master profile has 2 or more jobs, your output MUST contain all of them.
-MANDATORY COMPANY NAMES: The ONLY allowed company names in the "experience" array are: {[e.get('company') for e in base_resume.get('experience', [])]}. NEVER replace, invent, or substitute company names (e.g. NEVER output Apex Systems or any other third-party company name). Preserve the exact company names and dates!
+MANDATORY COMPANY NAMES: The ONLY allowed company names in the "experience" array are: {[e.get('company') for e in base_resume.get('experience', [])]}. NEVER replace, invent, or substitute company names. Preserve the exact company names and dates!
+
+BULLET STRUCTURE REQUIREMENTS:
+- Every bullet MUST be a complete, self-contained accomplishment sentence of at least 15 words.
+- NEVER output short 2-to-3-word header fragments (e.g. NEVER output "Streamed data." or "ETL pipelines.").
+- Start every bullet with a capitalized strong action verb and end with a period.
 
 SKILLS CONSTRAINTS:
 The "skills" array must ONLY contain concise technical tools (< 4 words each, e.g. "Python", "ANSI SQL", "PL/SQL", "Databricks", "Star Schema"). NEVER put full sentences into skills!
@@ -171,6 +197,8 @@ JSON OUTPUT FORMAT:
 RESEARCHER RUBRIC:
 Hard Requirements: {json.dumps(research_rubric.get("hard_requirements", []))}
 Keywords & Tech: {json.dumps(missing_keywords)}
+
+{context_section}
 
 {custom_section}
 
@@ -248,12 +276,13 @@ def execute_danis_engine_pipeline(
     role: str,
     custom_bullets: str = "",
     log_callback: Optional[Callable[[int, str, str, Optional[dict], str], None]] = None,
+    keyword_contexts: Optional[dict[str, str]] = None,
 ) -> dict[str, Any]:
     """
     Main Orchestrator for Dani's Multi-Agent Engine.
     Executes:
     1. Researcher (JD Rubric Extraction)
-    2. Writer (Rules 0-16 Grounded Drafting)
+    2. Writer (Rules 0-16 Grounded Drafting with JD Domain Context)
     3. Auditor (Human Voice & Provenance Verification)
     4. Editor (Targeted Fixes if Audit flags issues)
     5. Post-Processing & Multi-Role Guarantee
@@ -280,6 +309,7 @@ def execute_danis_engine_pipeline(
         role=role,
         custom_bullets=custom_bullets,
         client=client,
+        keyword_contexts=keyword_contexts,
     )
     log(4, "Dani's Writer", "Draft created with strict human-voice protocols.", status="success")
 
@@ -347,6 +377,48 @@ def execute_danis_engine_pipeline(
                 final_exp.append(entry)
             else:
                 final_exp.append(orig_e)
+
+    # Bullet sanitization across all experiences (purge 2-word lead-in fragments, ensure complete sentences)
+    for exp_entry in final_exp:
+        raw_bullets = exp_entry.get("bullets", [])
+        clean_bullets = []
+        for b in raw_bullets:
+            if not b or not isinstance(b, str):
+                continue
+            b_clean = b.strip()
+            # Strip leading bullet glyphs or numbering
+            b_clean = re.sub(r'^[•·▪▸►\*\-]\s*', '', b_clean)
+            b_clean = re.sub(r'^\d+[\.\)]\s*', '', b_clean).strip()
+
+            # Filter out short fragments (< 25 chars or < 4 words, e.g. "Streamed data.", "Core duties:")
+            if len(b_clean) < 25 or len(b_clean.split()) < 4:
+                continue
+
+            # Capitalize first character
+            if b_clean and b_clean[0].islower():
+                b_clean = b_clean[0].upper() + b_clean[1:]
+
+            # Ensure it ends with a period
+            if b_clean and not b_clean.endswith(('.', '!', '?')):
+                b_clean += '.'
+
+            # Check for substring duplicates within the same role
+            is_fragment = False
+            for existing in clean_bullets:
+                if b_clean.lower() in existing.lower() or existing.lower() in b_clean.lower():
+                    if len(existing) >= len(b_clean):
+                        is_fragment = True
+                        break
+            if not is_fragment and b_clean not in clean_bullets:
+                clean_bullets.append(b_clean)
+
+        # If all bullets were somehow dropped, fall back to base bullets
+        if not clean_bullets and exp_entry.get("company"):
+            for orig in base_exp:
+                if orig.get("company") == exp_entry.get("company"):
+                    clean_bullets = orig.get("bullets", [])
+                    break
+        exp_entry["bullets"] = clean_bullets
 
     merged["experience"] = final_exp
 
