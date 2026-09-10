@@ -145,6 +145,19 @@ def login_page():
     if current_user.is_authenticated:
         return redirect(url_for("index"))
 
+    users_db = auth_module._load_users_db()
+    first_time = len(users_db) == 0
+    default_name = ""
+    default_email = ""
+    if first_time and RESUME_PATH.exists():
+        try:
+            with open(RESUME_PATH, "r", encoding="utf-8") as f:
+                rd = json.load(f)
+                default_name = rd.get("name", "")
+                default_email = rd.get("contact", {}).get("email", "")
+        except Exception:
+            pass
+
     if request.method == "POST":
         email = (request.form.get("email") or "").strip()
         password = request.form.get("password") or ""
@@ -161,7 +174,12 @@ def login_page():
         else:
             flash("Invalid email or password. Please try again.", "error")
 
-    return render_template("login.html")
+    return render_template(
+        "login.html",
+        first_time=first_time,
+        default_name=default_name,
+        default_email=default_email
+    )
 
 
 @app.route("/signup", methods=["POST"])

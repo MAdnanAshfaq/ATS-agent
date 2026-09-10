@@ -342,6 +342,13 @@
       {% endif %}
     {% endwith %}
 
+    {% if first_time %}
+      <div class="flash success" style="border-left: 4px solid var(--success); margin-bottom: 22px; line-height: 1.5;">
+        <div style="font-weight: 700; margin-bottom: 4px; font-size: 13.5px;">👋 Welcome, {{ default_name or 'Haseeb' }}! Create your login</div>
+        <div style="font-size: 12.5px; opacity: 0.9;">Choose a password below to secure your workspace. Your master resume, API keys, and all <strong>56 past job applications</strong> will be automatically linked to this account!</div>
+      </div>
+    {% endif %}
+
     <!-- Tab switcher -->
     <div class="tabs" role="tablist">
       <button class="tab-btn active" id="tab-login" onclick="switchTab('login')" role="tab" aria-selected="true">Sign In</button>
@@ -362,7 +369,7 @@
           <label for="login-email">Email address</label>
           <div class="field-wrap">
             <span class="field-icon">✉</span>
-            <input type="email" id="login-email" name="email" placeholder="you@example.com"
+            <input type="email" id="login-email" name="email" value="{{ default_email or '' }}" placeholder="you@example.com"
                    autocomplete="email" required />
           </div>
         </div>
@@ -378,7 +385,7 @@
         </div>
 
         <div class="remember-row">
-          <input type="checkbox" id="remember" name="remember" value="1" />
+          <input type="checkbox" id="remember" name="remember" value="1" checked />
           <label for="remember">Remember me for 30 days</label>
         </div>
 
@@ -396,7 +403,7 @@
     <!-- ── SIGNUP FORM ── -->
     <div id="panel-signup" class="form-panel">
       <h1 class="form-title">Create account</h1>
-      <p class="form-sub">Upload your resume and set up your API keys to get started</p>
+      <p class="form-sub">{% if first_time %}Set up your password to connect your existing resume & history{% else %}Upload your resume and set up your API keys to get started{% endif %}</p>
 
       <div id="signup-alert" class="alert error"></div>
 
@@ -406,7 +413,7 @@
           <label for="signup-name">Full name</label>
           <div class="field-wrap">
             <span class="field-icon">👤</span>
-            <input type="text" id="signup-name" name="display_name" placeholder="Jane Smith"
+            <input type="text" id="signup-name" name="display_name" value="{{ default_name or '' }}" placeholder="Jane Smith"
                    autocomplete="name" />
           </div>
         </div>
@@ -415,7 +422,7 @@
           <label for="signup-email">Email address</label>
           <div class="field-wrap">
             <span class="field-icon">✉</span>
-            <input type="email" id="signup-email" name="email" placeholder="you@example.com"
+            <input type="email" id="signup-email" name="email" value="{{ default_email or '' }}" placeholder="you@example.com"
                    autocomplete="email" required />
           </div>
           <div class="field-error" id="email-error">Please enter a valid email address.</div>
@@ -425,7 +432,7 @@
           <label for="signup-password">Password</label>
           <div class="field-wrap">
             <span class="field-icon">🔒</span>
-            <input type="password" id="signup-password" name="password" placeholder="At least 6 characters"
+            <input type="password" id="signup-password" name="password" placeholder="Choose a password (min 6 chars)"
                    autocomplete="new-password" oninput="checkStrength(this)" required />
             <button type="button" class="pwd-toggle" onclick="togglePwd('signup-password', this)" aria-label="Show password">👁</button>
           </div>
@@ -470,8 +477,11 @@
     clearAlerts();
   }
 
-  // Open signup tab if ?mode=signup
-  if (new URLSearchParams(location.search).get('mode') === 'signup') switchTab('signup');
+  // Open signup tab if first-time setup or ?mode=signup
+  const isFirstTime = {{ 'true' if first_time else 'false' }};
+  if (isFirstTime || new URLSearchParams(location.search).get('mode') === 'signup') {
+    switchTab('signup');
+  }
 
   // ── Password visibility ──
   function togglePwd(id, btn) {
