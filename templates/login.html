@@ -322,7 +322,7 @@
 <div class="bg-orb bg-orb-2"></div>
 
 <div class="page">
-  <div class="card">
+  <div class="card" id="auth-card" data-first-time="{{ '1' if first_time else '0' }}">
 
     <!-- Brand -->
     <div class="brand">
@@ -478,7 +478,8 @@
   }
 
   // Open signup tab if first-time setup or ?mode=signup
-  const isFirstTime = {{ 'true' if first_time else 'false' }};
+  const authCard = document.getElementById('auth-card');
+  const isFirstTime = authCard ? authCard.getAttribute('data-first-time') === '1' : false;
   if (isFirstTime || new URLSearchParams(location.search).get('mode') === 'signup') {
     switchTab('signup');
   }
