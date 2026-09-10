@@ -195,6 +195,20 @@ INSTRUCTIONS:
                 ref_exp.append(orig_e)
         refined["experience"] = ref_exp
 
+        # ── MASTER SKILLS ZERO-LOSS GUARANTEE ──
+        # Preserve all original skills from base_resume; never drop master skills
+        base_skills = [str(s).strip() for s in base_resume.get("skills", []) if s and str(s).strip()]
+        ref_skills = refined.get("skills", []) or []
+        ref_skills_clean = [str(s).strip() for s in ref_skills if s and str(s).strip() and len(str(s).split()) <= 4]
+
+        combined_skills = list(base_skills)
+        combined_lower = {s.lower() for s in combined_skills}
+        for s in ref_skills_clean:
+            if s.lower() not in combined_lower:
+                combined_skills.append(s)
+                combined_lower.add(s.lower())
+        refined["skills"] = combined_skills
+
         return refined, change_summary
 
     except Exception as e:

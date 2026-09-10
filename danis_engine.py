@@ -422,14 +422,27 @@ def execute_danis_engine_pipeline(
 
     merged["experience"] = final_exp
 
-    # Clean skills array: remove full sentences or duties
-    cleaned_skills = []
-    for s in merged.get("skills", []):
+    # ── MASTER SKILLS ZERO-LOSS GUARANTEE ──
+    # Always retain 100% of the candidate's master resume skills verbatim
+    base_skills = [str(s).strip() for s in base_resume.get("skills", []) if s and str(s).strip()]
+    final_skills = list(base_skills)
+    final_skills_lower = {s.lower() for s in final_skills}
+
+    # Only append verified technical missing keywords / new tools from the draft
+    for s in draft.get("skills", []):
         s_str = str(s).strip()
         words = s_str.split()
         if len(words) <= 4 and not s_str.endswith(".") and len(s_str) < 35:
-            if s_str not in cleaned_skills:
-                cleaned_skills.append(s_str)
-    merged["skills"] = cleaned_skills
+            if s_str.lower() not in final_skills_lower:
+                final_skills.append(s_str)
+                final_skills_lower.add(s_str.lower())
+
+    for kw in (missing_keywords or []):
+        kw_clean = str(kw).strip()
+        if len(kw_clean.split()) <= 3 and kw_clean.lower() not in final_skills_lower:
+            final_skills.append(kw_clean)
+            final_skills_lower.add(kw_clean.lower())
+
+    merged["skills"] = final_skills
 
     return merged

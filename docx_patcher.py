@@ -257,33 +257,63 @@ def patch_docx_with_rewritten_resume(
                     labeled_rows.append((p, p_txt[:c_idx].strip()))
 
             if labeled_rows:
+                used_categories = set()
                 # In-place update each labeled row matching category
                 for p, label in labeled_rows:
                     label_lower = label.lower()
                     matched_items = []
+                    matched_cat_name = None
                     for cat_name, cat_items in categorized.items():
                         if cat_name.lower() in label_lower or label_lower in cat_name.lower():
                             matched_items.extend(cat_items)
+                            matched_cat_name = cat_name
 
                     # If no direct match, match keywords in label
                     if not matched_items:
                         if "database" in label_lower or "data warehouse" in label_lower or "storage" in label_lower:
                             matched_items = categorized.get("Databases", [])
+                            matched_cat_name = "Databases"
                         elif "cloud" in label_lower or "devops" in label_lower or "infra" in label_lower:
                             matched_items = categorized.get("Cloud & DevOps", [])
+                            matched_cat_name = "Cloud & DevOps"
                         elif "framework" in label_lower or "librar" in label_lower:
                             matched_items = categorized.get("Frameworks & Libraries", [])
+                            matched_cat_name = "Frameworks & Libraries"
                         elif "lang" in label_lower:
                             matched_items = categorized.get("Languages", [])
+                            matched_cat_name = "Languages"
                         elif "business" in label_lower or "methodolog" in label_lower or "process" in label_lower:
                             matched_items = categorized.get("Business & Methodologies", [])
+                            matched_cat_name = "Business & Methodologies"
                         elif "tool" in label_lower or "platform" in label_lower:
                             matched_items = categorized.get("Tools & Platforms", [])
+                            matched_cat_name = "Tools & Platforms"
+
+                    if matched_cat_name:
+                        used_categories.add(matched_cat_name)
 
                     if matched_items:
-                        new_content = f"{label}: {', '.join(matched_items)}"
+                        seen = set()
+                        deduped = [x for x in matched_items if not (x.lower() in seen or seen.add(x.lower()))]
+                        new_content = f"{label}: {', '.join(deduped)}"
                         _set_para_text_preserve_format(p, new_content)
-                        print(f"[Patcher] Updated skills row '{label}': {len(matched_items)} items")
+                        print(f"[Patcher] Updated skills row '{label}': {len(deduped)} items")
+
+                # If there are categories from categorized that were not in labeled_rows,
+                # merge any unrepresented skills into the last labeled row so NO SKILL IS EVER OMITTED!
+                unrepresented = [cat for cat in categorized if cat not in used_categories and categorized[cat]]
+                if unrepresented and labeled_rows:
+                    last_p, last_label = labeled_rows[-1]
+                    curr_text = _get_para_full_text(last_p)
+                    missing_items = []
+                    for cat in unrepresented:
+                        missing_items.extend(categorized[cat])
+                    seen_curr = set(curr_text.lower().split())
+                    to_append = [m for m in missing_items if m.lower() not in seen_curr]
+                    if to_append:
+                        extended_text = curr_text.rstrip(", ") + ", " + ", ".join(to_append)
+                        _set_para_text_preserve_format(last_p, extended_text)
+                        print(f"[Patcher] Preserved {len(to_append)} unrepresented skills into '{last_label}'")
             elif skill_paras:
                 # Single or multi-paragraph unlabelled skills list
                 all_skills_str = ", ".join(clean_skills)
@@ -356,6 +386,19 @@ def patch_docx_with_rewritten_resume(
             next_p_text = _normalize(_get_para_full_text(all_paras[content_start]))
             if (comp and comp in next_p_text) or (title and title in next_p_text) or any(loc in next_p_text for loc in ("remote", "usa", "ca", "ny", "tx")):
                 content_start += 1
+
+        # Update role dates if present in exp and different from template (e.g. 2021 - 2026 -> 2021 – Present)
+        role_dates = str(exp.get("dates", "")).strip()
+        if role_dates:
+            check_paras = [all_paras[anchor_idx]]
+            if content_start > anchor_idx + 1:
+                check_paras.append(all_paras[anchor_idx + 1])
+            for p_cand in check_paras:
+                for run in p_cand.runs:
+                    if re.search(r'\b\d{4}\s*[-–—]\s*(?:\d{4}|present)\b', run.text, re.IGNORECASE):
+                        run.text = re.sub(r'\b\d{4}\s*[-–—]\s*(?:\d{4}|present)\b', role_dates, run.text, flags=re.IGNORECASE)
+                        print(f"[Patcher] Updated date run to '{role_dates}' for {exp.get('company')}")
+                        break
 
         # Collect bullet paragraphs in range (content_start .. end_idx)
         role_bullet_paras = []

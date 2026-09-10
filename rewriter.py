@@ -413,22 +413,22 @@ def rewrite_resume(
                 "decision making", "interpersonal skills", "multitasking", "collaboration", "negotiation",
                 "conflict resolution", "analytical thinking", "active listening", "emotional intelligence"
             }
-            base_skills = base_resume.get("skills", [])
-            hard_main_skills = [
-                s.strip() for s in base_skills 
-                if s and str(s).strip().lower() not in SOFT_SKILLS and len(str(s).split()) <= 4
-            ]
-
-            # Start with all original hard main skills from candidate's profile
-            final_skills = list(hard_main_skills)
+            base_skills = [str(s).strip() for s in base_resume.get("skills", []) if s and str(s).strip()]
+            final_skills = list(base_skills)
             final_skills_lower = {s.lower() for s in final_skills}
 
             # Add newly rewritten technical skills from the job description
             for s in cleaned_skills:
                 s_clean = s.strip()
-                if s_clean.lower() not in final_skills_lower and s_clean.lower() not in SOFT_SKILLS:
+                if s_clean.lower() not in final_skills_lower and len(s_clean.split()) <= 4:
                     final_skills.append(s_clean)
                     final_skills_lower.add(s_clean.lower())
+
+            for kw in (missing_keywords or []):
+                kw_clean = str(kw).strip()
+                if len(kw_clean.split()) <= 3 and kw_clean.lower() not in final_skills_lower:
+                    final_skills.append(kw_clean)
+                    final_skills_lower.add(kw_clean.lower())
 
             # Weave any stray sentence responsibilities into the latest role bullets
             if sentence_skills and rewritten_exp:
