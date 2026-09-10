@@ -196,7 +196,7 @@ YOUR TASK:
 4. Categorize all extracted skills into:
    - "matching_keywords": present in the candidate's resume
    - "missing_keywords": missing from the candidate's resume
-   - "missing_keyword_contexts": An object mapping EACH missing keyword to the EXACT sentence, requirement bullet, or phrase in the Job Description where that term or concept was specified (e.g. {"forecasting": "Build scalable time-series feature pipelines and ML models for predictive demand forecasting across 500k daily transactions."}). This provides critical technical domain context so the AI knows precisely how the technology is applied.
+   - "missing_keyword_contexts": An object mapping EACH missing keyword to the EXACT sentence, requirement bullet, or phrase in the Job Description where that term or concept was specified (e.g. {{"forecasting": "Build scalable time-series feature pipelines and ML models for predictive demand forecasting across 500k daily transactions."}}). This provides critical technical domain context so the AI knows precisely how the technology is applied.
 5. Extract the following comparison data:
    - "job_title_jd": Target job title from the JD (e.g. "Software Engineer", "Data Engineer", "Frontend Developer", etc. NEVER return 'Not Specified' or 'None').
    - "job_title_resume": Candidate's current/recent job title from resume (e.g. "Data Engineer II")
