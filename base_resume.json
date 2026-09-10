@@ -1,12 +1,12 @@
 {
-  "name": "Haseeb Khan",
+  "name": "Alex Morgan",
   "contact": {
-    "email": "mhaseeb.hk0@gmail.com",
-    "phone": "+1 5514121970",
-    "linkedin": "linkedin.com/in/muhammad-haseeb-4a691437b",
-    "github": null,
+    "email": "alex.morgan@example.com",
+    "phone": "+1 555-019-2834",
+    "linkedin": "linkedin.com/in/alexmorgan-data",
+    "github": "github.com/alexmorgan-data",
     "portfolio": null,
-    "location": "West Warwick, RI 02893"
+    "location": "New York, NY"
   },
   "summary": "Senior Data Engineer with 8 years building medallion lakehouse pipelines on Microsoft Fabric, Databricks, and Azure. Builds bronze-to-gold ELT in PySpark, Spark SQL, T-SQL, and dbt for regulated healthcare data, EHR, claims, and lab feeds covering 100,000+ members under HIPAA and HITRUST controls. Owns pipelines end to end: ingestion, transformation, data quality and freshness SLAs, Power BI semantic models, and on-call recovery.",
   "skills": [

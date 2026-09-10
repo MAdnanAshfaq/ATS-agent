@@ -7,10 +7,14 @@ chrome_profile_simplify/
 *.log
 debug_analyze.log
 
+# Caches & Local State — never commit
+jd_cache.json
+simplify_cache.json
+
 # Node dependencies
 node_modules/
 
-# Generated files
+# Generated files & run outputs
 output/
 __pycache__/
 *.pyc
@@ -19,9 +23,16 @@ __pycache__/
 .Python
 *.egg-info/
 
-# PDF/DOCX resume uploads (personal data — never commit)
+# Scratch & one-off test scripts
+test_*.py
+scratch/
+
+# Personal documents, cover letters, and PDFs (never commit)
 *.pdf
 *.docx
+*Cover_Letter*
+*cover_letter*
+Haseeb_Khan_*
 
 # Temp parsing files
 scratch/
