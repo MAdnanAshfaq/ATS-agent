@@ -1485,6 +1485,148 @@ def api_answer_questions():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/refine-resume", methods=["POST"])
+@login_required
+def refine_resume_api():
+    """
+    Apply candidate's specific revision instructions to a tailored resume,
+    rebuild the Word (.docx) and PDF files in ~2-3s, and return updated paths and change summary.
+    """
+    data = request.json or {}
+    instruction = data.get("instruction", "").strip()
+    folder_path = data.get("folder_path", "").strip()
+    company = data.get("company", "").strip()
+    role = data.get("role", "").strip()
+    url = data.get("url", "").strip()
+    direct_resume = data.get("current_resume")
+
+    if not instruction:
+        return jsonify({"success": False, "error": "Please provide revision instructions."}), 400
+
+    user_resume_path = get_user_resume_path()
+    user_output_dir = get_user_output_dir()
+    user_data_dir = current_user.data_dir if current_user.is_authenticated else BASE_DIR
+
+    try:
+        from agent import load_base_resume
+        from resume_refiner import refine_tailored_resume
+        from resume_builder import slugify, build_resume_docx, convert_to_pdf
+
+        base_resume = load_base_resume(str(user_resume_path))
+
+        # 1. Resolve target folder path safely
+        target_dir = None
+        if folder_path:
+            cand = Path(folder_path)
+            if cand.exists() and cand.is_dir():
+                target_dir = cand
+            else:
+                cand2 = user_output_dir / folder_path
+                if cand2.exists() and cand2.is_dir():
+                    target_dir = cand2
+
+        if not target_dir:
+            if company and role:
+                target_dir = user_output_dir / f"{slugify(company)}_{slugify(role)}"[:80]
+                target_dir.mkdir(parents=True, exist_ok=True)
+            else:
+                return jsonify({"success": False, "error": "Could not determine application folder."}), 400
+
+        # 2. Locate or load current tailored resume JSON
+        current_resume = direct_resume
+        tailored_json_path = target_dir / "tailored_resume.json"
+        if not current_resume and tailored_json_path.exists():
+            try:
+                with open(tailored_json_path, "r", encoding="utf-8") as f:
+                    current_resume = json.load(f)
+            except Exception:
+                pass
+
+        if not current_resume:
+            # Fall back to base_resume as starting point
+            current_resume = dict(base_resume)
+
+        # 3. Retrieve JD text if available
+        jd_text = data.get("jd_text", "").strip()
+        if not jd_text and url:
+            from scraper import get_cached_jd
+            cached = get_cached_jd(url)
+            if cached:
+                jd_text = cached.get("jd_text", "")
+
+        # 4. Call Refinement Engine
+        refined_resume, change_summary = refine_tailored_resume(
+            current_resume=current_resume,
+            instruction=instruction,
+            base_resume=base_resume,
+            jd_text=jd_text,
+            company=company,
+            role=role,
+        )
+
+        # 5. Save updated tailored_resume.json
+        with open(tailored_json_path, "w", encoding="utf-8") as f:
+            json.dump(refined_resume, f, indent=2, ensure_ascii=False)
+
+        # 6. Rebuild .docx document (check Canva original docx template first)
+        user_orig_docx = user_data_dir / "master_resume_original.docx"
+        orig_docx_path = user_orig_docx if user_orig_docx.exists() else (BASE_DIR / "master_resume_original.docx")
+
+        doc_path = None
+        if orig_docx_path.exists():
+            try:
+                from docx_patcher import patch_docx_with_rewritten_resume
+                doc_path = patch_docx_with_rewritten_resume(
+                    original_docx_path=str(orig_docx_path),
+                    rewritten_resume=refined_resume,
+                    company=company,
+                    role=role,
+                    output_dir=str(target_dir),
+                )
+            except Exception as patch_err:
+                print(f"[Refine] Patch error: {patch_err}, using build_resume_docx")
+                doc_path = build_resume_docx(
+                    resume=refined_resume,
+                    company=company,
+                    role=role,
+                    output_dir=str(target_dir),
+                )
+        else:
+            doc_path = build_resume_docx(
+                resume=refined_resume,
+                company=company,
+                role=role,
+                output_dir=str(target_dir),
+            )
+
+        # 7. Re-generate PDF
+        pdf_path = None
+        try:
+            pdf_path = convert_to_pdf(doc_path)
+        except Exception as pe:
+            print(f"[Refine] PDF error: {pe}")
+
+        rel_doc = os.path.relpath(doc_path, str(user_output_dir)).replace("\\", "/")
+        rel_pdf = os.path.relpath(pdf_path, str(user_output_dir)).replace("\\", "/") if pdf_path else ""
+
+        return jsonify({
+            "success": True,
+            "message": "Resume refined and documents rebuilt successfully!",
+            "change_summary": change_summary,
+            "output_file": doc_path,
+            "relative_path": rel_doc,
+            "relative_pdf": rel_pdf,
+            "folder_path": str(target_dir),
+            "updated_resume": refined_resume,
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": f"Refinement failed: {str(e)}"}), 500
+
+
+
 @app.route("/api/run", methods=["POST"])
 @login_required
 def run_agent():
@@ -1854,6 +1996,13 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                 output_dir=effective_output,
             )
 
+        # Save structured tailored resume JSON alongside .docx for instant refinement
+        try:
+            target_folder = Path(doc_path).parent
+            with open(target_folder / "tailored_resume.json", "w", encoding="utf-8") as rf:
+                json.dump(cleaned_resume, rf, indent=2, ensure_ascii=False)
+        except Exception as json_err:
+            print(f"[Pipeline] Note saving tailored_resume.json: {json_err}")
 
         # Automatically convert to PDF for instant viewing/download
         try:
@@ -1932,6 +2081,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                 "embedded_keywords": embedded_keywords,
                 "still_missing": still_missing,
                 "folder_path": str(Path(doc_path).parent),
+                "tailored_resume": cleaned_resume,
                 "cover_letter_text": cover_letter_text,
                 "next_step": "Upload the .docx to your Simplify profile to verify your new score",
             }

@@ -670,6 +670,61 @@
             </button>
           </div>
 
+          <!-- ── RESUME REFINEMENT COPILOT ── -->
+          <div class="refine-copilot-card" id="refine-copilot-card">
+            <div class="refine-header">
+              <div class="refine-header-left">
+                <div class="refine-icon"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+                <div>
+                  <h3 class="refine-title">Didn't like the resume? Tell Copilot what to change</h3>
+                  <p class="refine-sub">Type any adjustments, additions, or removals. The Copilot will revise the resume and rebuild your Word & PDF documents instantly.</p>
+                </div>
+              </div>
+              <span class="badge badge-purple" style="font-size:11px; padding:3px 9px; border-radius:6px;">⚡ Fast ~2s Rebuild</span>
+            </div>
+
+            <!-- Quick-Tweak Preset Chips -->
+            <div class="refine-chips-row">
+              <span class="refine-chip-label">Quick Tweaks:</span>
+              <button type="button" class="refine-chip" onclick="applyRefinePreset('Add more hard metrics and quantified numbers to experience bullet points')">
+                <i class="fa-solid fa-calculator text-cyan"></i> Add more metrics
+              </button>
+              <button type="button" class="refine-chip" onclick="applyRefinePreset('Make bullet points more punchy, direct, and concise (under 2 lines each)')">
+                <i class="fa-solid fa-scissors text-amber"></i> Make concise
+              </button>
+              <button type="button" class="refine-chip" onclick="applyRefinePreset('Emphasize technical architecture, system ownership, and end-to-end delivery')">
+                <i class="fa-solid fa-diagram-project text-purple"></i> Emphasize architecture
+              </button>
+              <button type="button" class="refine-chip" onclick="applyRefinePreset('Tone down corporate jargon and make the tone sound natural and human')">
+                <i class="fa-solid fa-user-check text-emerald"></i> Sound more human
+              </button>
+              <button type="button" class="refine-chip" onclick="applyRefinePreset('Front-load the highest impact business achievements in each role')">
+                <i class="fa-solid fa-trophy text-amber"></i> Front-load achievements
+              </button>
+            </div>
+
+            <!-- Freeform Revision Prompt Box -->
+            <div class="refine-input-wrap">
+              <textarea 
+                id="refine-instruction-input" 
+                class="refine-textarea" 
+                rows="2" 
+                placeholder="Type anything to change... (e.g. 'In Strive Health, focus more on PySpark performance tuning; remove AWS from skills; make summary 2 lines only')"
+              ></textarea>
+              <button type="button" class="btn btn-primary btn-lg refine-submit-btn" id="refine-submit-btn" onclick="submitResumeRefinement()">
+                <span id="refine-btn-spinner" class="spinner-inline hidden"></span>
+                <i class="fa-solid fa-bolt" id="refine-btn-icon"></i>
+                <span id="refine-btn-text">Apply Fixes & Rebuild</span>
+              </button>
+            </div>
+
+            <!-- Status Alert for Change Summary -->
+            <div class="refine-status-box hidden" id="refine-status-box">
+              <i class="fa-solid fa-circle-check text-emerald"></i>
+              <span id="refine-status-text">Revisions applied and Word document rebuilt!</span>
+            </div>
+          </div>
+
         </div>
 
       </div>
@@ -1331,6 +1386,71 @@
         <button type="button" class="btn btn-secondary btn-sm" onclick="closeEditHistoryModal()">Cancel</button>
         <button type="button" id="save-edit-history-btn" class="btn btn-primary btn-sm" onclick="saveEditHistory()">
           <i class="fa-solid fa-floppy-disk"></i> Save Changes
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- History Resume Refinement Modal -->
+  <div id="history-refine-modal" class="modal-backdrop" style="display:none; position: fixed; inset: 0; background: rgba(5,7,12,0.85); backdrop-filter: blur(8px); z-index: 9999; align-items: center; justify-content: center;">
+    <div class="modal-card" style="background: var(--surface-card); border: 1px solid var(--border-base); border-radius: var(--r-lg); width: 90%; max-width: 620px; box-shadow: var(--shadow-xl); overflow: hidden; animation: modalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);">
+      <div class="modal-header" style="border-bottom: 1px solid var(--border-base); padding: 16px 22px; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="width: 36px; height: 36px; border-radius: var(--r-md); background: rgba(108, 99, 255, 0.15); border: 1px solid rgba(108, 99, 255, 0.35); display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 15px;">
+            <i class="fa-solid fa-wand-magic-sparkles"></i>
+          </div>
+          <div>
+            <h3 style="margin: 0; font-size: 15px; font-weight: 700; color: var(--t0);" id="hist-refine-modal-title">Refine Tailored Resume</h3>
+            <p style="margin: 2px 0 0; font-size: 11.5px; color: var(--t2);" id="hist-refine-modal-sub">Tell Copilot what to adjust, add, or remove</p>
+          </div>
+        </div>
+        <button type="button" class="btn-icon-subtle" onclick="closeHistoryRefineModal()" style="font-size: 15px;">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="modal-body" style="padding: 20px 22px; display: flex; flex-direction: column; gap: 14px;">
+        <input type="hidden" id="hist-refine-filename" value="">
+        <input type="hidden" id="hist-refine-output-file" value="">
+        <input type="hidden" id="hist-refine-company" value="">
+        <input type="hidden" id="hist-refine-role" value="">
+        <input type="hidden" id="hist-refine-url" value="">
+
+        <!-- Quick Tweak Chips -->
+        <div class="refine-chips-row">
+          <span class="refine-chip-label">Quick Tweaks:</span>
+          <button type="button" class="refine-chip" onclick="applyHistRefinePreset('Add more hard metrics and quantified numbers to experience bullet points')">
+            <i class="fa-solid fa-calculator text-cyan"></i> Add metrics
+          </button>
+          <button type="button" class="refine-chip" onclick="applyHistRefinePreset('Make bullet points more punchy, direct, and concise (under 2 lines each)')">
+            <i class="fa-solid fa-scissors text-amber"></i> Make concise
+          </button>
+          <button type="button" class="refine-chip" onclick="applyHistRefinePreset('Emphasize technical architecture, system ownership, and end-to-end delivery')">
+            <i class="fa-solid fa-diagram-project text-purple"></i> Architecture
+          </button>
+          <button type="button" class="refine-chip" onclick="applyHistRefinePreset('Tone down corporate jargon and make the tone sound natural and human')">
+            <i class="fa-solid fa-user-check text-emerald"></i> Sound human
+          </button>
+        </div>
+
+        <div>
+          <label class="form-label" style="font-size: 12px; margin-bottom: 6px; display:flex; align-items:center; gap:6px; color:var(--t1); font-weight:600;">
+            <i class="fa-solid fa-comment-dots text-cyan"></i> What would you like to change?
+          </label>
+          <textarea id="hist-refine-input" class="form-input" rows="3" placeholder="e.g. In Strive Health, focus more on PySpark data pipelines; remove mention of AWS; tighten the summary." style="width:100%; font-size:13px; resize:vertical;"></textarea>
+        </div>
+
+        <div id="hist-refine-status-box" class="refine-status-box hidden">
+          <i class="fa-solid fa-circle-check text-emerald"></i>
+          <span id="hist-refine-status-text">Revisions applied and Word document rebuilt!</span>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="border-top: 1px solid var(--border-base); padding: 14px 22px; display: flex; justify-content: flex-end; gap: 10px;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="closeHistoryRefineModal()">Close</button>
+        <button type="button" id="hist-refine-submit-btn" class="btn btn-primary btn-sm" onclick="submitHistoryRefinement()">
+          <i class="fa-solid fa-bolt" id="hist-refine-icon"></i>
+          <span id="hist-refine-btn-text">Apply Fixes & Rebuild</span>
         </button>
       </div>
     </div>

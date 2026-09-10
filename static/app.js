@@ -580,6 +580,9 @@ function renderHistoryCards(apps, query = "") {
           <i class="fa-solid fa-download"></i> .docx
         </a>
         ${app.relative_file_path ? `<a href="/api/download/${app.relative_file_path.replace('.docx', '.pdf')}" class="btn btn-cyan btn-sm" download><i class="fa-solid fa-file-pdf"></i> .pdf</a>` : ''}
+        <button class="btn btn-purple-sm" onclick="openRefineFromHistory('${escapeHtml(app.log_file_name)}', '${escapeHtml(app.output_file)}', '${escapeHtml(app.company)}', '${escapeHtml(app.role)}', '${escapeHtml(jobUrl)}')">
+          <i class="fa-solid fa-wand-magic-sparkles"></i> Refine
+        </button>
         ${jobUrl ? `
           <a href="${escapeHtml(jobUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" title="Open Job Posting in new tab">
             <i class="fa-solid fa-arrow-up-right-from-square"></i> Job Link
@@ -2680,3 +2683,220 @@ function copyQAText(idx, btnElement) {
     btnElement.style.borderColor = "";
   }, 2000);
 }
+
+/* ── RESUME REFINEMENT COPILOT (INTERACTIVE REVISIONS) ───────────────────── */
+
+function applyRefinePreset(text) {
+  const input = document.getElementById("refine-instruction-input");
+  if (!input) return;
+  const current = input.value.trim();
+  if (current) {
+    input.value = `${current}; ${text}`;
+  } else {
+    input.value = text;
+  }
+  input.focus();
+}
+
+async function submitResumeRefinement() {
+  const input = document.getElementById("refine-instruction-input");
+  const btn = document.getElementById("refine-submit-btn");
+  const spinner = document.getElementById("refine-btn-spinner");
+  const icon = document.getElementById("refine-btn-icon");
+  const btnText = document.getElementById("refine-btn-text");
+  const statusBox = document.getElementById("refine-status-box");
+  const statusText = document.getElementById("refine-status-text");
+
+  const instruction = (input ? input.value : "").trim();
+  if (!instruction) {
+    showToast("Please describe what you want to change in the resume.", "warning");
+    if (input) input.focus();
+    return;
+  }
+
+  const lastRes = window.lastResult || {};
+  const folderPath = lastRes.folder_path || "";
+  const company = lastRes.company || analyzeCompany || "";
+  const role = lastRes.role || analyzeRole || "";
+  const url = lastRes.url || (document.getElementById("job-url-input") ? document.getElementById("job-url-input").value.trim() : "");
+  const currentResume = lastRes.tailored_resume || null;
+
+  if (!folderPath && !company) {
+    showToast("No active application found to refine. Please run an application first or pick one from History.", "warning");
+    return;
+  }
+
+  // Set loading state
+  if (btn) btn.disabled = true;
+  if (spinner) spinner.classList.remove("hidden");
+  if (icon) icon.classList.add("hidden");
+  if (btnText) btnText.textContent = "Revising & Rebuilding (~2s)...";
+
+  try {
+    const res = await fetch("/api/refine-resume", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        instruction: instruction,
+        folder_path: folderPath,
+        company: company,
+        role: role,
+        url: url,
+        current_resume: currentResume,
+        jd_text: analyzeJdText || "",
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || "Failed to refine resume");
+    }
+
+    // Update window.lastResult with rebuilt documents and resume data
+    if (window.lastResult) {
+      window.lastResult.output_file = data.output_file;
+      window.lastResult.relative_path = data.relative_path;
+      window.lastResult.relative_pdf = data.relative_pdf;
+      if (data.updated_resume) {
+        window.lastResult.tailored_resume = data.updated_resume;
+      }
+    }
+
+    // Show change summary in UI
+    if (statusBox && statusText) {
+      statusText.textContent = data.change_summary || "Revisions applied and Word (.docx) & PDF documents rebuilt!";
+      statusBox.classList.remove("hidden");
+    }
+
+    showToast("Resume revised & documents rebuilt in ~2s!", "success");
+
+    // Refresh history list silently in background
+    loadHistory();
+
+  } catch (err) {
+    console.error("[Refine Error]", err);
+    showToast(`Refinement failed: ${err.message}`, "error");
+  } finally {
+    if (btn) btn.disabled = false;
+    if (spinner) spinner.classList.add("hidden");
+    if (icon) icon.classList.remove("hidden");
+    if (btnText) btnText.textContent = "Apply Fixes & Rebuild";
+  }
+}
+
+/* ── HISTORY RESUME REFINEMENT MODAL ─────────────────────────────────────── */
+
+function openRefineFromHistory(logFileName, outputFile, company, role, jobUrl) {
+  const modal = document.getElementById("history-refine-modal");
+  if (!modal) return;
+
+  const fnInput = document.getElementById("hist-refine-filename");
+  const ofInput = document.getElementById("hist-refine-output-file");
+  const coInput = document.getElementById("hist-refine-company");
+  const roInput = document.getElementById("hist-refine-role");
+  const urlInput = document.getElementById("hist-refine-url");
+  const title = document.getElementById("hist-refine-modal-title");
+  const sub = document.getElementById("hist-refine-modal-sub");
+  const textInput = document.getElementById("hist-refine-input");
+  const statusBox = document.getElementById("hist-refine-status-box");
+
+  if (fnInput) fnInput.value = logFileName || "";
+  if (ofInput) ofInput.value = outputFile || "";
+  if (coInput) coInput.value = company || "";
+  if (roInput) roInput.value = role || "";
+  if (urlInput) urlInput.value = jobUrl || "";
+
+  if (title) title.textContent = `Refine Resume — ${company || 'Application'}`;
+  if (sub) sub.textContent = role ? `Role: ${role}` : "Tell Copilot what to adjust, add, or remove";
+  if (textInput) textInput.value = "";
+  if (statusBox) statusBox.classList.add("hidden");
+
+  modal.style.display = "flex";
+  if (textInput) textInput.focus();
+}
+
+function closeHistoryRefineModal() {
+  const modal = document.getElementById("history-refine-modal");
+  if (modal) modal.style.display = "none";
+}
+
+function applyHistRefinePreset(text) {
+  const input = document.getElementById("hist-refine-input");
+  if (!input) return;
+  const current = input.value.trim();
+  if (current) {
+    input.value = `${current}; ${text}`;
+  } else {
+    input.value = text;
+  }
+  input.focus();
+}
+
+async function submitHistoryRefinement() {
+  const input = document.getElementById("hist-refine-input");
+  const btn = document.getElementById("hist-refine-submit-btn");
+  const icon = document.getElementById("hist-refine-icon");
+  const btnText = document.getElementById("hist-refine-btn-text");
+  const statusBox = document.getElementById("hist-refine-status-box");
+  const statusText = document.getElementById("hist-refine-status-text");
+
+  const instruction = (input ? input.value : "").trim();
+  if (!instruction) {
+    showToast("Please describe what you want to change in the resume.", "warning");
+    if (input) input.focus();
+    return;
+  }
+
+  const outputFile = (document.getElementById("hist-refine-output-file")?.value || "").trim();
+  const company = (document.getElementById("hist-refine-company")?.value || "").trim();
+  const role = (document.getElementById("hist-refine-role")?.value || "").trim();
+  const url = (document.getElementById("hist-refine-url")?.value || "").trim();
+
+  // If outputFile points to .docx, get its directory
+  let folderPath = outputFile;
+  if (folderPath && (folderPath.endsWith(".docx") || folderPath.endsWith(".pdf"))) {
+    folderPath = folderPath.replace(/[/\\][^/\\]+$/, "");
+  }
+
+  if (btn) btn.disabled = true;
+  if (icon) icon.className = "fa-solid fa-spinner fa-spin";
+  if (btnText) btnText.textContent = "Revising & Rebuilding (~2s)...";
+
+  try {
+    const res = await fetch("/api/refine-resume", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        instruction: instruction,
+        folder_path: folderPath,
+        company: company,
+        role: role,
+        url: url,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || "Failed to refine resume");
+    }
+
+    if (statusBox && statusText) {
+      statusText.textContent = data.change_summary || "Revisions applied and Word (.docx) & PDF documents rebuilt!";
+      statusBox.classList.remove("hidden");
+    }
+
+    showToast("Resume revised and documents rebuilt!", "success");
+
+    // Refresh history cards so download links point to newly rebuilt files
+    await loadHistory();
+
+  } catch (err) {
+    console.error("[History Refine Error]", err);
+    showToast(`Refinement failed: ${err.message}`, "error");
+  } finally {
+    if (btn) btn.disabled = false;
+    if (icon) icon.className = "fa-solid fa-bolt";
+    if (btnText) btnText.textContent = "Apply Fixes & Rebuild";
+  }
+}
+
