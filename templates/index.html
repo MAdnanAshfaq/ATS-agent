@@ -1604,17 +1604,42 @@
 
     <!-- Input Footer -->
     <div class="hollabuddy-drawer-footer">
-      <div class="hollabuddy-input-wrap">
+      <!-- Input Meta Bar (Live char/word stats & quick clear) -->
+      <div id="hollabuddy-input-meta" class="hollabuddy-input-meta hidden">
+        <div class="hollabuddy-meta-left">
+          <span id="hollabuddy-char-count">0 characters</span>
+          <span class="hollabuddy-meta-dot">·</span>
+          <span id="hollabuddy-word-count">0 words</span>
+        </div>
+        <div class="hollabuddy-meta-right">
+          <button type="button" class="hollabuddy-clear-text-btn" onclick="clearHollaBuddyInputText()" title="Clear pasted question">
+            <i class="fa-solid fa-xmark"></i> Clear
+          </button>
+        </div>
+      </div>
+
+      <div class="hollabuddy-input-wrap" id="hollabuddy-input-wrap">
         <textarea
           id="hollabuddy-input"
           class="hollabuddy-textarea"
           rows="1"
-          placeholder="Ask HollaBuddy anything about your resume or job applications..."
+          placeholder="Ask HollaBuddy anything, or paste an application question..."
           onkeydown="handleHollaBuddyKey(event)"
+          oninput="handleHollaBuddyInput(this)"
+          onpaste="handleHollaBuddyPaste(event)"
         ></textarea>
-        <button type="button" id="hollabuddy-send-btn" class="hollabuddy-send-btn" onclick="sendHollaBuddyMessage()" title="Send Message (Enter)">
-          <i class="fa-solid fa-paper-plane"></i>
-        </button>
+        <div class="hollabuddy-input-actions">
+          <button type="button" id="hollabuddy-expand-btn" class="hollabuddy-action-btn" onclick="toggleHollaBuddyInputExpand()" title="Toggle full-view multi-line editor">
+            <i class="fa-solid fa-up-right-and-down-left-from-center" id="hollabuddy-expand-icon"></i>
+          </button>
+          <button type="button" id="hollabuddy-send-btn" class="hollabuddy-send-btn" onclick="sendHollaBuddyMessage()" title="Send Message (Enter)">
+            <i class="fa-solid fa-paper-plane"></i>
+          </button>
+        </div>
+      </div>
+
+      <div class="hollabuddy-input-hints">
+        <span><strong>Enter</strong> to send &nbsp;·&nbsp; <strong>Shift + Enter</strong> for newline</span>
       </div>
     </div>
   </div>

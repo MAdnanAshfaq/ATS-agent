@@ -2262,10 +2262,10 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   position: fixed;
   bottom: 84px;
   right: 28px;
-  width: 430px;
-  max-width: calc(100vw - 36px);
-  height: 590px;
-  max-height: calc(100vh - 110px);
+  width: 460px;
+  max-width: calc(100vw - 32px);
+  height: 630px;
+  max-height: calc(100vh - 100px);
   background: rgba(14, 18, 28, 0.96);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 20px;
@@ -2587,41 +2587,147 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
 
 /* Footer Input Area */
 .hollabuddy-drawer-footer {
-  padding: 12px 14px;
-  background: rgba(18, 22, 34, 0.95);
+  padding: 10px 14px 12px 14px;
+  background: rgba(18, 22, 34, 0.96);
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.hollabuddy-input-wrap {
+/* Input Meta Stats Bar */
+.hollabuddy-input-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
-  padding: 6px 8px 6px 12px;
-  transition: border-color 0.15s ease;
+  justify-content: space-between;
+  padding: 0 4px 6px 4px;
+  font-size: 11px;
+  color: #94a3b8;
+  animation: fadeIn 0.15s ease;
+}
+
+.hollabuddy-meta-left {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 500;
+}
+
+.hollabuddy-meta-dot {
+  color: #475569;
+}
+
+.hollabuddy-clear-text-btn {
+  background: transparent;
+  border: none;
+  color: #f87171;
+  font-size: 11px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.12s ease;
+  font-weight: 500;
+}
+
+.hollabuddy-clear-text-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+/* Input Wrap Container */
+.hollabuddy-input-wrap {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  padding: 8px 10px 8px 14px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  min-height: 46px;
 }
 
 .hollabuddy-input-wrap:focus-within {
   border-color: #00d8ff;
-  box-shadow: 0 0 0 2px rgba(0, 216, 255, 0.2);
+  box-shadow: 0 0 0 3px rgba(0, 216, 255, 0.22);
+  background: rgba(255, 255, 255, 0.08);
 }
 
+.hollabuddy-input-wrap.wrap-expanded {
+  border-color: rgba(0, 216, 255, 0.5);
+  box-shadow: 0 0 15px rgba(0, 216, 255, 0.15);
+}
+
+/* Dynamic Auto-Resizing Textarea */
 .hollabuddy-textarea {
   flex: 1;
   background: transparent;
   border: none;
   color: #ffffff;
   font-family: var(--font-body);
-  font-size: 12.5px;
+  font-size: 13px;
+  line-height: 1.5;
   outline: none;
   resize: none;
-  max-height: 80px;
+  min-height: 28px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 3px 0 3px 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(56, 189, 248, 0.35) transparent;
+  transition: height 0.12s ease;
+}
+
+.hollabuddy-textarea::-webkit-scrollbar {
+  width: 5px;
+}
+.hollabuddy-textarea::-webkit-scrollbar-thumb {
+  background: rgba(56, 189, 248, 0.35);
+  border-radius: 999px;
+}
+.hollabuddy-textarea::-webkit-scrollbar-thumb:hover {
+  background: #38bdf8;
+}
+
+.hollabuddy-textarea.expanded {
+  height: 220px !important;
+  max-height: 250px !important;
 }
 
 .hollabuddy-textarea::placeholder {
   color: #64748b;
+  font-size: 12.5px;
+}
+
+/* Actions Group (Expand & Send) */
+.hollabuddy-input-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding-bottom: 2px;
+}
+
+.hollabuddy-action-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  transition: all 0.15s ease;
+}
+
+.hollabuddy-action-btn:hover {
+  background: rgba(0, 216, 255, 0.15);
+  border-color: rgba(0, 216, 255, 0.4);
+  color: #38bdf8;
+  transform: scale(1.05);
 }
 
 .hollabuddy-send-btn {
@@ -2648,6 +2754,15 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   opacity: 0.4;
   cursor: not-allowed;
   transform: none;
+}
+
+/* Bottom key hints */
+.hollabuddy-input-hints {
+  font-size: 10.5px;
+  color: #64748b;
+  margin-top: 6px;
+  text-align: center;
+  letter-spacing: 0.01em;
 }
 
 /* Spinner large for preview */

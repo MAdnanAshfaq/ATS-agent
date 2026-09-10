@@ -3061,10 +3061,87 @@ function handleHollaBuddyKey(e) {
   }
 }
 
+function handleHollaBuddyInput(textarea) {
+  if (!textarea) return;
+
+  // Auto-resize dynamically between 42px and 220px
+  if (!textarea.classList.contains("expanded")) {
+    textarea.style.height = "auto";
+    const newHeight = Math.min(Math.max(textarea.scrollHeight, 40), 220);
+    textarea.style.height = newHeight + "px";
+  }
+
+  updateHollaBuddyMetaBar(textarea.value);
+}
+
+function handleHollaBuddyPaste(e) {
+  const textarea = e.target;
+  setTimeout(() => {
+    handleHollaBuddyInput(textarea);
+    // If pasted text is large, ensure comfortable viewing
+    if (textarea.value.length > 80 || textarea.value.includes("\n")) {
+      const meta = document.getElementById("hollabuddy-input-meta");
+      if (meta) meta.classList.remove("hidden");
+    }
+  }, 10);
+}
+
+function updateHollaBuddyMetaBar(val) {
+  const meta = document.getElementById("hollabuddy-input-meta");
+  const charSpan = document.getElementById("hollabuddy-char-count");
+  const wordSpan = document.getElementById("hollabuddy-word-count");
+  if (!meta) return;
+
+  const len = val.length;
+  if (len > 0) {
+    meta.classList.remove("hidden");
+    const words = val.trim().split(/\s+/).filter(Boolean).length;
+    if (charSpan) charSpan.textContent = `${len} character${len === 1 ? '' : 's'}`;
+    if (wordSpan) wordSpan.textContent = `${words} word${words === 1 ? '' : 's'}`;
+  } else {
+    meta.classList.add("hidden");
+  }
+}
+
+function clearHollaBuddyInputText() {
+  const input = document.getElementById("hollabuddy-input");
+  if (input) {
+    input.value = "";
+    input.classList.remove("expanded");
+    input.style.height = "auto";
+    input.focus();
+  }
+  const wrap = document.getElementById("hollabuddy-input-wrap");
+  if (wrap) wrap.classList.remove("wrap-expanded");
+  const icon = document.getElementById("hollabuddy-expand-icon");
+  if (icon) icon.className = "fa-solid fa-up-right-and-down-left-from-center";
+  updateHollaBuddyMetaBar("");
+}
+
+function toggleHollaBuddyInputExpand() {
+  const textarea = document.getElementById("hollabuddy-input");
+  const icon = document.getElementById("hollabuddy-expand-icon");
+  const wrap = document.getElementById("hollabuddy-input-wrap");
+  if (!textarea) return;
+
+  const isExpanded = textarea.classList.toggle("expanded");
+  if (wrap) wrap.classList.toggle("wrap-expanded", isExpanded);
+
+  if (isExpanded) {
+    textarea.style.height = "220px";
+    if (icon) icon.className = "fa-solid fa-down-left-and-up-right-to-center";
+    textarea.focus();
+  } else {
+    if (icon) icon.className = "fa-solid fa-up-right-and-down-left-from-center";
+    handleHollaBuddyInput(textarea);
+  }
+}
+
 function sendHollaBuddyPrompt(promptText) {
   const input = document.getElementById("hollabuddy-input");
   if (input) {
     input.value = promptText;
+    handleHollaBuddyInput(input);
   }
   // Make sure drawer is open
   toggleHollaBuddy(true);
@@ -3078,7 +3155,13 @@ async function sendHollaBuddyMessage() {
   if (!message) return;
 
   input.value = "";
+  input.classList.remove("expanded");
   input.style.height = "auto";
+  updateHollaBuddyMetaBar("");
+  const wrap = document.getElementById("hollabuddy-input-wrap");
+  if (wrap) wrap.classList.remove("wrap-expanded");
+  const icon = document.getElementById("hollabuddy-expand-icon");
+  if (icon) icon.className = "fa-solid fa-up-right-and-down-left-from-center";
 
   // Append user message
   appendHollaBuddyMessage("user", message);
