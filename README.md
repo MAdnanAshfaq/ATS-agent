@@ -154,13 +154,28 @@ The system enforces strict mathematical constraints on generated text to defeat 
 
 ---
 
-## 📸 Visual Product Tour
+---
+
+## 📸 Interactive Product Tour & System Surfaces
 
 ### 1. Autonomous Application Engine (Tab 1)
 
 Paste any job posting URL or raw JD text. In under 15 seconds, the engine scrapes the posting, identifies critical keyword gaps, runs Dani's multi-agent tailoring pipeline, and outputs an ATS-optimized `.docx` and vector `.pdf`.
 
-![Tab 1: New Application & Tailoring Pipeline](assets/dashboard.png)
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ⚡ AUTONOMOUS RESUME TAILORING PIPELINE                                      │
+│ Cross-check ATS keywords and tailor your resume in seconds.                │
+│                                                                             │
+│ [ 🔗 https://jobs.lever.co/company/data-engineer-role                     ] │
+│                                  [ 🔍 Analyze & Cross-Check ] [ ⚡ Generate ]│
+├──────────────────────┬──────────────────────────┬───────────────────────────┤
+│ 👤 MASTER RESUME      │ 🤖 4-AGENT PIPELINE      │ 🎯 DUAL-GATE VERIFICATION │
+│ Synced from ground   │ Researcher → Writer →    │ Semantic keyword matching │
+│ truth profile        │ Auditor → Editor         │ + 100% recruiter clean    │
+│ [Alex_Morgan.docx]   │ [Gemini 2.5 Flash Active]│ [Score: 94% (+22% delta)] │
+└──────────────────────┴──────────────────────────┴───────────────────────────┘
+```
 
 > **Key Capabilities**:
 > - **Live Job Scraper**: Instant extraction from LinkedIn, Lever, Greenhouse, Workday, Ashby, Wellfound, SmartRecruiters, and iCIMS.
@@ -174,7 +189,30 @@ Paste any job posting URL or raw JD text. In under 15 seconds, the engine scrape
 
 Never download a file blindly. Inspect your tailored resume in full vector fidelity inside the browser before saving it to your device.
 
-![Universal In-Browser Document Inspector](assets/resume_preview.png)
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 👁️ DOCUMENT INSPECTOR — Tailored Resume Vector Preview                       │
+│ [ 📄 Download DOCX ]   [ 📥 Download PDF ]   [ ↗ New Tab ]   [ ✕ Close (Esc) ]│
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│                             ALEX MORGAN                                     │
+│                            Data Engineer                                    │
+│                 alex.morgan@example.com | San Francisco, CA                 │
+│                                                                             │
+│  PROFESSIONAL SUMMARY                                                       │
+│  Senior Data Engineer with 8 years architecting scalable cloud pipelines... │
+│                                                                             │
+│  TECHNICAL SKILLS                                                           │
+│  • Cloud & Architecture: AWS, GCP, BigQuery, Snowflake, Databricks, Kafka  │
+│  • Engineering & Data: Python, PySpark, SQL, dbt, Airflow, CI/CD, Docker    │
+│                                                                             │
+│  PROFESSIONAL EXPERIENCE                                                    │
+│  Senior Data Engineer | Apex Cloud Systems                    2021 – Present│
+│  • Architected medallion lakehouse ingesting 100k+ records per hour...      │
+│  • Implemented automated CI/CD reducing deployment cycle from 2 days to 30m│
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
 > **Key Capabilities**:
 > - **Zero-Download Verification**: Review typography, layout balance, page boundaries, and formatting directly in the modal.
@@ -187,11 +225,33 @@ Never download a file blindly. Inspect your tailored resume in full vector fidel
 
 Click the cute **HollaBuddy** icon in the bottom-right corner anytime to summon your personal career wingman. HollaBuddy is permanently grounded in your master resume profile.
 
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 🤖 HollaBuddy | Career Wingman & Copilot                         [ — ] [ ✕ ]│
+├─────────────────────────────────────────────────────────────────────────────┤
+│ 🤖 HollaBuddy:                                                              │
+│ Here is a copy-ready response connecting your real experience with the role:│
+│                                                                             │
+│ ┌─────────────────────────────────────────────────────────────────────────┐ │
+│ │ > At Apex Cloud Systems, I led the migration of clinical data pipelines │ │
+│ │ > to a medallion architecture, reducing batch latency by 40% while      │ │
+│ │ > enforcing strict HIPAA and HITRUST compliance. My experience owning   │ │
+│ │ > bronze-to-gold transforms makes me well-prepared to drive your core   │ │
+│ │ > data platforms forward from day one.                                  │ │
+│ └─────────────────────────────────────────────────────────────────────────┘ │
+│ [ 📋 Copy Answer ]                                                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ [ Ask HollaBuddy any application question, pitch prompt, or salary advice... ]
+│ 32 words · 210 characters                     [ ⛶ Expand ]  [ 🚀 Send ]      │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
 > **Key Capabilities**:
 > - **Dynamic Auto-Expanding Editor**: Smoothly scales from a compact single line (40px) up to 220px as you paste lengthy job application prompts.
 > - **Live Character & Word Counters**: Real-time counter badge ensures your answers fit strict ATS portal constraints (e.g., *"maximum 250 words"*).
 > - **Full-View Modal Expansion**: Click the expand button to write in an expansive distraction-free editor.
 > - **STAR Behavioral Answer Generator**: Instantly transforms tricky behavioral interview questions (*"Tell me about a time you failed"*, *"Why should we hire you?"*) into structured, metric-backed answers grounded in your authentic work history.
+> - **Clean Markdown Blockquotes**: Delivers clean, copy-ready answers with standard proportional fonts—never garbled monospace ASCII splits.
 > - **One-Click Answer Copy**: Copy polished responses directly into application portals with a single click.
 
 ---
@@ -199,8 +259,6 @@ Click the cute **HollaBuddy** icon in the bottom-right corner anytime to summon 
 ### 4. Master Resume Profile & Visual Editor (Tab 4)
 
 Your single source of truth. Manage your contact details, work experience, hard and soft skills, education, and project portfolio through an intuitive visual interface or raw JSON.
-
-![Tab 4: Master Resume Profile & Visual Editor](assets/resume_profile.png)
 
 > **Key Capabilities**:
 > - **Visual Experience Manager**: Easily add, edit, or reorder roles, companies, dates, and bullet achievements.
@@ -214,8 +272,6 @@ Your single source of truth. Manage your contact details, work experience, hard 
 
 A comprehensive archive of every application you've ever created, complete with instant file reloads, audit logs, and an interactive refinement copilot.
 
-![Tab 2: History & Refinement Copilot](assets/history.png)
-
 > **Key Capabilities**:
 > - **Application Vault**: Search, view, and manage all previous applications organized by company and role.
 > - **1-Click Refinement Copilot**: Need a tweak? Give natural language instructions (*"Make the bullets more concise"*, *"Emphasize GCP and BigQuery over AWS"*, *"Add quantitative metrics to role 2"*) and watch the engine re-patch your resume in seconds.
@@ -226,8 +282,6 @@ A comprehensive archive of every application you've ever created, complete with 
 ### 6. AI Detection & Humanizer Studio (Tab 5)
 
 Test any piece of text (resume bullets, cover letter paragraphs, LinkedIn messages) against industry-standard AI detection patterns and humanize it with a single click.
-
-![Tab 5: AI Detection & Humanizer Studio](assets/ai_lab.png)
 
 > **Key Capabilities**:
 > - **Multi-Signal AI Scoring**: Calculates synthetic probability based on vocabulary, syntax uniformity, and cliché frequency.
@@ -240,8 +294,6 @@ Test any piece of text (resume bullets, cover letter paragraphs, LinkedIn messag
 ### 7. Setup & Multi-Key Failover Pool (Tab 3)
 
 Manage your API keys, test browser automation prerequisites, and configure multi-key failover to ensure uninterrupted operation.
-
-![Tab 3: Prerequisites & Setup](assets/setup.png)
 
 > **Key Capabilities**:
 > - **One-Click Key Validation**: Instantly tests your Google Gemini API key and reports model availability.

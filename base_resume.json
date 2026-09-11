@@ -54,7 +54,7 @@
   "experience": [
     {
       "title": "Senior Data Engineer",
-      "company": "Strive Health",
+      "company": "Apex Cloud Systems",
       "dates": "2021 – 2026",
       "location": "Remote",
       "bullets": [
@@ -70,12 +70,12 @@
     },
     {
       "title": "Junior Data Engineer",
-      "company": "Cornerstone OnDemand",
+      "company": "TalentFlow Solutions",
       "dates": "2018 – 2021",
       "location": "NY, USA",
       "bullets": [
         "Built Databricks medallion pipelines (bronze / silver / gold) in PySpark and Spark SQL on Delta Lake; owned silver-to-gold transforms for 10-20 learning, skills, performance, and HRIS/ATS feeds.",
-        "Ingested incremental employee and course data from Cornerstone REST/OData and HRIS/ATS APIs into bronze using Auto Loader, across 50+ customer tenants.",
+        "Ingested incremental employee and course data from enterprise REST/OData and HRIS/ATS APIs into bronze using Auto Loader, across 50+ customer tenants.",
         "Built 25-40 production dbt models in SQL with incremental logic and automated tests running on pull requests.",
         "Used Delta Lake MERGE for change-data updates on late or re-sent HR and LMS files. Scheduled and monitored Databricks Jobs with dbt tests, daily freshness checks, and failure alerts. Tuned job clusters and Delta table partitioning with senior engineers to cut runtime on nightly LMS loads.",
         "Built Algolia indexing jobs on curated course, skills, and people tables, serving search under 200 ms. Worked with HR and L&D stakeholders to turn recurring report requests into governed gold tables."
@@ -86,7 +86,7 @@
     {
       "degree": "Bachelor",
       "field": "Software Engineering",
-      "institution": "Foundation University",
+      "institution": "State University of Technology",
       "graduation_date": "2017",
       "gpa": null
     }

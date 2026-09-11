@@ -242,7 +242,7 @@ if __name__ == "__main__":
         "experience": [
             {
                 "title": "Data Engineer II",
-                "company": "Strive Health",
+                "company": "CloudScale Technologies",
                 "bullets": [
                     "Built Microsoft Fabric lakehouses using PySpark to process 40 EHR feeds for 100k members.",
                     "Cut deployment time from 2 days to 30 minutes with Azure DevOps CI/CD automation.",

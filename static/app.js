@@ -915,7 +915,7 @@ function renderVisualResume(data) {
           </div>
           <div class="vr-field">
             <label class="vr-label">Location</label>
-            <input type="text" id="vr-location" class="vr-input" value="${escapeHtml(location)}" placeholder="e.g. West Warwick, RI">
+            <input type="text" id="vr-location" class="vr-input" value="${escapeHtml(location)}" placeholder="e.g. San Francisco, CA">
           </div>
         </div>
         <div class="vr-grid-2">
@@ -1054,7 +1054,7 @@ function renderVisualResume(data) {
               <div class="vr-grid-3">
                 <div class="vr-field">
                   <label class="vr-label">Institution / University</label>
-                  <input type="text" class="vr-input vr-edu-institution" value="${escapeHtml(edu.institution || '')}" placeholder="e.g. Foundation University">
+                  <input type="text" class="vr-input vr-edu-institution" value="${escapeHtml(edu.institution || '')}" placeholder="e.g. Stanford University">
                 </div>
                 <div class="vr-field">
                   <label class="vr-label">Graduation Date / Year</label>
@@ -3260,27 +3260,112 @@ function appendHollaBuddyMessage(role, text, followups = []) {
 
 function formatHollaBuddyMarkdown(text) {
   if (!text) return "";
-  let html = escapeHtml(text);
 
-  // Bold **text**
-  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-  // Italic *text*
-  html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
-  // Code block ```code```
-  html = html.replace(/```([\s\S]*?)```/g, '<pre class="hollabuddy-code"><code>$1</code></pre>');
-  // Inline code `code`
-  html = html.replace(/`([^`]+)`/g, '<code class="hollabuddy-inline-code">$1</code>');
-  // Bullet lines
-  html = html.replace(/^\s*[-•*]\s+(.*)$/gm, '<li>$1</li>');
-  html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
-  // Paragraphs / line breaks
-  html = html.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>');
+  // 1. Extract code blocks first so inner content is completely preserved
+  const codeBlocks = [];
+  let processed = text.replace(/```([a-zA-Z0-9_-]*)\r?\n([\s\S]*?)```/g, (match, lang, code) => {
+    const idx = codeBlocks.length;
+    codeBlocks.push({ lang: (lang || "").trim(), code: (code || "").trim() });
+    return `\n\n__HB_CODE_${idx}__\n\n`;
+  });
 
-  return `<p>${html}</p>`;
+  // Also catch code blocks without newline immediately after backticks
+  processed = processed.replace(/```([\s\S]*?)```/g, (match, code) => {
+    const idx = codeBlocks.length;
+    codeBlocks.push({ lang: "", code: (code || "").trim() });
+    return `\n\n__HB_CODE_${idx}__\n\n`;
+  });
+
+  let html = escapeHtml(processed);
+
+  // 2. Bold and Italic
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+
+  // 3. Inline code
+  html = html.replace(/`([^`\n]+)`/g, '<code class="hollabuddy-inline-code">$1</code>');
+
+  // 4. Headings: ###, ##, #
+  html = html.replace(/^###\s+(.+)$/gm, '<h4 class="hollabuddy-heading">$1</h4>');
+  html = html.replace(/^##\s+(.+)$/gm, '<h3 class="hollabuddy-heading">$1</h3>');
+  html = html.replace(/^#\s+(.+)$/gm, '<h2 class="hollabuddy-heading">$1</h2>');
+
+  // 5. Parse Markdown Tables (| Col 1 | Col 2 |)
+  html = html.replace(/((?:^\|[^\r\n]+\|\r?\n)+)/gm, (tableText) => {
+    const lines = tableText.trim().split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (lines.length < 2) return tableText;
+
+    let divIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (/^\|[\s\-:|]+\|$/.test(lines[i])) {
+        divIdx = i;
+        break;
+      }
+    }
+    if (divIdx === -1) return tableText;
+
+    const parseCells = (line, tag) => {
+      const raw = line.split("|").slice(1, -1);
+      return `<tr>${raw.map(c => `<${tag}>${c.trim()}</${tag}>`).join("")}</tr>`;
+    };
+
+    const thead = `<thead>${lines.slice(0, divIdx).map(l => parseCells(l, "th")).join("")}</thead>`;
+    const tbody = `<tbody>${lines.slice(divIdx + 1).map(l => parseCells(l, "td")).join("")}</tbody>`;
+
+    return `\n\n<div class="hollabuddy-table-wrap"><table class="hollabuddy-table">${thead}${tbody}</table></div>\n\n`;
+  });
+
+  // 6. Blockquotes (> lines)
+  html = html.replace(/((?:^&gt;\s?[^\r\n]+\r?\n?)+)/gm, (quoteText) => {
+    const cleanLines = quoteText.split(/\r?\n/)
+      .map(l => l.replace(/^&gt;\s?/, '').trim())
+      .filter(Boolean);
+    return `\n\n<blockquote class="hollabuddy-quote"><p>${cleanLines.join('</p><p>')}</p></blockquote>\n\n`;
+  });
+
+  // 7. Bullet lists (- item, * item, • item)
+  html = html.replace(/((?:^\s*[-•*]\s+[^\r\n]+\r?\n?)+)/gm, (listText) => {
+    const items = listText.split(/\r?\n/)
+      .map(l => l.replace(/^\s*[-•*]\s+/, '').trim())
+      .filter(Boolean);
+    return `\n\n<ul class="hollabuddy-list">${items.map(it => `<li>${it}</li>`).join("")}</ul>\n\n`;
+  });
+
+  // 8. Numbered lists (1. item)
+  html = html.replace(/((?:^\s*\d+\.\s+[^\r\n]+\r?\n?)+)/gm, (listText) => {
+    const items = listText.split(/\r?\n/)
+      .map(l => l.replace(/^\s*\d+\.\s+/, '').trim())
+      .filter(Boolean);
+    return `\n\n<ol class="hollabuddy-list">${items.map(it => `<li>${it}</li>`).join("")}</ol>\n\n`;
+  });
+
+  // 9. Process Paragraphs (split by double newlines)
+  const sections = html.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
+  html = sections.map(sec => {
+    if (/^<(blockquote|div|table|ul|ol|h2|h3|h4)/i.test(sec) || /^__HB_CODE_\d+__$/.test(sec)) {
+      return sec;
+    }
+    return `<p>${sec.replace(/\r?\n/g, '<br>')}</p>`;
+  }).join("\n");
+
+  // 10. Restore Code Blocks
+  codeBlocks.forEach((b, idx) => {
+    const escapedCode = escapeHtml(b.code);
+    const langBadge = b.lang ? `<div class="hollabuddy-code-lang">${escapeHtml(b.lang)}</div>` : "";
+    const replacement = `<div class="hollabuddy-code-wrap">${langBadge}<pre class="hollabuddy-code"><code>${escapedCode}</code></pre></div>`;
+    html = html.replace(`__HB_CODE_${idx}__`, replacement);
+  });
+
+  return html;
 }
 
 function copyHollaBuddyText(btn, text) {
-  const clean = text.replace(/```[a-z]*\n?/gi, '').trim();
+  // Strip code fences and blockquote markers for clean pasting
+  let clean = (text || "")
+    .replace(/```[a-zA-Z0-9_-]*\r?\n?/gi, '')
+    .replace(/^>\s?/gm, '')
+    .trim();
+
   navigator.clipboard.writeText(clean).then(() => {
     const originalHtml = btn.innerHTML;
     btn.innerHTML = `<i class="fa-solid fa-check text-emerald"></i> Copied!`;
