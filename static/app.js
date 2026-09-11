@@ -3233,7 +3233,7 @@ function appendHollaBuddyMessage(role, text, followups = []) {
     if (followups && followups.length > 0) {
       followupsHtml = `
         <div class="hollabuddy-followups">
-          ${followups.map(f => `<button type="button" class="hollabuddy-followup-chip" onclick="sendHollaBuddyPrompt('${escapeHtml(f).replace(/'/g, "\\'")}')">${escapeHtml(f)}</button>`).join("")}
+          ${followups.map(f => `<button type="button" class="hollabuddy-followup-chip" data-prompt="${escapeHtml(f)}">${escapeHtml(f)}</button>`).join("")}
         </div>
       `;
     }
@@ -3245,13 +3245,26 @@ function appendHollaBuddyMessage(role, text, followups = []) {
       <div class="hollabuddy-bubble hollabuddy-bubble-bot">
         <div class="hollabuddy-bubble-content">${formattedHtml}</div>
         <div class="hollabuddy-bubble-actions">
-          <button type="button" class="hollabuddy-copy-btn" onclick="copyHollaBuddyText(this, ${JSON.stringify(text)})" title="Copy answer to clipboard">
+          <button type="button" class="hollabuddy-copy-btn" title="Copy answer to clipboard">
             <i class="fa-regular fa-copy"></i> Copy Answer
           </button>
         </div>
         ${followupsHtml}
       </div>
     `;
+
+    // Attach click listeners cleanly via JS — eliminates double-box HTML injection bug
+    const copyBtn = msgDiv.querySelector(".hollabuddy-copy-btn");
+    if (copyBtn) {
+      copyBtn.addEventListener("click", () => copyHollaBuddyText(copyBtn, text));
+    }
+
+    msgDiv.querySelectorAll(".hollabuddy-followup-chip").forEach(chip => {
+      chip.addEventListener("click", () => {
+        const promptText = chip.getAttribute("data-prompt");
+        if (promptText) sendHollaBuddyPrompt(promptText);
+      });
+    });
   }
 
   container.appendChild(msgDiv);
