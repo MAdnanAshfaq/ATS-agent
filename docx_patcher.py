@@ -505,8 +505,21 @@ def get_original_docx_path(user_data_dir: Optional[str | Path] = None) -> str | 
     candidates = []
     if user_data_dir:
         u_dir = Path(user_data_dir)
+        docx_cand = u_dir / "master_resume_original.docx"
+        if not docx_cand.exists():
+            try:
+                import db as db_layer
+                if db_layer.is_db_available():
+                    uname = u_dir.name
+                    dbytes = db_layer.db_get_resume_docx(uname)
+                    if dbytes:
+                        u_dir.mkdir(parents=True, exist_ok=True)
+                        with open(docx_cand, "wb") as f:
+                            f.write(dbytes)
+            except Exception:
+                pass
         candidates.extend([
-            u_dir / "master_resume_original.docx",
+            docx_cand,
             u_dir / "master_resume_original.pdf",
         ])
 

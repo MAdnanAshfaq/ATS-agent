@@ -99,6 +99,34 @@ def load_base_resume(resume_path: str = None) -> dict:
         path = Path(resume_path)
     else:
         path = Path(__file__).parent / "base_resume.json"
+
+    if not path.exists():
+        # Attempt to restore from NeonDB if running in container / cloud (e.g. Render)
+        try:
+            import db as db_layer
+            if db_layer.is_db_available():
+                parts = path.parts
+                uname = None
+                if "users" in parts:
+                    idx = parts.index("users")
+                    if idx + 1 < len(parts):
+                        uname = parts[idx + 1]
+                if uname:
+                    rdata = db_layer.db_get_resume(uname)
+                    if rdata and not rdata.get("_empty"):
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        with open(path, "w", encoding="utf-8") as f:
+                            json.dump(rdata, f, indent=2, ensure_ascii=False)
+                        return rdata
+        except Exception:
+            pass
+
+        # Fallback to root base_resume.json if available
+        root_path = Path(__file__).parent / "base_resume.json"
+        if root_path.exists():
+            with open(root_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 

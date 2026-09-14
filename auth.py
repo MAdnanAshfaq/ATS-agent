@@ -30,6 +30,10 @@ USERS_DB = BASE_DIR / "data" / "users.json"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 # ─── User Model ───────────────────────────────────────────────────────────────
 
 class User(UserMixin):
@@ -51,8 +55,39 @@ class User(UserMixin):
         d.mkdir(parents=True, exist_ok=True)
         return d
 
+    def ensure_disk_files(self):
+        """
+        Ensure user's base_resume.json and master_resume_original.docx exist on local disk.
+        Essential for Render/container environments where disk is ephemeral and data is in NeonDB.
+        """
+        if not db_layer.is_db_available():
+            return
+
+        r_path = self.data_dir / "base_resume.json"
+        if not r_path.exists():
+            try:
+                rdata = db_layer.db_get_resume(self.username)
+                if rdata and not rdata.get("_empty"):
+                    with open(r_path, "w", encoding="utf-8") as f:
+                        json.dump(rdata, f, indent=2, ensure_ascii=False)
+                    logger.info(f"[Auth] Restored base_resume.json from NeonDB for {self.username}")
+            except Exception as e:
+                logger.warning(f"[Auth] Could not restore base_resume.json for {self.username}: {e}")
+
+        d_path = self.data_dir / "master_resume_original.docx"
+        if not d_path.exists():
+            try:
+                dbytes = db_layer.db_get_resume_docx(self.username)
+                if dbytes:
+                    with open(d_path, "wb") as f:
+                        f.write(dbytes)
+                    logger.info(f"[Auth] Restored master_resume_original.docx from NeonDB for {self.username}")
+            except Exception as e:
+                logger.warning(f"[Auth] Could not restore master_resume_original.docx for {self.username}: {e}")
+
     @property
     def resume_path(self) -> Path:
+        self.ensure_disk_files()
         return self.data_dir / "base_resume.json"
 
     @property
@@ -155,11 +190,13 @@ def load_user_by_id(username: str):
         entry = db_layer.db_get_user_by_username(username)
         if not entry:
             return None
-        return User(
+        u = User(
             username=entry["username"],
             email=entry["email"],
             display_name=entry.get("display_name", username),
         )
+        u.ensure_disk_files()
+        return u
 
     # ── File fallback ─────────────────────────────────────────────────────────
     db = _load_users_db()
@@ -203,11 +240,13 @@ def verify_login(email: str, password: str):
         return None
     if not check_password_hash(entry.get("password_hash", ""), password):
         return None
-    return User(
+    u = User(
         username=username,
         email=entry.get("email", ""),
         display_name=entry.get("display_name", username),
     )
+    u.ensure_disk_files()
+    return u
 
 
 def register_user(email: str, password: str, display_name: str = "") -> tuple:

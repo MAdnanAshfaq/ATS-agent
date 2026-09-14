@@ -345,6 +345,80 @@ a:hover { color: #60A5FA; }
   transform: translateY(-1px);
 }
 
+/* Standalone Prominent Sign Out Button (Always visible on all screens) */
+.btn-signout-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid rgba(239, 68, 68, 0.38);
+  border-radius: var(--r-pill);
+  color: #fca5a5;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.btn-signout-nav i {
+  font-size: 12px;
+  color: #f87171;
+  transition: transform 0.2s ease;
+}
+
+.btn-signout-nav:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #ffffff;
+  box-shadow: 0 2px 10px rgba(239, 68, 68, 0.45);
+  transform: translateY(-1px);
+}
+
+.btn-signout-nav:hover i {
+  color: #ffffff;
+  transform: translateX(2px);
+}
+
+/* Responsive header rules so Sign Out is never cut off */
+@media (max-width: 1280px) {
+  .header-launcher-btn {
+    display: none !important;
+  }
+}
+
+@media (max-width: 1100px) {
+  .user-email-text {
+    display: none !important;
+  }
+  .system-status-pill .status-text {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .app-header {
+    height: auto;
+    padding: 8px 16px;
+  }
+  .header-container {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .nav-tabs {
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+    justify-content: flex-start;
+  }
+  .user-meta {
+    display: none !important;
+  }
+}
+
 /* ── MAIN LAYOUT ────────────────────────────────────────────────────────── */
 .main-container {
   max-width: 1320px;

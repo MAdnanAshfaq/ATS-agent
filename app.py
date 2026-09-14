@@ -148,9 +148,17 @@ def write_env_vars(env_vars: dict):
 # Falls back to the legacy global path for backwards-compatibility.
 
 def get_user_resume_path() -> Path:
-    """Return the active user's base_resume.json path."""
+    """Return the active user's base_resume.json path, restoring from NeonDB to disk if needed."""
     if current_user and current_user.is_authenticated:
-        return current_user.resume_path
+        if hasattr(current_user, "ensure_disk_files"):
+            try:
+                current_user.ensure_disk_files()
+            except Exception:
+                pass
+        p = current_user.resume_path
+        if not p.exists() and RESUME_PATH.exists():
+            return RESUME_PATH
+        return p
     return RESUME_PATH  # legacy fallback
 
 def get_user_output_dir() -> Path:
