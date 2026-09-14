@@ -26,6 +26,7 @@ __pycache__/
 # Scratch & one-off test scripts
 test_*.py
 scratch/
+seed_neon.py
 
 # Personal documents, cover letters, and PDFs (never commit)
 *.pdf
