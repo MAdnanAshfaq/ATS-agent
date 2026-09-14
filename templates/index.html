@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   
   <!-- Custom Styles -->
-  <link rel="stylesheet" href="/static/style.css?v=5">
+  <link rel="stylesheet" href="/static/style.css?v=6">
 </head>
 <body>
 
@@ -209,6 +209,21 @@
             </div>
             <div class="form-hint">
               Paste the exact missing keywords shown in your Simplify popup to guarantee 100% injection into your tailored resume.
+            </div>
+
+            <!-- 1-Click Simplify Sync Bookmarklet -->
+            <div class="simplify-sync-helper" style="margin-top: 9px; display: flex; align-items: center; justify-content: space-between; background: rgba(56, 189, 248, 0.08); border: 1px dashed rgba(56, 189, 248, 0.35); border-radius: 9px; padding: 8px 12px; font-size: 11.5px; color: #94a3b8; flex-wrap: wrap; gap: 8px;">
+              <span style="display: inline-flex; align-items: center; gap: 6px;">
+                <i class="fa-solid fa-wand-magic-sparkles" style="color:#38bdf8;"></i>
+                <span style="color:#e2e8f0; font-weight:600;">1-Click Simplify Sync:</span> Drag this button to your Bookmarks Bar ➔
+              </span>
+              <a href="javascript:(function(){try{const h=document.querySelector('div.simplify-jobs-shadow-root')||document.querySelector('#simplify-jobs-shadow-root');let s=null,mk=[],tk=[];if(h&&h.shadowRoot){const ft=h.shadowRoot.textContent||'';const sm=ft.match(/(\d{1,3})\s*(?:Low|Strong|Excellent|\s*%|\s*Resume Match)/i)||ft.match(/(?:Score|Match)[^\d]*(\d{1,3})/i);if(sm)s=parseInt(sm[1]);const chips=Array.from(h.shadowRoot.querySelectorAll('span.rounded-full, span[class*=&quot;rounded-full&quot;]'));chips.forEach(el=>{const t=el.textContent.replace(/\s+/g,' ').trim();if(!t||t.length<2||t.length>50)return;const c=(el.className||'').toString();if(c.includes('bg-primary-lightest')||c.includes('border-primary-dark')||c.includes('text-primary-dark')){tk.push(t)}else{mk.push(t)}})}const u=window.location.href;const kw=[...new Set(mk)].join(', ');const ag='https://ats-agent-ep3z.onrender.com';const dest=ag+'/?url='+encodeURIComponent(u)+'&score='+(s||'')+'&keywords='+encodeURIComponent(kw);window.open(dest,'_blank');}catch(e){alert('Simplify read note: '+e.message)}})();"
+                 class="btn-bookmarklet"
+                 title="Drag this button to your browser Bookmarks Bar. When on any job page in Chrome, click it to instantly import Simplify's score and keywords into ATS Agent!"
+                 onclick="event.preventDefault(); showToast('Drag this button to your browser Bookmarks Bar (Ctrl+Shift+B to show bookmarks)', 'info');"
+                 style="background: linear-gradient(135deg, #0284c7, #38bdf8); color:#ffffff; font-weight:700; font-size:11px; padding:4px 11px; border-radius:6px; text-decoration:none; cursor:grab; box-shadow:0 2px 6px rgba(2,132,199,0.4); display:inline-flex; align-items:center; gap:5px; border:none; user-select:none;">
+                <i class="fa-solid fa-bolt"></i> ⚡ Send to ATS Agent
+              </a>
             </div>
           </div>
 
@@ -1835,6 +1850,6 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- JavaScript Application Bundle -->
-  <script src="/static/app.js?v=5"></script>
+  <script src="/static/app.js?v=6"></script>
 </body>
 </html>

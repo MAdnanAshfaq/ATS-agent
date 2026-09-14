@@ -1,0 +1,63 @@
+{
+   "action": {
+      "chrome_style": false,
+      "default_icon": {
+         "128": "assets/icons/favicon-128.png",
+         "16": "assets/icons/favicon-16.png",
+         "32": "assets/icons/favicon-32.png",
+         "48": "assets/icons/favicon-48.png"
+      },
+      "default_title": "Simplify Copilot"
+   },
+   "author": "Simplify Jobs Inc.",
+   "background": {
+      "service_worker": "background.js"
+   },
+   "commands": {
+      "_execute_action": {
+         "suggested_key": {
+            "default": "Alt+Shift+S"
+         }
+      },
+      "trigger-autofill": {
+         "description": "Autofill the current job application page",
+         "suggested_key": {
+            "default": "Alt+Shift+F"
+         }
+      }
+   },
+   "content_scripts": [ {
+      "all_frames": true,
+      "js": [ "content-scripts/content.js" ],
+      "matches": [ "*://*/*" ],
+      "run_at": "document_end"
+   } ],
+   "content_security_policy": {
+      "extension_pages": "default-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src * data:; img-src 'self' https://storage.googleapis.com https://res.cloudinary.com https://ui-avatars.com data:"
+   },
+   "description": "The better way to job search. Quick apply and autofill job applications in one click. Track jobs, companies, resumes & more!",
+   "externally_connectable": {
+      "matches": [ "https://*.simplify.jobs/*", "https://*.village.do/*", "https://*.village.ai/*" ]
+   },
+   "homepage_url": "https://simplify.jobs/",
+   "host_permissions": [ "*://*/*" ],
+   "icons": {
+      "128": "assets/icons/favicon-128.png",
+      "16": "assets/icons/favicon-16.png",
+      "32": "assets/icons/favicon-32.png",
+      "48": "assets/icons/favicon-48.png"
+   },
+   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAynreKGKJwtt2Xxvb/KO8f43BFys2/0vmKXFbYN+ZvZpHthoMQh9u1DiQ9GH78PvSJ0f6GL/jK8Lvhz+bpKM1UEHvwInHqVSgdaLtKc7bMjzPY5nV1qiwupSos1VFI4Okhz1GY9nWmDU0yBM3rb9sTRWeZqExbbDe12k5UFMMsILnTj9Xbw+alALiO2FC6wIcMOvhPw5tvowp1J7ngHOIwRgFGUwMc2bT5o2VbDqNM/xARIAKG+me8Hxtfhwvj9Gh6EHzcKMH8UjPCC4VyuR8J738zlQTduW8JTaI0yPT7fvyCV9955IMeRY7b6dWflSPVyns4pWs99pvWzqFnK6RnwIDAQAB",
+   "manifest_version": 3,
+   "minimum_chrome_version": "109",
+   "name": "Simplify Copilot - Autofill job applications, job tracker & AI resumes",
+   "permissions": [ "activeTab", "alarms", "cookies", "contextMenus", "offscreen", "storage", "tabs", "unlimitedStorage", "webNavigation", "webRequest" ],
+   "short_name": "Simplify Copilot",
+   "update_url": "https://clients2.google.com/service/update2/crx",
+   "version": "3.1.6",
+   "web_accessible_resources": [ {
+      "matches": [ "*://*/*" ],
+      "resources": [ "assets/*", "css/*", "content-scripts/*", "contentScriptMain.js", "pageScript.js", "remoteConfig.json" ],
+      "use_dynamic_url": true
+   } ]
+}

@@ -37,11 +37,23 @@ def get_chrome_user_data_dir() -> Path:
 
 def find_simplify_installation() -> dict:
     """
-    Search all Chrome profiles (Default, Profile 1..N) in Chrome User Data to find
-    where the Simplify extension is installed and its latest version.
+    Search for Simplify extension:
+    1. Check for bundled extension inside project repository (universal for Render Linux & cloud).
+    2. Search local Chrome profiles (Default, Profile 1..N) in Chrome User Data (Windows / macOS).
     Can be overridden by SIMPLIFY_PROFILE in .env.
     """
     load_dotenv()
+
+    # 1. First check for bundled extension in project root (universal for Render Linux & local cloud setups)
+    bundled = BASE_DIR / "simplify_extension"
+    if bundled.exists() and (bundled / "manifest.json").exists():
+        return {
+            "profile_dir": None,
+            "profile_name": "Bundled Cloud Extension",
+            "ext_path": str(bundled).replace("\\", "/"),
+            "error": None
+        }
+
     chrome_data = get_chrome_user_data_dir()
     env_profile = os.getenv("SIMPLIFY_PROFILE", "").strip()
 
@@ -240,19 +252,33 @@ async def read_simplify_score(job_url: str, company: str = "", role: str = "", f
     if "ashbyhq.com" in target_url and not target_url.endswith("/application"):
         target_url = target_url.rstrip("/") + "/application"
 
+    use_headless = (os.environ.get("RENDER") == "true" or
+                    sys.platform != "win32" or
+                    os.environ.get("HEADLESS_SIMPLIFY", "").lower() == "true")
+
+    launch_args = [
+        f"--disable-extensions-except={ext_path}",
+        f"--load-extension={ext_path}",
+        "--no-first-run",
+        "--no-default-browser-check",
+    ]
+    if use_headless:
+        launch_args.extend([
+            "--headless=new",
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+        ])
+
     async with async_playwright() as p:
         try:
-            print("  [Simplify] Launching Playwright Chromium with Simplify extension...")
+            print(f"  [Simplify] Launching Playwright Chromium with Simplify extension (headless={use_headless})...")
             context = await p.chromium.launch_persistent_context(
                 user_data_dir=temp_profile,
                 headless=False,
                 ignore_default_args=["--disable-extensions"],
-                args=[
-                    f"--disable-extensions-except={ext_path}",
-                    f"--load-extension={ext_path}",
-                    "--no-first-run",
-                    "--no-default-browser-check",
-                ],
+                args=launch_args,
             )
         except Exception as e:
             return {

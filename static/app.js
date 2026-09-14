@@ -3839,13 +3839,52 @@ function copyUniversalConsole() {
   });
 }
 
-// Automatically start background SSE connection so logs are buffered early
+// Automatically start background SSE connection and check for bookmarklet prefill
+function checkUrlAutoFill() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const urlParam = params.get("url");
+    const keywordsParam = params.get("keywords");
+    const scoreParam = params.get("score");
+    const companyParam = params.get("company");
+    const roleParam = params.get("role");
+
+    if (urlParam || keywordsParam || scoreParam) {
+      if (urlParam) {
+        const urlInput = document.getElementById("jd-url");
+        if (urlInput) urlInput.value = decodeURIComponent(urlParam);
+      }
+      if (keywordsParam) {
+        const kwInput = document.getElementById("custom-keywords-input");
+        if (kwInput) kwInput.value = decodeURIComponent(keywordsParam);
+      }
+      if (scoreParam) {
+        analyzeScoreBefore = parseInt(scoreParam) || 75;
+      }
+      if (companyParam) analyzeCompany = decodeURIComponent(companyParam);
+      if (roleParam) analyzeRole = decodeURIComponent(roleParam);
+
+      showToast("⚡ Auto-loaded job and Simplify keywords from your browser!", "success");
+
+      // Switch to Tab 1 if not active
+      switchTab("new-app");
+
+      // Clean URL query string without reloading page
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  } catch (e) {
+    console.warn("checkUrlAutoFill note:", e);
+  }
+}
+
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
     setTimeout(initConsoleStream, 1500);
+    setTimeout(checkUrlAutoFill, 300);
   });
 } else {
   setTimeout(initConsoleStream, 1500);
+  setTimeout(checkUrlAutoFill, 300);
 }
 
 
