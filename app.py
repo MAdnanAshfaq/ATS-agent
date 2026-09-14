@@ -95,6 +95,22 @@ login_manager.login_message_category = "error"
 def load_user(user_id: str):
     return auth_module.load_user_by_id(user_id)
 
+@app.before_request
+def sync_user_environment():
+    """Ensure active user credentials and disk files are synchronized before handling requests."""
+    if current_user and current_user.is_authenticated:
+        try:
+            if hasattr(current_user, "ensure_disk_files"):
+                current_user.ensure_disk_files()
+            s = current_user.get_settings()
+            if s:
+                for k in ("GEMINI_API_KEY", "GEMINI_API_KEY_2", "SIMPLIFY_EMAIL", "SIMPLIFY_PASSWORD", "HF_API_KEY", "COLAB_DETECTOR_URL"):
+                    val = s.get(k)
+                    if val:
+                        os.environ[k] = val
+        except Exception as e:
+            logging.warning(f"[Auth] sync_user_environment note: {e}")
+
 # Active background runs & message queues for SSE
 active_runs = {}
 
@@ -1388,6 +1404,13 @@ def analyze_job():
         from agent import load_base_resume, extract_keywords_from_jd
         from scraper import scrape_jd, sanitize_jd_url, clean_role_title
         from simplify_reader import read_simplify_score
+
+        # Explicitly inject user settings into environment for current request
+        user_settings = get_user_settings()
+        for k in ("GEMINI_API_KEY", "GEMINI_API_KEY_2", "SIMPLIFY_EMAIL", "SIMPLIFY_PASSWORD", "HF_API_KEY", "COLAB_DETECTOR_URL"):
+            val = user_settings.get(k)
+            if val:
+                os.environ[k] = val
 
         base_resume = load_base_resume(str(get_user_resume_path()))
 

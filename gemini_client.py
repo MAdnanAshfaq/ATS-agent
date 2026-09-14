@@ -40,8 +40,9 @@ _ACTIVE_KEY_INDEX = 0
 
 
 def get_all_gemini_keys() -> List[str]:
-    """Extract all configured non-empty Gemini API keys from environment."""
-    load_dotenv(override=True)
+    """Extract all configured non-empty Gemini API keys from environment or DB."""
+    # Don't override dynamically set keys in os.environ
+    load_dotenv(override=False)
     keys = []
 
     # 1. Primary key (might be comma-separated)
@@ -57,6 +58,21 @@ def get_all_gemini_keys() -> List[str]:
         val = os.getenv(env_name, "").strip()
         if val and val not in keys:
             keys.append(val)
+
+    # 3. Fallback to active logged-in user's settings from NeonDB
+    if not keys:
+        try:
+            from flask_login import current_user
+            if current_user and current_user.is_authenticated:
+                s = current_user.get_settings()
+                k1 = s.get("GEMINI_API_KEY", "").strip()
+                k2 = s.get("GEMINI_API_KEY_2", "").strip()
+                if k1 and k1 not in keys:
+                    keys.append(k1)
+                if k2 and k2 not in keys:
+                    keys.append(k2)
+        except Exception:
+            pass
 
     return keys
 
