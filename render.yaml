@@ -4,7 +4,7 @@ services:
     env: python
     plan: free
     region: oregon
-    buildCommand: pip install -r requirements.txt && python -m playwright install chromium --with-deps
+    buildCommand: pip install -r requirements.txt && python -m playwright install chromium
     startCommand: gunicorn app:app --workers 2 --threads 4 --bind 0.0.0.0:$PORT --timeout 120 --keep-alive 5
     healthCheckPath: /login
     autoDeploy: true
@@ -27,3 +27,5 @@ services:
         value: "true"
       - key: PYTHONUNBUFFERED
         value: "1"
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: "/opt/render/project/.playwright"
