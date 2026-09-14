@@ -3294,16 +3294,29 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
 }
 
 /* ── Universal Slide-Out Live Console Drawer ─────────────────────────────── */
+.universal-console-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 7, 12, 0.7);
+  backdrop-filter: blur(4px);
+  z-index: 10004;
+  transition: opacity 0.25s ease;
+}
+
+.universal-console-backdrop.hidden {
+  display: none;
+}
+
 .universal-console-drawer {
   position: fixed;
   top: 0;
   right: 0;
-  width: min(720px, 94vw);
+  width: min(760px, 95vw);
   height: 100vh;
   z-index: 10005;
   background: #080b12;
-  border-left: 1px solid rgba(0, 216, 255, 0.22);
-  box-shadow: -15px 0 45px rgba(0, 0, 0, 0.8), 0 0 35px rgba(0, 216, 255, 0.08);
+  border-left: 1px solid rgba(0, 216, 255, 0.25);
+  box-shadow: -15px 0 45px rgba(0, 0, 0, 0.85), 0 0 35px rgba(0, 216, 255, 0.1);
   display: flex;
   flex-direction: column;
   backdrop-filter: blur(16px);
@@ -3327,8 +3340,7 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   padding: 12px 18px;
   background: #0d121f;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
 }
 
 .console-header-left {
@@ -3388,37 +3400,6 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   display: flex;
   align-items: center;
   gap: 14px;
-  flex-wrap: wrap;
-}
-
-.console-filter-chips {
-  display: flex;
-  background: rgba(255, 255, 255, 0.05);
-  padding: 2px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.console-filter-btn {
-  background: transparent;
-  border: none;
-  color: #94a3b8;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 4px 9px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.console-filter-btn:hover {
-  color: #ffffff;
-}
-
-.console-filter-btn.active {
-  background: #38bdf8;
-  color: #04121e;
-  font-weight: 700;
 }
 
 .console-action-btns {
@@ -3463,10 +3444,75 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   border-color: rgba(255, 255, 255, 0.25);
 }
 
-.btn-console-close:hover {
-  background: rgba(239, 68, 68, 0.25);
-  color: #f87171;
-  border-color: rgba(239, 68, 68, 0.4);
+/* Prominent Close Button */
+.btn-console-close-prominent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(239, 68, 68, 0.22);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
+  padding: 5px 13px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  letter-spacing: 0.3px;
+}
+
+.btn-console-close-prominent:hover {
+  background: #ef4444;
+  border-color: #dc2626;
+  color: #ffffff;
+  transform: scale(1.05);
+  box-shadow: 0 0 14px rgba(239, 68, 68, 0.5);
+}
+
+.btn-console-close-prominent:active {
+  transform: scale(0.97);
+}
+
+/* Control & Filter Toolbar Row */
+.console-control-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px;
+  background: #0a0e19;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-wrap: wrap;
+}
+
+.console-filter-chips {
+  display: flex;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 2px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.console-filter-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.console-filter-btn:hover {
+  color: #ffffff;
+}
+
+.console-filter-btn.active {
+  background: #38bdf8;
+  color: #04121e;
+  font-weight: 700;
 }
 
 /* Search Bar */
@@ -3474,11 +3520,15 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 8px 16px;
-  background: #0a0e19;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
   color: #64748b;
   font-size: 12px;
+  flex: 1;
+  min-width: 220px;
+  max-width: 380px;
 }
 
 .console-search-bar input {
@@ -3499,6 +3549,7 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   font-size: 11px;
   color: #64748b;
   font-family: 'JetBrains Mono', monospace;
+  white-space: nowrap;
 }
 
 /* Terminal Body */

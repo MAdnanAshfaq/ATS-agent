@@ -3788,6 +3788,7 @@ function toggleUniversalConsole(forceState) {
   const drawer = document.getElementById("universal-console-drawer");
   const launcher = document.getElementById("universal-console-launcher");
   const headerBtn = document.getElementById("header-console-btn");
+  const backdrop = document.getElementById("universal-console-backdrop");
   if (!drawer) return;
 
   if (typeof forceState === "boolean") {
@@ -3798,6 +3799,7 @@ function toggleUniversalConsole(forceState) {
 
   if (universalConsoleOpen) {
     drawer.classList.remove("hidden");
+    if (backdrop) backdrop.classList.remove("hidden");
     if (launcher) launcher.classList.add("active");
     if (headerBtn) headerBtn.classList.add("active");
 
@@ -3813,10 +3815,18 @@ function toggleUniversalConsole(forceState) {
     }, 200);
   } else {
     drawer.classList.add("hidden");
+    if (backdrop) backdrop.classList.add("hidden");
     if (launcher) launcher.classList.remove("active");
     if (headerBtn) headerBtn.classList.remove("active");
   }
 }
+
+// Global Escape key listener to close Live Console drawer
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && universalConsoleOpen) {
+    toggleUniversalConsole(false);
+  }
+});
 
 function toggleConsoleMaximize() {
   const drawer = document.getElementById("universal-console-drawer");
