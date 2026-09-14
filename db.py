@@ -22,11 +22,23 @@ logger = logging.getLogger(__name__)
 # ── Connection pool ────────────────────────────────────────────────────────────
 
 _pool = None
+_pool_pid = None
 
 
 def get_pool():
-    """Return a psycopg2 connection pool (created once per process)."""
-    global _pool
+    """Return a psycopg2 connection pool (created once per process/worker)."""
+    global _pool, _pool_pid
+    current_pid = os.getpid()
+
+    # If the process was forked (e.g. by Gunicorn), the inherited pool's sockets are invalid/shared
+    if _pool is not None and _pool_pid != current_pid:
+        logger.info(f"[DB] Process fork detected (PID {_pool_pid} -> {current_pid}). Resetting connection pool.")
+        try:
+            _pool.closeall()
+        except Exception:
+            pass
+        _pool = None
+
     if _pool is not None:
         return _pool
 
@@ -36,33 +48,67 @@ def get_pool():
 
     try:
         from psycopg2 import pool as pg_pool
+        # TCP keepalive prevents NAT routers and NeonDB from dropping idle SSL connections silently
         _pool = pg_pool.ThreadedConnectionPool(
             minconn=1,
             maxconn=10,
             dsn=db_url,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=5,
         )
-        logger.info("[DB] Connected to NeonDB PostgreSQL")
+        _pool_pid = current_pid
+        logger.info(f"[DB] Connected to NeonDB PostgreSQL (PID {current_pid})")
     except Exception as e:
         logger.error(f"[DB] Failed to connect to NeonDB: {e}")
         _pool = None
+        _pool_pid = None
 
     return _pool
 
 
 def get_conn():
-    """Get a connection from the pool."""
+    """Get a healthy, verified connection from the pool with automatic dead socket recycling."""
     p = get_pool()
     if p is None:
         return None
-    return p.getconn()
+
+    for attempt in range(3):
+        try:
+            conn = p.getconn()
+            if conn.closed != 0:
+                p.putconn(conn, close=True)
+                continue
+
+            # Quick liveness ping to detect stale or desynced SSL sockets early
+            with conn.cursor() as test_cur:
+                test_cur.execute("SELECT 1")
+
+            return conn
+        except Exception as e:
+            logger.warning(f"[DB] Discarding stale/corrupted connection ({e}) on borrow attempt {attempt + 1}")
+            try:
+                p.putconn(conn, close=True)
+            except Exception:
+                pass
+
+    return None
 
 
-def release_conn(conn):
-    """Return connection to pool."""
+def release_conn(conn, is_bad: bool = False):
+    """Return connection to pool, or permanently close and discard if corrupted/broken."""
     p = get_pool()
     if p and conn:
         try:
-            p.putconn(conn)
+            if is_bad or conn.closed != 0:
+                p.putconn(conn, close=True)
+            else:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                p.putconn(conn)
         except Exception:
             pass
 
@@ -168,50 +214,64 @@ def db_create_user(username: str, email: str, password_hash: str, display_name: 
 
 
 def db_get_user_by_username(username: str) -> Optional[dict]:
-    """Return user row dict or None."""
-    conn = get_conn()
-    if not conn:
-        return None
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT username, email, password_hash, display_name, created_at FROM users WHERE username = %s",
-                (username,)
-            )
-            row = cur.fetchone()
-            if row:
-                return {
-                    "username": row[0], "email": row[1], "password_hash": row[2],
-                    "display_name": row[3], "created_at": row[4].isoformat() if row[4] else ""
-                }
-    except Exception as e:
-        logger.error(f"[DB] get_user_by_username error: {e}")
-    finally:
-        release_conn(conn)
+    """Return user row dict or None, with auto-retry on transient SSL drop."""
+    for attempt in range(2):
+        conn = get_conn()
+        if not conn:
+            return None
+        is_bad = False
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT username, email, password_hash, display_name, created_at FROM users WHERE username = %s",
+                    (username,)
+                )
+                row = cur.fetchone()
+                if row:
+                    return {
+                        "username": row[0], "email": row[1], "password_hash": row[2],
+                        "display_name": row[3], "created_at": row[4].isoformat() if row[4] else ""
+                    }
+                return None
+        except Exception as e:
+            is_bad = True
+            logger.warning(f"[DB] get_user_by_username attempt {attempt + 1} error: {e}")
+            if attempt == 0:
+                continue
+            return None
+        finally:
+            release_conn(conn, is_bad=is_bad)
     return None
 
 
 def db_get_user_by_email(email: str) -> Optional[dict]:
-    """Return user row dict or None."""
-    conn = get_conn()
-    if not conn:
-        return None
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT username, email, password_hash, display_name, created_at FROM users WHERE LOWER(email) = %s",
-                (email.strip().lower(),)
-            )
-            row = cur.fetchone()
-            if row:
-                return {
-                    "username": row[0], "email": row[1], "password_hash": row[2],
-                    "display_name": row[3], "created_at": row[4].isoformat() if row[4] else ""
-                }
-    except Exception as e:
-        logger.error(f"[DB] get_user_by_email error: {e}")
-    finally:
-        release_conn(conn)
+    """Return user row dict or None, with auto-retry on transient SSL drop."""
+    for attempt in range(2):
+        conn = get_conn()
+        if not conn:
+            return None
+        is_bad = False
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT username, email, password_hash, display_name, created_at FROM users WHERE LOWER(email) = %s",
+                    (email.strip().lower(),)
+                )
+                row = cur.fetchone()
+                if row:
+                    return {
+                        "username": row[0], "email": row[1], "password_hash": row[2],
+                        "display_name": row[3], "created_at": row[4].isoformat() if row[4] else ""
+                    }
+                return None
+        except Exception as e:
+            is_bad = True
+            logger.warning(f"[DB] get_user_by_email attempt {attempt + 1} error: {e}")
+            if attempt == 0:
+                continue
+            return None
+        finally:
+            release_conn(conn, is_bad=is_bad)
     return None
 
 
@@ -274,33 +334,40 @@ def db_get_all_users() -> list:
 # ── User Settings ──────────────────────────────────────────────────────────────
 
 def db_get_settings(username: str) -> dict:
-    """Return user settings dict (API keys etc)."""
+    """Return user settings dict (API keys etc), with auto-retry on transient SSL drop."""
     defaults = {
         "GEMINI_API_KEY": "", "GEMINI_API_KEY_2": "",
         "SIMPLIFY_EMAIL": "", "SIMPLIFY_PASSWORD": "",
         "HF_API_KEY": "", "COLAB_DETECTOR_URL": "",
     }
-    conn = get_conn()
-    if not conn:
-        return defaults
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT gemini_api_key, gemini_api_key_2, simplify_email, simplify_password, hf_api_key, colab_url FROM user_settings WHERE username = %s",
-                (username,)
-            )
-            row = cur.fetchone()
-            if row:
-                defaults["GEMINI_API_KEY"] = row[0] or ""
-                defaults["GEMINI_API_KEY_2"] = row[1] or ""
-                defaults["SIMPLIFY_EMAIL"] = row[2] or ""
-                defaults["SIMPLIFY_PASSWORD"] = row[3] or ""
-                defaults["HF_API_KEY"] = row[4] or ""
-                defaults["COLAB_DETECTOR_URL"] = row[5] or ""
-    except Exception as e:
-        logger.error(f"[DB] get_settings error: {e}")
-    finally:
-        release_conn(conn)
+    for attempt in range(2):
+        conn = get_conn()
+        if not conn:
+            return defaults
+        is_bad = False
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT gemini_api_key, gemini_api_key_2, simplify_email, simplify_password, hf_api_key, colab_url FROM user_settings WHERE username = %s",
+                    (username,)
+                )
+                row = cur.fetchone()
+                if row:
+                    defaults["GEMINI_API_KEY"] = row[0] or ""
+                    defaults["GEMINI_API_KEY_2"] = row[1] or ""
+                    defaults["SIMPLIFY_EMAIL"] = row[2] or ""
+                    defaults["SIMPLIFY_PASSWORD"] = row[3] or ""
+                    defaults["HF_API_KEY"] = row[4] or ""
+                    defaults["COLAB_DETECTOR_URL"] = row[5] or ""
+                return defaults
+        except Exception as e:
+            is_bad = True
+            logger.warning(f"[DB] get_settings attempt {attempt + 1} error: {e}")
+            if attempt == 0:
+                continue
+            return defaults
+        finally:
+            release_conn(conn, is_bad=is_bad)
     return defaults
 
 
@@ -309,6 +376,7 @@ def db_save_settings(username: str, settings: dict) -> bool:
     conn = get_conn()
     if not conn:
         return False
+    is_bad = False
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -338,30 +406,38 @@ def db_save_settings(username: str, settings: dict) -> bool:
         conn.commit()
         return True
     except Exception as e:
+        is_bad = True
         conn.rollback()
         logger.error(f"[DB] save_settings error: {e}")
         return False
     finally:
-        release_conn(conn)
+        release_conn(conn, is_bad=is_bad)
 
 
 # ── Resumes ────────────────────────────────────────────────────────────────────
 
 def db_get_resume(username: str) -> Optional[dict]:
-    """Return parsed resume dict or None."""
-    conn = get_conn()
-    if not conn:
-        return None
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT resume_json FROM user_resumes WHERE username = %s", (username,))
-            row = cur.fetchone()
-            if row and row[0]:
-                return json.loads(row[0])
-    except Exception as e:
-        logger.error(f"[DB] get_resume error: {e}")
-    finally:
-        release_conn(conn)
+    """Return parsed resume dict or None, with auto-retry on transient SSL drop."""
+    for attempt in range(2):
+        conn = get_conn()
+        if not conn:
+            return None
+        is_bad = False
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT resume_json FROM user_resumes WHERE username = %s", (username,))
+                row = cur.fetchone()
+                if row and row[0]:
+                    return json.loads(row[0])
+                return None
+        except Exception as e:
+            is_bad = True
+            logger.warning(f"[DB] get_resume attempt {attempt + 1} error: {e}")
+            if attempt == 0:
+                continue
+            return None
+        finally:
+            release_conn(conn, is_bad=is_bad)
     return None
 
 
@@ -510,50 +586,63 @@ def db_save_run_log(username: str, run_id: str, log_data: dict) -> bool:
 
 
 def db_get_history(username: str) -> list:
-    """Return list of job history dicts for a user, newest first."""
-    conn = get_conn()
-    if not conn:
-        return []
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT run_id, run_data, created_at FROM job_history WHERE username = %s ORDER BY created_at DESC LIMIT 200",
-                (username,)
-            )
-            rows = cur.fetchall()
-            results = []
-            for row in rows:
-                run_id, run_data_str, created_at = row
-                try:
-                    entry = json.loads(run_data_str) if run_data_str else {}
-                except Exception:
-                    entry = {}
-                entry["log_file_name"] = f"{run_id}.json"
-                entry["_db_run_id"] = run_id
-                results.append(entry)
-            return results
-    except Exception as e:
-        logger.error(f"[DB] get_history error: {e}")
-        return []
-    finally:
-        release_conn(conn)
+    """Return list of job history dicts for a user, newest first, with auto-retry on transient SSL drop."""
+    for attempt in range(2):
+        conn = get_conn()
+        if not conn:
+            return []
+        is_bad = False
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT run_id, run_data, created_at FROM job_history WHERE username = %s ORDER BY created_at DESC LIMIT 200",
+                    (username,)
+                )
+                rows = cur.fetchall()
+                results = []
+                for row in rows:
+                    run_id, run_data_str, created_at = row
+                    try:
+                        entry = json.loads(run_data_str) if run_data_str else {}
+                    except Exception:
+                        entry = {}
+                    entry["log_file_name"] = f"{run_id}.json"
+                    entry["_db_run_id"] = run_id
+                    results.append(entry)
+                return results
+        except Exception as e:
+            is_bad = True
+            logger.warning(f"[DB] get_history attempt {attempt + 1} error: {e}")
+            if attempt == 0:
+                continue
+            return []
+        finally:
+            release_conn(conn, is_bad=is_bad)
+    return []
 
 
 def db_get_history_item(run_id: str) -> Optional[dict]:
-    """Get a single history item by run_id."""
-    conn = get_conn()
-    if not conn:
-        return None
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT run_data FROM job_history WHERE run_id = %s", (run_id,))
-            row = cur.fetchone()
-            if row and row[0]:
-                return json.loads(row[0])
-    except Exception as e:
-        logger.error(f"[DB] get_history_item error: {e}")
-    finally:
-        release_conn(conn)
+    """Get a single history item by run_id, with auto-retry on transient SSL drop."""
+    for attempt in range(2):
+        conn = get_conn()
+        if not conn:
+            return None
+        is_bad = False
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT run_data FROM job_history WHERE run_id = %s", (run_id,))
+                row = cur.fetchone()
+                if row and row[0]:
+                    return json.loads(row[0])
+                return None
+        except Exception as e:
+            is_bad = True
+            logger.warning(f"[DB] get_history_item attempt {attempt + 1} error: {e}")
+            if attempt == 0:
+                continue
+            return None
+        finally:
+            release_conn(conn, is_bad=is_bad)
     return None
 
 
