@@ -90,6 +90,27 @@ PLATFORM_SELECTORS = {
         "title": ["h1.iCIMS_Header"],
         "company": [],
     },
+    "indeed.com": {
+        "jd": [
+            "#jobDescriptionText",
+            ".jobsearch-jobDescriptionText",
+            ".jobsearch-JobComponent-description",
+            "div[id*='jobDescriptionText']",
+        ],
+        "title": [
+            "h1.jobsearch-JobInfoHeader-title",
+            "h1[data-testid='jobsearch-JobInfoHeader-title']",
+            ".jobsearch-JobInfoHeader-title",
+            "h1",
+        ],
+        "company": [
+            "[data-testid='inlineHeader-companyName']",
+            "div[data-company-name='true']",
+            ".jobsearch-InlineCompanyRating-companyHeader",
+            "span[data-testid='company-name']",
+            ".jobsearch-CompanyInfoContainer",
+        ],
+    },
 }
 
 GENERIC_JD_SELECTORS = [
@@ -147,6 +168,15 @@ def sanitize_jd_url(url: str) -> str:
     qs = parse_qs(parsed.query, keep_blank_values=False)
     clean_qs = {k: v for k, v in qs.items() if k.lower() not in AUTH_PARAMS}
     clean_query = urlencode(clean_qs, doseq=True)
+
+    # Canonicalize Indeed URLs to direct clean /viewjob?jk=... format
+    if "indeed." in parsed.netloc.lower():
+        jk_match = re.search(r'[?&](?:jk|vjk)=([a-zA-Z0-9_-]+)', url) or re.search(r'/(?:viewjob|rc/clk)\?jk=([a-zA-Z0-9_-]+)', url)
+        if jk_match:
+            clean_url = f"{parsed.scheme}://{parsed.netloc}/viewjob?jk={jk_match.group(1)}"
+            if clean_url != url:
+                print(f"[Scraper] Indeed URL canonicalized: {url} → {clean_url}")
+            return clean_url
 
     # Rebuild URL
     clean_url = parsed._replace(path=path, query=clean_query).geturl()
@@ -330,6 +360,11 @@ def extract_company_from_url(url: str) -> str:
         filtered = [p for p in slug_parts if p not in loc_words]
         if filtered:
             return filtered[-1].title()
+
+    # indeed: indeed.com/cmp/company-name
+    indeed_cmp = re.search(r'indeed\.[a-z.]+/cmp/([a-z0-9-]+)', url.lower())
+    if indeed_cmp:
+        return indeed_cmp.group(1).replace('-', ' ').title()
 
     # generic: extract domain, but ignore aggregator job board domains
     AGGREGATOR_DOMAINS = {"hiringcafe", "indeed", "ziprecruiter", "linkedin", "dice", "glassdoor", "builtin", "handshake", "careerbuilder", "monster", "simplyhired", "jobvite"}
@@ -663,6 +698,7 @@ async def scrape_jd(url: str, force_refresh: bool = False) -> dict:
             },
         )
         page = await context.new_page()
+        await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
 
         # Smart navigation using wait_until="domcontentloaded"
         try:

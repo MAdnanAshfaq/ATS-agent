@@ -247,13 +247,15 @@ def analyze_jd_and_resume_with_gemini(jd_text: str, base_resume: dict) -> dict:
     ]
     jd_stripped = (jd_text or "").strip()
     jd_lower = jd_stripped.lower()
-    if len(jd_stripped) < 100:
-        print(f"[LLM Matcher] [WARN] JD very short ({len(jd_stripped)} chars) — using baseline analysis.")
-    for sig in JD_BOT_SIGNATURES:
-        if sig in jd_lower:
-            print(f"[LLM Matcher] [WARN] JD matches bot-block pattern '{sig}' — refusing to analyze.")
-            return {"score": 0, "matching_keywords": [], "missing_keywords": [],
-                    "total_keywords": 0, "error": "jd_is_bot_page"}
+    # Real bot-block pages are short error screens (< 1200 chars).
+    # Real JDs (>= 1200 chars) often contain words like 'cloudflare', 'security check', or cookie notices and must NOT be rejected.
+    if len(jd_stripped) < 1200:
+        for sig in JD_BOT_SIGNATURES:
+            if sig in jd_lower:
+                print(f"[LLM Matcher] [WARN] Short JD ({len(jd_stripped)} chars) matches bot-block pattern '{sig}' — refusing to analyze.")
+                return {"score": 0, "matching_keywords": [], "missing_keywords": [],
+                        "total_keywords": 0, "error": "jd_is_bot_page"}
+
 
     try:
         prompt = f"""You are an expert ATS (Applicant Tracking System) recruiter and resume architect.

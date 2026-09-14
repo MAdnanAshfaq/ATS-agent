@@ -29,6 +29,7 @@ document.addEventListener("DOMContentLoaded", () => {
   loadHistory();
   loadMasterResume();
   initFormListeners();
+  checkSimplifyStatus();
 });
 
 /* ── Tab Navigation ──────────────────────────────────────────────────────── */
@@ -194,8 +195,8 @@ async function startGeneration(opts = {}) {
   const execContainer = document.getElementById("execution-container");
   execContainer.classList.remove("hidden");
   execContainer.scrollIntoView({ behavior: "smooth" });
-  document.getElementById("results-dashboard").classList.add("hidden");
-  document.getElementById("start-btn").disabled = true;
+  const startBtn = document.getElementById("start-btn");
+  if (startBtn) startBtn.disabled = true;
   document.getElementById("exec-status-badge").innerHTML = `<i class="fa-solid fa-spinner fa-spin text-cyan"></i> Running Pipeline...`;
 
   resetPipelineVisuals();
@@ -330,7 +331,8 @@ function updateProgressBar(step) {
 }
 
 function stopExecutionState(resultStatus) {
-  document.getElementById("start-btn").disabled = false;
+  const startBtn = document.getElementById("start-btn");
+  if (startBtn) startBtn.disabled = false;
   const badge = document.getElementById("exec-status-badge");
 
   if (resultStatus === "success") {
@@ -1690,6 +1692,7 @@ async function analyzeJobKeywords(opts = {}) {
 
     renderSimplifyCard(data);
     showToast(`Scraped ${data.role} at ${data.company}! Keywords cross-checked.`, "success");
+    openReviewConfirmModal(data);
   } catch (err) {
     analyzeBtn.disabled = false;
     analyzeBtn.innerHTML = `<i class="fa-solid fa-magnifying-glass"></i> Analyze & Cross-Check`;
@@ -1793,6 +1796,7 @@ function continueAnalyzeWithManualJd() {
   const customRole = document.getElementById("manual-jd-role")?.value.trim() || "";
 
   closeManualJdModal();
+  _analyzeHideError();
   showToast("Cross-checking ATS matrix with pasted Job Description...", "info");
 
   analyzeJobKeywords({
@@ -1800,6 +1804,190 @@ function continueAnalyzeWithManualJd() {
     customCompany: customCompany || undefined,
     customRole: customRole || undefined,
   });
+}
+
+/* ── Post-Analysis Review & Confirm Modal Handlers ───────────────────────── */
+function openReviewConfirmModal(data) {
+  const modal = document.getElementById("review-confirm-modal");
+  if (!modal) return;
+
+  const compInput = document.getElementById("review-company-input");
+  const roleInput = document.getElementById("review-role-input");
+  const scoreBadge = document.getElementById("review-score-badge");
+  const kwCount = document.getElementById("review-kw-count");
+
+  const company = data.company || analyzeCompany || "Target Company";
+  const role = data.role || analyzeRole || "Target Role";
+  const score = data.score || 70;
+  const rating = data.score_rating || (score >= 80 ? "Great" : score >= 70 ? "Good" : "Fair");
+
+  if (compInput) compInput.value = company;
+  if (roleInput) roleInput.value = role;
+  if (scoreBadge) {
+    scoreBadge.innerText = `${score}% (${rating})`;
+    scoreBadge.style.color = score >= 75 ? "#10b981" : score >= 60 ? "#f59e0b" : "#ef4444";
+  }
+  if (kwCount) {
+    const matched = data.matching_keywords ? data.matching_keywords.length : 0;
+    const missing = data.missing_keywords ? data.missing_keywords.length : 0;
+    kwCount.innerText = `${matched} Matched • ${missing} Missing`;
+  }
+
+  modal.classList.remove("hidden");
+  setTimeout(() => compInput && compInput.focus(), 150);
+}
+
+function closeReviewConfirmModal() {
+  const modal = document.getElementById("review-confirm-modal");
+  if (modal) modal.classList.add("hidden");
+}
+
+function confirmReviewAndOpenMatrix() {
+  const comp = document.getElementById("review-company-input")?.value.trim();
+  const role = document.getElementById("review-role-input")?.value.trim();
+  if (comp) {
+    analyzeCompany = comp;
+    const el = document.getElementById("matrix-company-name");
+    if (el) { if (el.tagName === "INPUT") el.value = comp; else el.innerText = comp; }
+  }
+  if (role) {
+    analyzeRole = role;
+    const el = document.getElementById("matrix-role-name");
+    if (el) { if (el.tagName === "INPUT") el.value = role; else el.innerText = role; }
+  }
+
+  closeReviewConfirmModal();
+  const card = document.getElementById("simplify-card");
+  if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+  showToast("Review the ATS Matrix and uncheck/add keywords below before tailoring.", "info");
+}
+
+function confirmReviewAndTailor() {
+  const comp = document.getElementById("review-company-input")?.value.trim();
+  const role = document.getElementById("review-role-input")?.value.trim();
+  if (comp) {
+    analyzeCompany = comp;
+    const el = document.getElementById("matrix-company-name");
+    if (el) { if (el.tagName === "INPUT") el.value = comp; else el.innerText = comp; }
+  }
+  if (role) {
+    analyzeRole = role;
+    const el = document.getElementById("matrix-role-name");
+    if (el) { if (el.tagName === "INPUT") el.value = role; else el.innerText = role; }
+  }
+
+  closeReviewConfirmModal();
+  showToast("Confirmed! Tailoring resume with verified company and role...", "info");
+  generateWithSelectedKeywords();
+}
+
+/* ── Simplify Connection Status, Test & Clipboard Helpers ────────────────── */
+async function checkSimplifyStatus() {
+  try {
+    const res = await fetch("/api/simplify/status");
+    const data = await res.json();
+    const pill = document.getElementById("simplify-status-pill");
+    const label = document.getElementById("simplify-status-label");
+    if (data.success && label) {
+      if (data.extension_found) {
+        label.textContent = data.has_credentials
+          ? `Simplify: Active (${data.account_email})`
+          : `Simplify: Bundled Cloud Extension Ready (${data.version})`;
+        if (pill) {
+          pill.style.background = "rgba(16, 185, 129, 0.15)";
+          pill.style.borderColor = "rgba(16, 185, 129, 0.35)";
+          pill.style.color = "#34d399";
+        }
+      } else {
+        label.textContent = "Simplify: Extension Directory Not Found";
+        if (pill) {
+          pill.style.background = "rgba(239, 68, 68, 0.15)";
+          pill.style.borderColor = "rgba(239, 68, 68, 0.35)";
+          pill.style.color = "#f87171";
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("checkSimplifyStatus note:", e);
+  }
+}
+
+async function testSimplifyConnection() {
+  const btn = document.getElementById("btn-test-simplify");
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-cyan"></i> Testing...`;
+  }
+  try {
+    const res = await fetch("/api/simplify/test", { method: "POST" });
+    const data = await res.json();
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `<i class="fa-solid fa-plug-circle-check text-cyan"></i> Test Simplify Connection`;
+    }
+    if (data.success) {
+      showToast(`✅ ${data.message}`, "success");
+      const label = document.getElementById("simplify-status-label");
+      if (label) label.textContent = `Simplify: Verified (${data.extension_name} ${data.version})`;
+    } else {
+      showToast(`⚠️ ${data.error || "Simplify test failed"}`, "warning");
+    }
+  } catch (err) {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `<i class="fa-solid fa-plug-circle-check text-cyan"></i> Test Simplify Connection`;
+    }
+    showToast(`Test failed: ${err.message}`, "error");
+  }
+}
+
+function copyBookmarkletCode() {
+  const link = document.getElementById("simplify-bookmarklet-link");
+  if (!link || !link.href) {
+    showToast("Bookmarklet code not found", "error");
+    return;
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(link.href).then(() => {
+      showToast("📋 Bookmarklet code copied! In Chrome: Right-click Bookmarks Bar ➔ Add Page ➔ Paste URL.", "success");
+    }).catch(() => {
+      _execCopyFallback(link.href);
+    });
+  } else {
+    _execCopyFallback(link.href);
+  }
+}
+
+function _execCopyFallback(text) {
+  const dummy = document.createElement("textarea");
+  dummy.value = text;
+  document.body.appendChild(dummy);
+  dummy.select();
+  document.execCommand("copy");
+  document.body.removeChild(dummy);
+  showToast("📋 Bookmarklet code copied to clipboard!", "success");
+}
+
+async function pasteSimplifyFromClipboard() {
+  try {
+    if (navigator.clipboard && navigator.clipboard.readText) {
+      const text = await navigator.clipboard.readText();
+      if (!text || text.trim().length === 0) {
+        showToast("Clipboard is empty. Copy keywords from Simplify first!", "warning");
+        return;
+      }
+      const input = document.getElementById("custom-keywords-input");
+      if (input) {
+        input.value = text.trim();
+        input.focus();
+        showToast("Pasted keywords into Simplify Missing Keywords field!", "success");
+      }
+    } else {
+      showToast("Clipboard access not available in this browser context. Please paste manually into the input box.", "info");
+    }
+  } catch (err) {
+    showToast("Could not read clipboard. Please paste manually into the input box.", "warning");
+  }
 }
 
 function renderSimplifyCard(data) {
