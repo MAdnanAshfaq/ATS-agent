@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: ats-agent
+    env: python
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt && python -m playwright install chromium --with-deps
+    startCommand: gunicorn app:app --workers 2 --threads 4 --bind 0.0.0.0:$PORT --timeout 120 --keep-alive 5
+    healthCheckPath: /login
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY_2
+        sync: false
+      - key: AUTH_SECRET_KEY
+        sync: false
+      - key: HF_API_KEY
+        sync: false
+      - key: COLAB_DETECTOR_URL
+        sync: false
+      - key: FLASK_ENV
+        value: production
+      - key: RENDER
+        value: "true"
+      - key: PYTHONUNBUFFERED
+        value: "1"

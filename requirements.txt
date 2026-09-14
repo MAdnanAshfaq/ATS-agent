@@ -1,5 +1,6 @@
 flask
 flask-cors
+flask-login
 google-genai
 playwright
 beautifulsoup4
@@ -9,8 +10,8 @@ lxml
 httpx
 pdfplumber
 pypdf
-pywin32
-docx2pdf
 nest_asyncio
 requests
-flask-login
+psycopg2-binary
+gunicorn
+werkzeug

@@ -22,6 +22,20 @@ from flask_cors import CORS
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 
 import auth as auth_module
+import db as db_layer
+
+# Load DATABASE_URL early so db_layer.get_pool() can connect
+_db_url = os.environ.get("DATABASE_URL", "")
+if not _db_url:
+    # Try loading from .env file for local dev
+    _env_path = Path(__file__).parent / ".env"
+    if _env_path.exists():
+        with open(_env_path, "r", encoding="utf-8") as _ef:
+            for _line in _ef:
+                _line = _line.strip()
+                if _line.startswith("DATABASE_URL="):
+                    os.environ["DATABASE_URL"] = _line.split("=", 1)[1]
+                    break
 
 if hasattr(sys.stdout, 'reconfigure'):
     try:
@@ -48,9 +62,19 @@ RESUME_PATH = BASE_DIR / "base_resume.json"  # Legacy global path (pre-auth)
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+
+# ── Initialize NeonDB schema on startup ───────────────────────────────────────
+with app.app_context():
+    try:
+        db_layer.init_schema()
+    except Exception as _db_init_err:
+        logging.warning(f"[DB] Schema init skipped: {_db_init_err}")
 app.config["REMEMBER_COOKIE_DURATION"] = timedelta(days=30)
-app.config["REMEMBER_COOKIE_SECURE"] = False   # set True in production with HTTPS
+# Secure cookies when running on HTTPS (Render/production)
+app.config["REMEMBER_COOKIE_SECURE"] = os.environ.get("FLASK_ENV", "") == "production" or os.environ.get("RENDER", "") == "true"
 app.config["REMEMBER_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get("FLASK_ENV", "") == "production" or os.environ.get("RENDER", "") == "true"
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 # Secret key — auto-generated and persisted to .env on first boot
 app.secret_key = auth_module.ensure_secret_key(ENV_PATH)
@@ -276,8 +300,11 @@ def api_me():
     resume_name = ""
     if has_resume:
         try:
-            with open(current_user.resume_path, "r", encoding="utf-8") as f:
-                rd = json.load(f)
+            if db_layer.is_db_available():
+                rd = db_layer.db_get_resume(current_user.username) or {}
+            else:
+                with open(current_user.resume_path, "r", encoding="utf-8") as f:
+                    rd = json.load(f)
             resume_name = rd.get("name", "")
         except Exception:
             pass
@@ -619,21 +646,27 @@ def health():
 
     has_gemini_key = bool(env_vars.get("GEMINI_API_KEY") or env_vars.get("GEMINI_API_KEY_2"))
     has_gemini_backup = bool(env_vars.get("GEMINI_API_KEY_2"))
-    has_base_resume = user_resume_path.exists()
+    # Check resume presence from DB or file
+    has_base_resume = current_user.has_resume() if current_user.is_authenticated else user_resume_path.exists()
     has_simplify_email = bool(env_vars.get("SIMPLIFY_EMAIL"))
     has_simplify_password = bool(env_vars.get("SIMPLIFY_PASSWORD"))
 
     resume_summary = {}
     if has_base_resume:
         try:
-            with open(user_resume_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                resume_summary = {
-                    "name": data.get("name", ""),
-                    "roles": len(data.get("experience", [])),
-                    "skills": len(data.get("skills", [])),
-                    "email": data.get("contact", {}).get("email", ""),
-                }
+            if db_layer.is_db_available() and current_user.is_authenticated:
+                data = db_layer.db_get_resume(current_user.username) or {}
+            elif user_resume_path.exists():
+                with open(user_resume_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            else:
+                data = {}
+            resume_summary = {
+                "name": data.get("name", ""),
+                "roles": len(data.get("experience", [])),
+                "skills": len(data.get("skills", [])),
+                "email": data.get("contact", {}).get("email", ""),
+            }
         except Exception:
             pass
 
@@ -695,15 +728,24 @@ def manage_resume():
     if request.method == "POST":
         try:
             new_data = request.json
-            with open(user_resume_path, "w", encoding="utf-8") as f:
-                json.dump(new_data, f, indent=2, ensure_ascii=False)
+            if db_layer.is_db_available():
+                db_layer.db_save_resume(current_user.username, new_data)
+            else:
+                with open(user_resume_path, "w", encoding="utf-8") as f:
+                    json.dump(new_data, f, indent=2, ensure_ascii=False)
             return jsonify({"success": True, "message": "Base resume updated"})
         except Exception as e:
             return jsonify({"success": False, "error": str(e)}), 400
 
+    # GET — load from DB or file
+    if db_layer.is_db_available():
+        data = db_layer.db_get_resume(current_user.username)
+        if not data:
+            return jsonify({"error": "Resume not found"}), 404
+        return jsonify(data)
+
     if not user_resume_path.exists():
         return jsonify({"error": "base_resume.json not found"}), 404
-
     with open(user_resume_path, "r", encoding="utf-8") as f:
         data = json.load(f)
     return jsonify(data)
@@ -772,8 +814,27 @@ def upload_resume():
         except Exception:
             pass
 
-        with open(user_resume_path, "w", encoding="utf-8") as f:
-            json.dump(parsed_json, f, indent=2, ensure_ascii=False)
+        # Save parsed JSON resume
+        if db_layer.is_db_available():
+            db_layer.db_save_resume(current_user.username, parsed_json)
+        else:
+            with open(user_resume_path, "w", encoding="utf-8") as f:
+                json.dump(parsed_json, f, indent=2, ensure_ascii=False)
+        # Also write to local file as temp cache for pipeline (pipelines read from Path)
+        try:
+            with open(user_resume_path, "w", encoding="utf-8") as f:
+                json.dump(parsed_json, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
+
+        # Store DOCX bytes in DB if uploaded
+        orig_docx_target = user_data_dir / "master_resume_original.docx"
+        if db_layer.is_db_available() and orig_docx_target.exists():
+            try:
+                with open(orig_docx_target, "rb") as f:
+                    db_layer.db_save_resume_docx(current_user.username, f.read())
+            except Exception:
+                pass
 
         name = parsed_json.get("name", "Your")
         skills_count = len(parsed_json.get("skills", []))
@@ -796,26 +857,31 @@ def delete_resume():
     user_resume_path = get_user_resume_path()
     user_data_dir = current_user.data_dir if current_user.is_authenticated else BASE_DIR
     try:
-        # Write an empty sentinel so the UI reverts to the upload prompt
         empty = {"_empty": True, "name": "", "contact": {}, "summary": "",
                  "skills": [], "experience": [], "education": [],
                  "projects": [], "certifications": []}
-        with open(user_resume_path, "w", encoding="utf-8") as f:
-            json.dump(empty, f, indent=2)
 
-        # Also remove the docx and pdf templates if they exist
-        orig_docx = user_data_dir / "master_resume_original.docx"
-        orig_pdf = user_data_dir / "master_resume_original.pdf"
-        if orig_docx.exists():
-            try:
-                os.remove(orig_docx)
-            except Exception:
-                pass
-        if orig_pdf.exists():
-            try:
-                os.remove(orig_pdf)
-            except Exception:
-                pass
+        if db_layer.is_db_available():
+            db_layer.db_delete_resume(current_user.username)
+        else:
+            with open(user_resume_path, "w", encoding="utf-8") as f:
+                json.dump(empty, f, indent=2)
+
+        # Also wipe local file copy if present
+        try:
+            with open(user_resume_path, "w", encoding="utf-8") as f:
+                json.dump(empty, f, indent=2)
+        except Exception:
+            pass
+
+        # Remove physical docx/pdf templates
+        for fname in ("master_resume_original.docx", "master_resume_original.pdf"):
+            fpath = user_data_dir / fname
+            if fpath.exists():
+                try:
+                    os.remove(fpath)
+                except Exception:
+                    pass
 
         return jsonify({"success": True, "message": "Master resume deleted successfully."})
     except Exception as e:
@@ -826,25 +892,32 @@ def delete_resume():
 @login_required
 def history():
     """List all previously generated resume applications for the current user."""
-    user_output_dir = get_user_output_dir()
-    logs_dir = user_output_dir / "logs"
     applications = []
 
-    if logs_dir.exists():
-        for log_file in sorted(logs_dir.glob("run_*.json"), reverse=True):
-            try:
-                with open(log_file, "r", encoding="utf-8") as f:
-                    log_data = json.load(f)
+    if db_layer.is_db_available():
+        # ── DB mode: fetch from NeonDB ─────────────────────────────────────────
+        applications = db_layer.db_get_history(current_user.username)
+        # Strip file-based paths (they're ephemeral on Render)
+        for app_entry in applications:
+            app_entry["relative_file_path"] = ""
+    else:
+        # ── File fallback: read from disk logs ────────────────────────────────
+        user_output_dir = get_user_output_dir()
+        logs_dir = user_output_dir / "logs"
+        if logs_dir.exists():
+            for log_file in sorted(logs_dir.glob("run_*.json"), reverse=True):
+                try:
+                    with open(log_file, "r", encoding="utf-8") as f:
+                        log_data = json.load(f)
                     output_file = log_data.get("output_file", "")
                     rel_file = ""
                     if output_file and os.path.exists(output_file):
                         rel_file = os.path.relpath(output_file, str(user_output_dir))
-
                     log_data["relative_file_path"] = rel_file
                     log_data["log_file_name"] = log_file.name
                     applications.append(log_data)
-            except Exception:
-                continue
+                except Exception:
+                    continue
 
     return jsonify({"applications": applications, "count": len(applications)})
 
@@ -911,34 +984,38 @@ def _delete_single_history_log(filename: str, user_output_dir: Path = None) -> b
 @login_required
 def update_history_item(filename=None):
     """Update company name, role title, and job URL for a saved application."""
-    user_output_dir = get_user_output_dir()
     data = request.json or {}
     fname = filename or data.get("filename")
     if not fname:
         return jsonify({"success": False, "error": "Log filename is required"}), 400
 
-    logs_dir = user_output_dir / "logs"
-    log_file = logs_dir / fname
-    if not log_file.exists():
-        return jsonify({"success": False, "error": f"History log {fname} not found"}), 404
+    new_company = data.get("company", "").strip() or None
+    new_role = data.get("role", "").strip() or None
+    new_url = data.get("url", "").strip()
 
     try:
-        with open(log_file, "r", encoding="utf-8") as f:
-            log_data = json.load(f)
-
-        new_company = data.get("company", "").strip()
-        new_role = data.get("role", "").strip()
-        new_url = data.get("url", "").strip()
-
-        if new_company:
-            log_data["company"] = new_company
-        if new_role:
-            log_data["role"] = new_role
-        if new_url is not None:
-            log_data["url"] = new_url
-
-        with open(log_file, "w", encoding="utf-8") as f:
-            json.dump(log_data, f, indent=2)
+        if db_layer.is_db_available():
+            # In DB mode the filename IS the run_id (e.g. "run_1726234567890.json" → strip .json)
+            run_id = fname.replace(".json", "")
+            ok = db_layer.db_update_history_item(run_id, company=new_company, role=new_role, url=new_url)
+            if not ok:
+                return jsonify({"success": False, "error": f"History entry {fname} not found"}), 404
+            log_data = db_layer.db_get_history_item(run_id) or {}
+        else:
+            user_output_dir = get_user_output_dir()
+            log_file = user_output_dir / "logs" / fname
+            if not log_file.exists():
+                return jsonify({"success": False, "error": f"History log {fname} not found"}), 404
+            with open(log_file, "r", encoding="utf-8") as f:
+                log_data = json.load(f)
+            if new_company:
+                log_data["company"] = new_company
+            if new_role:
+                log_data["role"] = new_role
+            if new_url is not None:
+                log_data["url"] = new_url
+            with open(log_file, "w", encoding="utf-8") as f:
+                json.dump(log_data, f, indent=2)
 
         return jsonify({
             "success": True,
@@ -952,12 +1029,19 @@ def update_history_item(filename=None):
 @app.route("/api/history/<filename>", methods=["DELETE"])
 @login_required
 def delete_history_item(filename):
-    """Delete a history run entry and hard delete its actual output folder on disk."""
+    """Delete a history run entry (and its output folder on disk if file mode)."""
     try:
-        user_output_dir = get_user_output_dir()
-        if _delete_single_history_log(filename, user_output_dir):
-            return jsonify({"success": True, "message": "History entry and physical output folder deleted permanently from disk"})
-        return jsonify({"success": False, "error": "Failed to delete history item or file not found"}), 404
+        if db_layer.is_db_available():
+            run_id = filename.replace(".json", "")
+            ok = db_layer.db_delete_history_item(run_id)
+            if ok:
+                return jsonify({"success": True, "message": "History entry deleted."})
+            return jsonify({"success": False, "error": "History entry not found."}), 404
+        else:
+            user_output_dir = get_user_output_dir()
+            if _delete_single_history_log(filename, user_output_dir):
+                return jsonify({"success": True, "message": "History entry and physical output folder deleted permanently from disk"})
+            return jsonify({"success": False, "error": "Failed to delete history item or file not found"}), 404
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -965,22 +1049,28 @@ def delete_history_item(filename):
 @app.route("/api/history/delete_batch", methods=["POST"])
 @login_required
 def delete_history_batch():
-    """Bulk delete multiple history run entries and hard delete their folders on disk."""
+    """Bulk delete multiple history run entries."""
     try:
-        user_output_dir = get_user_output_dir()
         data = request.json or {}
         filenames = data.get("filenames", [])
         if not filenames or not isinstance(filenames, list):
             return jsonify({"success": False, "error": "No filenames provided for bulk deletion"}), 400
 
         deleted_count = 0
-        for fname in filenames:
-            if _delete_single_history_log(fname, user_output_dir):
-                deleted_count += 1
+        if db_layer.is_db_available():
+            for fname in filenames:
+                run_id = fname.replace(".json", "")
+                if db_layer.db_delete_history_item(run_id):
+                    deleted_count += 1
+        else:
+            user_output_dir = get_user_output_dir()
+            for fname in filenames:
+                if _delete_single_history_log(fname, user_output_dir):
+                    deleted_count += 1
 
         return jsonify({
             "success": True,
-            "message": f"Successfully deleted {deleted_count} history entries and system folders from disk.",
+            "message": f"Successfully deleted {deleted_count} history entries.",
             "deleted_count": deleted_count
         })
     except Exception as e:
@@ -990,25 +1080,28 @@ def delete_history_batch():
 @app.route("/api/history/clear_all", methods=["POST", "DELETE"])
 @login_required
 def clear_all_history():
-    """Hard delete all history entries, logs, and all generated application folders on disk."""
+    """Hard delete all history entries for the current user."""
     import shutil
-    user_output_dir = get_user_output_dir()
-    logs_dir = user_output_dir / "logs"
     deleted_count = 0
-    if logs_dir.exists():
-        for log_file in list(logs_dir.glob("run_*.json")):
-            if _delete_single_history_log(log_file.name, user_output_dir):
-                deleted_count += 1
-                
-    # Also clean any leftover application subfolders inside user output/ (preserving logs/ and uploads/)
-    if user_output_dir.exists():
-        for item in user_output_dir.iterdir():
-            if item.is_dir() and item.name not in ("logs", "uploads", ".git"):
-                shutil.rmtree(item, ignore_errors=True)
-                
+
+    if db_layer.is_db_available():
+        deleted_count = db_layer.db_delete_all_history(current_user.username)
+    else:
+        user_output_dir = get_user_output_dir()
+        logs_dir = user_output_dir / "logs"
+        if logs_dir.exists():
+            for log_file in list(logs_dir.glob("run_*.json")):
+                if _delete_single_history_log(log_file.name, user_output_dir):
+                    deleted_count += 1
+        # Also clean leftover application subfolders inside user output/
+        if user_output_dir.exists():
+            for item in user_output_dir.iterdir():
+                if item.is_dir() and item.name not in ("logs", "uploads", ".git"):
+                    shutil.rmtree(item, ignore_errors=True)
+
     return jsonify({
         "success": True,
-        "message": f"Successfully deleted all {deleted_count} history entries and cleared all system folders.",
+        "message": f"Successfully deleted all {deleted_count} history entries.",
         "deleted_count": deleted_count
     })
 
@@ -1867,6 +1960,7 @@ def run_agent():
     user_resume_path = str(get_user_resume_path())
     user_output_dir = str(get_user_output_dir())
     user_settings = get_user_settings()
+    user_username = current_user.username if current_user.is_authenticated else ""
 
     if not url and not direct_jd_text:
         return jsonify({"error": "Please enter a job URL or paste the job description text."}), 400
@@ -1881,7 +1975,7 @@ def run_agent():
     thread = threading.Thread(
         target=_execute_agent_pipeline,
         args=(run_id, url, custom_keywords, no_simplify, passes, custom_output, msg_queue, score_before, custom_bullets, engine_mode, custom_company, custom_role, direct_jd_text),
-        kwargs={"user_resume_path": user_resume_path, "user_output_dir": user_output_dir, "user_settings": user_settings},
+        kwargs={"user_resume_path": user_resume_path, "user_output_dir": user_output_dir, "user_settings": user_settings, "user_username": user_username},
         daemon=True,
     )
     thread.start()
@@ -1889,7 +1983,7 @@ def run_agent():
     return jsonify({"run_id": run_id, "status": "started"})
 
 
-def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passes, custom_output, msg_queue, analyze_score_before=None, custom_bullets="", engine_mode="danis_engine", custom_company="", custom_role="", direct_jd_text="", user_resume_path=None, user_output_dir=None, user_settings=None):
+def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passes, custom_output, msg_queue, analyze_score_before=None, custom_bullets="", engine_mode="danis_engine", custom_company="", custom_role="", direct_jd_text="", user_resume_path=None, user_output_dir=None, user_settings=None, user_username=""):
     """Execute pipeline in thread and push step logs to SSE queue."""
     # analyze_score_before: real score from Analyze step (Gemini/Simplify) — authoritative before score
 
@@ -1897,6 +1991,27 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
     _resume_path = Path(user_resume_path) if user_resume_path else RESUME_PATH
     _output_dir = Path(user_output_dir) if user_output_dir else OUTPUT_DIR
     _settings = user_settings or {}
+
+    # ── Restore resume from DB to local disk if needed (Render: ephemeral disk) ──
+    if db_layer.is_db_available() and user_username and not _resume_path.exists():
+        try:
+            resume_data = db_layer.db_get_resume(user_username)
+            if resume_data and not resume_data.get("_empty"):
+                _resume_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(_resume_path, "w", encoding="utf-8") as _rf:
+                    json.dump(resume_data, _rf, indent=2, ensure_ascii=False)
+                logging.info(f"[Pipeline] Restored resume from DB to {_resume_path}")
+            # Also restore DOCX if needed
+            user_data_dir = _resume_path.parent
+            orig_docx = user_data_dir / "master_resume_original.docx"
+            if not orig_docx.exists():
+                docx_bytes = db_layer.db_get_resume_docx(user_username)
+                if docx_bytes:
+                    with open(orig_docx, "wb") as _df:
+                        _df.write(docx_bytes)
+                    logging.info(f"[Pipeline] Restored master DOCX from DB to {orig_docx}")
+        except Exception as _restore_err:
+            logging.warning(f"[Pipeline] Resume restore from DB failed: {_restore_err}")
 
     # Inject user API keys into environment for this thread
     if _settings.get("GEMINI_API_KEY"):
@@ -2292,6 +2407,32 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
             cover_letter_text=cover_letter_text,
             output_dir=_output_dir
         )
+
+        # ── Also persist run log to NeonDB (survives Render deploys) ──────────────
+        if db_layer.is_db_available() and user_username:
+            try:
+                db_log = {
+                    "timestamp": datetime.now().isoformat(),
+                    "url": url,
+                    "company": company,
+                    "role": role,
+                    "score_before": score_before_val,
+                    "score_after": score_after_val,
+                    "score_delta": score_delta_val,
+                    "match_score_before": score_before_val,
+                    "match_score_after": score_after_val,
+                    "match_score_delta": score_delta_val,
+                    "missing_keywords": missing_keywords,
+                    "embedded_keywords": embedded_keywords,
+                    "still_missing_keywords": still_missing,
+                    "keyword_coverage_pct": coverage_pct,
+                    "cover_letter_text": cover_letter_text,
+                    "output_file": doc_path,
+                    "log_file_name": f"{run_id}.json",
+                }
+                db_layer.db_save_run_log(user_username, run_id, db_log)
+            except Exception as _db_log_err:
+                logging.warning(f"[Pipeline] DB log save failed: {_db_log_err}")
 
         # Final complete message
         msg_queue.put({
