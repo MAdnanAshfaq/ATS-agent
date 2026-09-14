@@ -1544,7 +1544,24 @@ def preview_file(filepath):
         )
         return Response(error_html, mimetype="text/html")
 
-    # 3. Check for tailored_resume.json in the same folder
+    # 3. If DOCX file, convert the actual document to HTML (100% faithful to download)
+    if target_path.suffix.lower() == ".docx" and target_path.exists():
+        try:
+            html_view = docx_to_html(str(target_path))
+            return Response(html_view, mimetype="text/html")
+        except Exception as e:
+            print(f"[Preview] Error converting docx to html: {e}")
+
+    # 4. If PDF file and exists, send inline
+    if target_path.suffix.lower() == ".pdf" and target_path.exists():
+        return send_file(
+            str(target_path),
+            as_attachment=False,
+            download_name=target_path.name,
+            mimetype="application/pdf",
+        )
+
+    # 5. Check for tailored_resume.json in the same folder as fallback
     json_cand = target_path.parent / "tailored_resume.json"
     if json_cand.exists():
         try:
@@ -1554,23 +1571,6 @@ def preview_file(filepath):
             return Response(html_view, mimetype="text/html")
         except Exception as e:
             print(f"[Preview] Failed reading tailored_resume.json: {e}")
-
-    # 4. If DOCX file, convert to HTML on the fly (NEVER send docx directly to iframe!)
-    if target_path.suffix.lower() == ".docx":
-        try:
-            html_view = docx_to_html(str(target_path))
-            return Response(html_view, mimetype="text/html")
-        except Exception as e:
-            print(f"[Preview] Error converting docx to html: {e}")
-
-    # 5. If PDF file and exists, send inline
-    if target_path.suffix.lower() == ".pdf":
-        return send_file(
-            str(target_path),
-            as_attachment=False,
-            download_name=target_path.name,
-            mimetype="application/pdf",
-        )
 
     # 6. If JSON file, render as resume HTML
     if target_path.suffix.lower() == ".json":

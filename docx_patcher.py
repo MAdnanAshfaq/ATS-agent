@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from resume_builder import _categorize_skills, sanitize_text
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 
 def slugify(text: str) -> str:
@@ -194,7 +195,8 @@ def patch_docx_with_rewritten_resume(
                 clean_r = clean_r.title()
             if clean_r:
                 _set_para_text_preserve_format(all_paras[1], clean_r)
-                print(f"[Patcher] Updated target role subtitle to: {clean_r}")
+                all_paras[1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                print(f"[Patcher] Updated target role subtitle to: {clean_r} (centered)")
 
     # ── 2. Patch Professional Summary ─────────────────────────────────────────
     rewritten_summary = rewritten_resume.get("summary", "").strip()
@@ -465,13 +467,22 @@ def patch_docx_with_rewritten_resume(
                 if role_bullet_paras:
                     last_p = role_bullet_paras[-1]
                     new_p = doc.add_paragraph(style=last_p.style)
+                    # CRITICAL: doc.add_paragraph() appends to the document body end!
+                    # Move new_p in XML immediately after last_p so it stays inside this role section!
+                    last_p._p.addnext(new_p._p)
                     new_p.paragraph_format.left_indent = last_p.paragraph_format.left_indent
+                    new_p.paragraph_format.first_line_indent = last_p.paragraph_format.first_line_indent
+                    new_p.paragraph_format.space_before = last_p.paragraph_format.space_before
                     new_p.paragraph_format.space_after = last_p.paragraph_format.space_after
                     new_p.paragraph_format.line_spacing = last_p.paragraph_format.line_spacing
                     run = new_p.add_run(clean_b)
                     if last_p.runs:
                         run.font.name = last_p.runs[0].font.name
                         run.font.size = last_p.runs[0].font.size
+                        if last_p.runs[0].font.color and last_p.runs[0].font.color.rgb:
+                            run.font.color.rgb = last_p.runs[0].font.color.rgb
+                    last_p = new_p
+                    role_bullet_paras.append(new_p)
                     total_replacements += 1
 
         # If original had more bullets than new, PHYSICALLY DELETE excess paragraphs (never leave empty bullets!)

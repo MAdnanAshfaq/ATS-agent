@@ -75,7 +75,7 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
       width: 100%;
       max-width: 8.5in;
       min-height: 11in;
-      padding: 0.5in 0.55in;
+      padding: 0.38in 0.5in;
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
       border-radius: 4px;
       font-size: 10pt;
@@ -86,7 +86,7 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
     /* Header */
     .resume-header {{
       text-align: center;
-      margin-bottom: 12px;
+      margin-bottom: 6px;
     }}
 
     .candidate-name {{
@@ -99,11 +99,12 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
     }}
 
     .target-role {{
-      font-size: 12pt;
-      font-weight: 400;
+      font-size: 11.5pt;
+      font-weight: 500;
       font-style: italic;
+      text-align: center;
       color: #1f2937;
-      margin-bottom: 4px;
+      margin-bottom: 3px;
     }}
 
     .contact-line {{
@@ -132,30 +133,30 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
 
     /* Section Headers */
     .section-title {{
-      font-size: 11pt;
+      font-size: 10.5pt;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.5px;
       color: #000000;
       border-bottom: 1px solid var(--line-color);
       padding-bottom: 1px;
-      margin-top: 10px;
-      margin-bottom: 4px;
+      margin-top: 7px;
+      margin-bottom: 2px;
       break-after: avoid;
     }}
 
     /* Summary */
     .summary-text {{
       font-size: 9.5pt;
-      line-height: 1.35;
+      line-height: 1.32;
       color: #111827;
-      margin-bottom: 6px;
-      text-align: justify;
+      margin-bottom: 4px;
+      text-align: left;
     }}
 
     /* Experience & Education Entries */
     .entry-item {{
-      margin-bottom: 8px;
+      margin-bottom: 5px;
       break-inside: avoid;
     }}
 
@@ -189,7 +190,7 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
       align-items: baseline;
       font-size: 9.5pt;
       color: #1f2937;
-      margin-bottom: 2px;
+      margin-bottom: 1.5px;
     }}
 
     .sub-left {{
@@ -206,24 +207,24 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
     /* Bullets */
     .bullet-list {{
       list-style-type: disc;
-      margin-left: 1.25rem;
-      margin-top: 2px;
-      margin-bottom: 4px;
+      margin-left: 1.15rem;
+      margin-top: 1px;
+      margin-bottom: 3px;
     }}
 
     .bullet-item {{
       font-size: 9.5pt;
-      line-height: 1.3;
+      line-height: 1.25;
       color: #111827;
-      margin-bottom: 2px;
+      margin-bottom: 1.5px;
       padding-left: 2px;
     }}
 
     /* Skills Categories */
     .skill-category {{
       font-size: 9.5pt;
-      line-height: 1.35;
-      margin-bottom: 3px;
+      line-height: 1.3;
+      margin-bottom: 2px;
       color: #111827;
     }}
 
@@ -242,7 +243,7 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
       .resume-sheet {{
         box-shadow: none !important;
         border-radius: 0 !important;
-        padding: 0.5in 0.55in !important;
+        padding: 0.38in 0.5in !important;
         max-width: 100% !important;
         width: 100% !important;
       }}
@@ -433,6 +434,29 @@ def resume_json_to_html(resume: dict, company: str = "", role: str = "") -> str:
     return _get_base_html_template(content, title=f"{name} - Resume")
 
 
+def _iter_table_paragraphs(table):
+    """Recursively yield all paragraphs in all table cells."""
+    for row in table.rows:
+        for cell in row.cells:
+            for para in cell.paragraphs:
+                yield para
+            for nested_table in cell.tables:
+                yield from _iter_table_paragraphs(nested_table)
+
+
+def _get_all_paragraphs_from_doc(doc):
+    """Yield all paragraphs from body AND table cells in visual document flow order."""
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+
+    for child in doc.element.body:
+        tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+        if tag == 'p':
+            yield Paragraph(child, doc)
+        elif tag == 'tbl':
+            yield from _iter_table_paragraphs(Table(child, doc))
+
+
 def docx_to_html(docx_path: str, company: str = "", role: str = "") -> str:
     """
     Parse an existing .docx file and convert it into clean, ATS-styled HTML.
@@ -455,8 +479,16 @@ def docx_to_html(docx_path: str, company: str = "", role: str = "") -> str:
 
     body_parts = []
     in_bullet_list = False
+    header_open = False
+    header_done = False
+    candidate_name_done = False
 
-    for para in doc.paragraphs:
+    try:
+        paras = list(_get_all_paragraphs_from_doc(doc))
+    except Exception:
+        paras = list(doc.paragraphs)
+
+    for para in paras:
         raw_text = para.text.strip()
         if not raw_text:
             if in_bullet_list:
@@ -464,38 +496,96 @@ def docx_to_html(docx_path: str, company: str = "", role: str = "") -> str:
                 in_bullet_list = False
             continue
 
-        style_name = para.style.name.lower()
-        is_bullet = "bullet" in style_name or raw_text.startswith(('•', '·', '▪', '-', '*'))
+        style_name = para.style.name.lower() if para.style and para.style.name else ""
+        has_numPr = False
+        try:
+            pPr = para._p.pPr
+            if pPr is not None and pPr.find('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}numPr') is not None:
+                has_numPr = True
+        except Exception:
+            pass
+
+        is_bullet = (
+            "bullet" in style_name
+            or "list" in style_name
+            or has_numPr
+            or raw_text.startswith(('•', '·', '▪', '▸', '►', '*', '- '))
+        )
+
+        # 1. The very first non-empty paragraph of the document is ALWAYS the Candidate Name
+        if not candidate_name_done:
+            body_parts.append('<div class="resume-header">')
+            body_parts.append(f'<div class="candidate-name">{html.escape(raw_text)}</div>')
+            header_open = True
+            candidate_name_done = True
+            continue
 
         # Check if it's a section header (bordered paragraph or short uppercase text)
         is_header = False
         pPr = para._p.get_or_add_pPr()
         if pPr.find('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pBdr') is not None:
             is_header = True
-        elif raw_text.isupper() and len(raw_text) < 40 and '@' not in raw_text and not raw_text.startswith('HTTP'):
+        elif raw_text.isupper() and len(raw_text) < 40 and '@' not in raw_text and not raw_text.startswith('HTTP') and not is_bullet:
             is_header = True
 
+        # Header zone processing (Target role subtitle and contact info at top of resume)
+        if not header_done:
+            if is_header:
+                if header_open:
+                    body_parts.append('</div>')
+                    header_open = False
+                header_done = True
+                # Falls through to section header handler below
+            else:
+                # Inside header between candidate name and first section header
+                if "@" in raw_text or "|" in raw_text or "linkedin" in raw_text.lower() or "github" in raw_text.lower() or re.search(r'\+?\d[\d\s\-()]{7,}\d', raw_text):
+                    parts = [p.strip() for p in re.split(r'\s*\|\s*', raw_text) if p.strip()]
+                    c_html = []
+                    for p in parts:
+                        if "@" in p and not p.startswith("http"):
+                            c_html.append(f'<a href="mailto:{html.escape(p)}">{html.escape(p)}</a>')
+                        elif "http" in p or "linkedin" in p or "github" in p:
+                            url = p if p.startswith("http") else f"https://{p}"
+                            c_html.append(f'<a href="{url}" target="_blank">{html.escape(p)}</a>')
+                        else:
+                            c_html.append(f'<span>{html.escape(p)}</span>')
+                    sep = '<span class="contact-sep">|</span>'
+                    body_parts.append(f'<div class="contact-line" style="margin-bottom: 4px;">{sep.join(c_html)}</div>')
+                    continue
+                elif len(raw_text) < 65 and not is_bullet and not any(k in raw_text.lower() for k in ("experience", "education", "summary", "skills", "projects")):
+                    # Target role subtitle directly under name
+                    from scraper import clean_role_title
+                    clean_role = clean_role_title(raw_text)
+                    if clean_role.upper() not in ("UNKNOWN", "NONE", "RESUME", ""):
+                        body_parts.append(f'<div class="target-role">{html.escape(clean_role)}</div>')
+                    continue
+                else:
+                    if header_open:
+                        body_parts.append('</div>')
+                        header_open = False
+                    header_done = True
+
         if is_header:
+            if header_open:
+                body_parts.append('</div>')
+                header_open = False
+            header_done = True
             if in_bullet_list:
                 body_parts.append("</ul>")
                 in_bullet_list = False
+            body_parts.append(f'<div class="section-title">{html.escape(raw_text)}</div>')
+            continue
 
-            # Check if it's the candidate's name at the very top
-            if len(body_parts) == 0 and len(raw_text) < 35:
-                body_parts.append('<div class="resume-header">')
-                body_parts.append(f'<div class="candidate-name">{html.escape(raw_text)}</div>')
-                continue
-            else:
-                body_parts.append(f'<div class="section-title">{html.escape(raw_text)}</div>')
-                continue
-
-        # Handle bullets
+        # Handle bullets (strictly inside <ul><li class="bullet-item">, NEVER as two-col-line!)
         if is_bullet:
             if not in_bullet_list:
                 body_parts.append('<ul class="bullet-list">')
                 in_bullet_list = True
             clean_b = sanitize_text(raw_text)
-            body_parts.append(f'<li class="bullet-item">{html.escape(clean_b)}</li>')
+            clean_b = re.sub(r'^[•·▪▸►\*\-]\s*', '', clean_b).strip()
+            clean_b = clean_b.replace('\t', ' ')
+            if clean_b:
+                body_parts.append(f'<li class="bullet-item">{html.escape(clean_b)}</li>')
             continue
 
         # If we reach here and was in bullet list, close it
@@ -503,13 +593,12 @@ def docx_to_html(docx_path: str, company: str = "", role: str = "") -> str:
             body_parts.append("</ul>")
             in_bullet_list = False
 
-        # Two-column row check (separated by tab \t)
-        if "\t" in raw_text:
+        # Two-column row check (separated by tab \t) - ONLY for non-bullets and short header lines (role/date, company/loc, degree/year)
+        if "\t" in raw_text and not is_bullet and len(raw_text) < 130:
             parts = [p.strip() for p in raw_text.split("\t") if p.strip()]
             left = parts[0] if parts else ""
             right = parts[1] if len(parts) > 1 else ""
 
-            # Check if italicized (sub-line e.g. company/location) or bold (role/dates)
             has_bold = any(r.bold for r in para.runs if r.bold)
             has_italic = any(r.italic for r in para.runs if r.italic)
 
@@ -526,35 +615,18 @@ def docx_to_html(docx_path: str, company: str = "", role: str = "") -> str:
                     body_parts.append(f'<span class="sub-right">{html.escape(right)}</span>')
                 body_parts.append('</div>')
             continue
+        elif "\t" in raw_text:
+            raw_text = raw_text.replace("\t", " ")
 
-        # Centered text (Role, contact info)
-        is_center = para.alignment == WD_ALIGN_PARAGRAPH.CENTER
-        if is_center or len(body_parts) <= 3:
-            # Check if contact line with pipes or separators
-            if "@" in raw_text or "|" in raw_text or "linkedin" in raw_text.lower():
-                parts = [p.strip() for p in re.split(r'\s*\|\s*', raw_text) if p.strip()]
-                c_html = []
-                for p in parts:
-                    if "@" in p and not p.startswith("http"):
-                        c_html.append(f'<a href="mailto:{html.escape(p)}">{html.escape(p)}</a>')
-                    elif "http" in p or "linkedin" in p or "github" in p:
-                        url = p if p.startswith("http") else f"https://{p}"
-                        c_html.append(f'<a href="{url}" target="_blank">{html.escape(p)}</a>')
-                    else:
-                        c_html.append(f'<span>{html.escape(p)}</span>')
-                sep = '<span class="contact-sep">|</span>'
-                body_parts.append(f'<div class="contact-line" style="margin-bottom: 8px;">{sep.join(c_html)}</div>')
-                if len(body_parts) == 2:
-                    body_parts.append('</div>')  # close initial header if open
-                continue
-            elif len(body_parts) == 1 and not is_header:
-                # Target role right under name
-                body_parts.append(f'<div class="target-role">{html.escape(raw_text)}</div>')
-                continue
+        # Sub-line check (e.g. italic institution or company line without tab)
+        has_italic = any(r.italic for r in para.runs if r.italic)
+        if has_italic and len(raw_text) < 80:
+            body_parts.append(f'<div class="sub-line"><span class="sub-left">{html.escape(raw_text)}</span></div>')
+            continue
 
         # Category line check (e.g. "Languages: Python, Java...")
         colon_idx = raw_text.find(":")
-        if colon_idx > 0 and colon_idx < 30 and not raw_text.startswith("http"):
+        if colon_idx > 0 and colon_idx < 35 and not raw_text.startswith("http"):
             cat_label = raw_text[:colon_idx + 1]
             cat_rest = raw_text[colon_idx + 1:].strip()
             body_parts.append(
@@ -565,6 +637,8 @@ def docx_to_html(docx_path: str, company: str = "", role: str = "") -> str:
         # Normal paragraph
         body_parts.append(f'<p class="summary-text">{html.escape(raw_text)}</p>')
 
+    if header_open:
+        body_parts.append("</div>")
     if in_bullet_list:
         body_parts.append("</ul>")
 
@@ -593,11 +667,12 @@ def generate_pdf_from_html(html_content: str, output_pdf_path: str) -> bool:
                 format="Letter",
                 print_background=True,
                 margin={
-                    "top": "0.5in",
-                    "bottom": "0.5in",
-                    "left": "0.55in",
-                    "right": "0.55in"
-                }
+                    "top": "0in",
+                    "bottom": "0in",
+                    "left": "0in",
+                    "right": "0in"
+                },
+                prefer_css_page_size=True,
             )
             browser.close()
         return os.path.exists(output_pdf_path) and os.path.getsize(output_pdf_path) > 1000
