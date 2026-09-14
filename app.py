@@ -50,6 +50,169 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
+import collections
+
+# ── Live Terminal Console Ring Buffer & Log Streaming ─────────────────────────
+class ConsoleRingBuffer:
+    """Thread-safe ring buffer capturing live stdout, stderr, and logging for browser console."""
+    def __init__(self, capacity=2000):
+        self.capacity = capacity
+        self.buffer = collections.deque(maxlen=capacity)
+        self.subscribers = []
+        self.lock = threading.Lock()
+        self._line_id = 0
+
+    def add_line(self, text: str, stream="stdout", category="general"):
+        if text is None:
+            return
+        text_str = str(text).rstrip("\r\n")
+        if not text_str:
+            return
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        with self.lock:
+            self._line_id += 1
+            entry = {
+                "id": self._line_id,
+                "text": text_str,
+                "stream": stream,
+                "time": timestamp,
+                "category": category,
+            }
+            self.buffer.append(entry)
+            dead = []
+            for q in self.subscribers:
+                try:
+                    q.put_nowait(entry)
+                except Exception:
+                    dead.append(q)
+            for d in dead:
+                if d in self.subscribers:
+                    self.subscribers.remove(d)
+
+    def get_recent(self, count=250):
+        with self.lock:
+            return list(self.buffer)[-count:]
+
+    def clear(self):
+        with self.lock:
+            self.buffer.clear()
+            for q in self.subscribers:
+                try:
+                    q.put_nowait({"type": "clear"})
+                except Exception:
+                    pass
+
+    def subscribe(self):
+        q = queue.Queue(maxsize=1000)
+        with self.lock:
+            self.subscribers.append(q)
+        return q
+
+    def unsubscribe(self, q):
+        with self.lock:
+            if q in self.subscribers:
+                self.subscribers.remove(q)
+
+GLOBAL_CONSOLE_BUFFER = ConsoleRingBuffer(capacity=2000)
+
+def _categorize_log_line(line: str) -> str:
+    lower = line.lower()
+    if "[analyze]" in lower or "analyze" in lower:
+        return "analyze"
+    if "[scraper]" in lower or "scraping" in lower or "scraped" in lower or "playwright" in lower:
+        return "scraper"
+    if "[pipeline]" in lower:
+        return "pipeline"
+    if "[gemini]" in lower or "llm_matcher" in lower:
+        return "gemini"
+    if "[db]" in lower or "neondb" in lower or "postgres" in lower:
+        return "db"
+    if "[auth]" in lower or "login" in lower or "signup" in lower:
+        return "auth"
+    if "error" in lower or "exception" in lower or "traceback" in lower or "failed" in lower or "errno" in lower:
+        return "error"
+    if "warning" in lower or "warn" in lower:
+        return "warning"
+    if "success" in lower or "completed successfully" in lower or "[ok]" in lower or "✨" in lower or "✅" in lower:
+        return "success"
+    return "general"
+
+class TeeStream:
+    """Tees output to original stream (for Render/terminal) and into ConsoleRingBuffer."""
+    def __init__(self, original_stream, buffer_obj, stream_name="stdout"):
+        self.original_stream = original_stream
+        self.buffer_obj = buffer_obj
+        self.stream_name = stream_name
+        self._local = threading.local()
+
+    def write(self, s):
+        if not s:
+            return
+        try:
+            self.original_stream.write(s)
+            self.original_stream.flush()
+        except Exception:
+            pass
+
+        if not hasattr(self._local, "pending"):
+            self._local.pending = ""
+
+        self._local.pending += str(s)
+        if "\n" in self._local.pending:
+            parts = self._local.pending.split("\n")
+            self._local.pending = parts[-1]
+            for line in parts[:-1]:
+                clean = line.rstrip("\r")
+                if clean.strip():
+                    cat = _categorize_log_line(clean)
+                    self.buffer_obj.add_line(clean, stream=self.stream_name, category=cat)
+
+    def flush(self):
+        try:
+            self.original_stream.flush()
+        except Exception:
+            pass
+        if hasattr(self._local, "pending") and self._local.pending:
+            clean = self._local.pending.rstrip("\r\n")
+            if clean.strip():
+                cat = _categorize_log_line(clean)
+                self.buffer_obj.add_line(clean, stream=self.stream_name, category=cat)
+            self._local.pending = ""
+
+    def __getattr__(self, name):
+        return getattr(self.original_stream, name)
+
+class BufferLoggingHandler(logging.Handler):
+    """Routes standard Python logging calls to the console ring buffer."""
+    def __init__(self, buffer_obj):
+        super().__init__()
+        self.buffer_obj = buffer_obj
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            cat = "error" if record.levelno >= logging.ERROR else ("warning" if record.levelno >= logging.WARNING else _categorize_log_line(msg))
+            self.buffer_obj.add_line(msg, stream="log", category=cat)
+        except Exception:
+            self.handleError(record)
+
+# Wrap stdout & stderr
+_orig_stdout = sys.stdout
+_orig_stderr = sys.stderr
+if not isinstance(sys.stdout, TeeStream):
+    sys.stdout = TeeStream(_orig_stdout, GLOBAL_CONSOLE_BUFFER, "stdout")
+if not isinstance(sys.stderr, TeeStream):
+    sys.stderr = TeeStream(_orig_stderr, GLOBAL_CONSOLE_BUFFER, "stderr")
+
+# Attach logging handler
+_root_logger = logging.getLogger()
+_buf_handler = BufferLoggingHandler(GLOBAL_CONSOLE_BUFFER)
+_buf_handler.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
+_buf_handler.setLevel(logging.INFO)
+_root_logger.addHandler(_buf_handler)
+
+GLOBAL_CONSOLE_BUFFER.add_line("🚀 ATS Agent Web Server ready. Live terminal console connected.", stream="stdout", category="general")
+
 # Suppress noisy Google GenAI SDK AFC (Automatic Function Calling) advisory warnings
 logging.getLogger("google_genai.models").setLevel(logging.ERROR)
 logging.getLogger("google_genai").setLevel(logging.ERROR)
@@ -1146,7 +1309,7 @@ def download_file(filepath):
     user_resume_path = get_user_resume_path()
     # Guard reserved API endpoints
     first_seg = filepath.split("/")[0].lower()
-    if first_seg in ("health", "settings", "resume", "upload_resume", "delete_resume", "history", "analyze", "open-folder", "cover-letter", "run", "hf-detect", "humanize", "stream", "me", "change_password", "login", "logout", "signup"):
+    if first_seg in ("health", "settings", "resume", "upload_resume", "delete_resume", "history", "analyze", "open-folder", "cover-letter", "run", "hf-detect", "humanize", "stream", "me", "change_password", "login", "logout", "signup", "console"):
         return jsonify({"error": "Endpoint not found"}), 404
 
     import urllib.parse
@@ -1707,11 +1870,13 @@ def analyze_job():
             "matrix": res_payload,
         }
 
+        print(f"[Analyze] ✅ Analysis complete for {role} at {company}! Score: {score}% | Matched: {len(matching_keywords)} | Missing: {len(missing_keywords)}")
         return jsonify(res_payload)
 
     except Exception as e:
         import traceback
         err_msg = traceback.format_exc()
+        print(f"[Analyze] ❌ Analysis error: {e}")
         try:
             with open("debug_analyze.log", "w", encoding="utf-8") as f:
                 f.write(err_msg)
@@ -2644,6 +2809,57 @@ def stream_run_logs(run_id):
                 yield f"data: {json.dumps({'type': 'ping'})}\n\n"
 
     return Response(event_stream(), mimetype="text/event-stream")
+
+
+# ── Live Terminal Console Endpoints ───────────────────────────────────────────
+
+@app.route("/api/console/logs", methods=["GET"])
+@login_required
+def api_console_logs():
+    """Return recent console stdout/stderr logs from in-memory ring buffer."""
+    limit = request.args.get("limit", 250, type=int)
+    limit = max(10, min(limit, 1000))
+    category = (request.args.get("category") or "").strip().lower()
+    logs = GLOBAL_CONSOLE_BUFFER.get_recent(limit)
+    if category and category != "all":
+        logs = [entry for entry in logs if entry.get("category") == category]
+    return jsonify({
+        "success": True,
+        "total": len(GLOBAL_CONSOLE_BUFFER.buffer),
+        "count": len(logs),
+        "logs": logs
+    })
+
+
+@app.route("/api/console/stream")
+@login_required
+def api_console_stream():
+    """Server-Sent Events endpoint streaming live console stdout/stderr lines."""
+    def console_event_stream():
+        q = GLOBAL_CONSOLE_BUFFER.subscribe()
+        try:
+            yield f"data: {json.dumps({'type': 'init', 'timestamp': datetime.now().strftime('%H:%M:%S')})}\n\n"
+            while True:
+                try:
+                    entry = q.get(timeout=15)
+                    yield f"data: {json.dumps({'type': 'log', **entry})}\n\n"
+                except queue.Empty:
+                    # Keepalive ping to prevent proxy/browser SSE drop
+                    yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+        except GeneratorExit:
+            pass
+        finally:
+            GLOBAL_CONSOLE_BUFFER.unsubscribe(q)
+
+    return Response(console_event_stream(), mimetype="text/event-stream")
+
+
+@app.route("/api/console/clear", methods=["POST"])
+@login_required
+def api_console_clear():
+    """Clear the in-memory console buffer."""
+    GLOBAL_CONSOLE_BUFFER.clear()
+    return jsonify({"success": True, "message": "Console buffer cleared"})
 
 
 def main():

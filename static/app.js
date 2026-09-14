@@ -1636,8 +1636,16 @@ async function analyzeJobKeywords(opts = {}) {
   analyzeBtn.disabled = true;
   analyzeBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Analyzing...`;
 
-  // Clear any previous inline error
+  // Clear any previous inline error and activate inline live terminal drawer
   _analyzeHideError();
+  clearAnalyzeConsole();
+  setAnalyzeConsoleState("running", "Analyzing job posting...");
+  toggleAnalyzeConsole(true); // Auto-open drawer so user sees what backend is doing!
+  initConsoleStream(); // Ensure live SSE stream is active
+
+  const targetLabel = isDirectText ? `Direct Job Description (${(directJdText || url).length} chars)` : url;
+  appendAnalyzeConsoleLine(`🚀 Target: ${targetLabel}`, "analyze");
+  appendAnalyzeConsoleLine(`🔍 Connecting to scraper & ATS evaluation pipeline...`, "scraper");
 
   try {
     const res = await fetch("/api/analyze", {
@@ -1657,6 +1665,9 @@ async function analyzeJobKeywords(opts = {}) {
     analyzeBtn.innerHTML = `<i class="fa-solid fa-magnifying-glass"></i> Analyze & Cross-Check`;
 
     if (!data.success) {
+      setAnalyzeConsoleState("error", "Analysis failed");
+      appendAnalyzeConsoleLine(`❌ ${data.error || "Analysis failed."}`, "error");
+
       const isBlockError = data.error_type === "scrape_blocked" || data.error_type === "jd_blocked" || (data.error && (data.error.includes("bot-block") || data.error.includes("CAPTCHA")));
       if (isBlockError) {
         _analyzeShowError(data.error || "Could not extract job description from this URL.");
@@ -1673,11 +1684,17 @@ async function analyzeJobKeywords(opts = {}) {
     analyzeRole = data.role;
     analyzeJdText = data.jd_text || "";
 
+    setAnalyzeConsoleState("success", `Complete: ${data.role} @ ${data.company} (${data.score}%)`);
+    appendAnalyzeConsoleLine(`✅ Successfully analyzed ${data.role} at ${data.company}!`, "success");
+    appendAnalyzeConsoleLine(`🎯 ATS Score: ${data.score}% | Matched: ${data.matching_keywords ? data.matching_keywords.length : 0} | Missing: ${data.missing_keywords ? data.missing_keywords.length : 0}`, "success");
+
     renderSimplifyCard(data);
     showToast(`Scraped ${data.role} at ${data.company}! Keywords cross-checked.`, "success");
   } catch (err) {
     analyzeBtn.disabled = false;
     analyzeBtn.innerHTML = `<i class="fa-solid fa-magnifying-glass"></i> Analyze & Cross-Check`;
+    setAnalyzeConsoleState("error", "Connection error");
+    appendAnalyzeConsoleLine(`❌ Connection error: ${err.message}`, "error");
     showToast("Server connection error during analysis", "error");
   }
 }
@@ -3448,4 +3465,387 @@ function scrollHollaBuddyToBottom() {
     container.scrollTop = container.scrollHeight;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LIVE BACKEND CONSOLE & INLINE JOB ANALYSIS TERMINAL CONTROLLER
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Tab 1 Inline Job Analysis Terminal ── */
+let analyzeConsoleExpanded = false;
+
+function toggleAnalyzeConsole(forceState) {
+  const drawer = document.getElementById("analyze-console-drawer");
+  const btn = document.getElementById("analyze-console-toggle-btn");
+  if (!drawer || !btn) return;
+
+  if (typeof forceState === "boolean") {
+    analyzeConsoleExpanded = forceState;
+  } else {
+    analyzeConsoleExpanded = !analyzeConsoleExpanded;
+  }
+
+  if (analyzeConsoleExpanded) {
+    drawer.classList.remove("hidden");
+    btn.classList.add("expanded");
+  } else {
+    drawer.classList.add("hidden");
+    btn.classList.remove("expanded");
+  }
+}
+
+function setAnalyzeConsoleState(status, message) {
+  const btn = document.getElementById("analyze-console-toggle-btn");
+  const badge = document.getElementById("analyze-status-badge");
+  const hint = document.getElementById("analyze-btn-hint");
+  if (!badge || !btn) return;
+
+  btn.classList.remove("active-running", "has-error");
+  badge.className = "toggle-badge";
+
+  if (status === "running") {
+    btn.classList.add("active-running");
+    badge.classList.add("badge-running");
+    badge.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Analyzing`;
+    if (hint) hint.textContent = message || "Backend active · Scraping & evaluating...";
+  } else if (status === "success") {
+    badge.classList.add("badge-success");
+    badge.innerHTML = `<i class="fa-solid fa-check"></i> Complete`;
+    if (hint) hint.textContent = message || "Analysis complete · Click arrow to view details";
+  } else if (status === "error") {
+    btn.classList.add("has-error");
+    badge.classList.add("badge-error");
+    badge.innerHTML = `<i class="fa-solid fa-xmark"></i> Error`;
+    if (hint) hint.textContent = message || "Analysis failed · Check terminal below";
+  } else {
+    badge.classList.add("badge-idle");
+    badge.textContent = "Idle";
+    if (hint) hint.textContent = message || "Click Analyze & Cross-Check to start";
+  }
+}
+
+function appendAnalyzeConsoleLine(text, category = "general") {
+  const body = document.getElementById("analyze-terminal-body");
+  if (!body) return;
+
+  const line = document.createElement("div");
+  line.className = "terminal-line";
+
+  const timeStr = new Date().toTimeString().split(" ")[0];
+  const timeSpan = document.createElement("span");
+  timeSpan.className = "t-time";
+  timeSpan.textContent = `[${timeStr}]`;
+
+  const tagSpan = document.createElement("span");
+  tagSpan.className = `t-tag t-tag-${category}`;
+  tagSpan.textContent = category.toUpperCase();
+
+  const msgSpan = document.createElement("span");
+  msgSpan.className = `t-msg ${category === 'error' ? 't-msg-error' : (category === 'success' ? 't-msg-success' : (category === 'warning' ? 't-msg-warning' : ''))}`;
+  msgSpan.textContent = text;
+
+  line.appendChild(timeSpan);
+  line.appendChild(tagSpan);
+  line.appendChild(msgSpan);
+
+  body.appendChild(line);
+  body.scrollTop = body.scrollHeight;
+}
+
+function clearAnalyzeConsole() {
+  const body = document.getElementById("analyze-terminal-body");
+  if (body) {
+    body.innerHTML = `
+      <div class="terminal-line system-msg">
+        <span class="t-prefix">$</span> Ready. Click "Analyze & Cross-Check" above to monitor live scraper and ATS keywords.
+      </div>
+    `;
+  }
+}
+
+function copyAnalyzeConsole() {
+  const body = document.getElementById("analyze-terminal-body");
+  if (!body) return;
+  const text = body.innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    showToast("Analysis terminal logs copied to clipboard!", "success");
+  }).catch(() => {
+    showToast("Failed to copy logs", "warning");
+  });
+}
+
+
+/* ── 2. Universal Live Console (Side / Header Drawer) ── */
+let universalConsoleOpen = false;
+let universalConsoleMaximized = false;
+let consoleEventSource = null;
+let consoleLogsBuffer = [];
+let consoleCurrentFilter = "all";
+let consoleSearchQuery = "";
+let consoleHasFetchedInitial = false;
+
+function toggleUniversalConsole(forceState) {
+  const drawer = document.getElementById("universal-console-drawer");
+  const launcher = document.getElementById("universal-console-launcher");
+  const headerBtn = document.getElementById("header-console-btn");
+  if (!drawer) return;
+
+  if (typeof forceState === "boolean") {
+    universalConsoleOpen = forceState;
+  } else {
+    universalConsoleOpen = !universalConsoleOpen;
+  }
+
+  if (universalConsoleOpen) {
+    drawer.classList.remove("hidden");
+    if (launcher) launcher.classList.add("active");
+    if (headerBtn) headerBtn.classList.add("active");
+
+    if (!consoleHasFetchedInitial) {
+      fetchRecentConsoleLogs();
+      consoleHasFetchedInitial = true;
+    }
+    initConsoleStream();
+
+    setTimeout(() => {
+      const searchInput = document.getElementById("console-search-input");
+      if (searchInput && document.activeElement !== searchInput) searchInput.focus();
+    }, 200);
+  } else {
+    drawer.classList.add("hidden");
+    if (launcher) launcher.classList.remove("active");
+    if (headerBtn) headerBtn.classList.remove("active");
+  }
+}
+
+function toggleConsoleMaximize() {
+  const drawer = document.getElementById("universal-console-drawer");
+  const maxBtn = document.getElementById("console-max-btn");
+  if (!drawer) return;
+  universalConsoleMaximized = !universalConsoleMaximized;
+  if (universalConsoleMaximized) {
+    drawer.classList.add("maximized");
+    if (maxBtn) maxBtn.innerHTML = `<i class="fa-solid fa-compress"></i>`;
+  } else {
+    drawer.classList.remove("maximized");
+    if (maxBtn) maxBtn.innerHTML = `<i class="fa-solid fa-expand"></i>`;
+  }
+}
+
+async function fetchRecentConsoleLogs() {
+  try {
+    const res = await fetch("/api/console/logs?limit=300");
+    const data = await res.json();
+    if (data.success && Array.isArray(data.logs)) {
+      consoleLogsBuffer = data.logs;
+      renderUniversalConsoleLogs();
+      updateConsoleStatus();
+    }
+  } catch (err) {
+    console.warn("Failed to fetch initial console logs", err);
+  }
+}
+
+function initConsoleStream() {
+  if (consoleEventSource && consoleEventSource.readyState !== EventSource.CLOSED) {
+    return;
+  }
+
+  const statusElem = document.getElementById("console-stream-status");
+  if (statusElem) statusElem.textContent = "Connecting to live SSE stream...";
+
+  try {
+    consoleEventSource = new EventSource("/api/console/stream");
+
+    consoleEventSource.onopen = () => {
+      if (statusElem) statusElem.innerHTML = `<span class="live-dot-green"></span> Live Connected (Render SSE)`;
+    };
+
+    consoleEventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type === "init") {
+          if (statusElem) statusElem.innerHTML = `<span class="live-dot-green"></span> Live Connected (Render SSE)`;
+          return;
+        }
+        if (payload.type === "ping") {
+          return;
+        }
+        if (payload.type === "clear") {
+          consoleLogsBuffer = [];
+          renderUniversalConsoleLogs();
+          return;
+        }
+        if (payload.type === "log" && payload.text) {
+          consoleLogsBuffer.push(payload);
+          if (consoleLogsBuffer.length > 2000) {
+            consoleLogsBuffer.shift();
+          }
+
+          // Mirror live analyze/scraper logs into Tab 1 inline drawer
+          if (payload.category === "analyze" || payload.category === "scraper") {
+            appendAnalyzeConsoleLine(payload.text, payload.category);
+          }
+
+          appendUniversalConsoleEntry(payload);
+          updateConsoleStatus(payload.time);
+        }
+      } catch (e) {
+        console.error("Console event parse error", e);
+      }
+    };
+
+    consoleEventSource.onerror = () => {
+      if (statusElem) statusElem.textContent = "Reconnecting to live console...";
+    };
+  } catch (err) {
+    if (statusElem) statusElem.textContent = "Console stream unavailable";
+  }
+}
+
+function updateConsoleStatus(lastTime) {
+  const counter = document.getElementById("console-log-counter");
+  const bufferCount = document.getElementById("console-buffer-count");
+  const lastEvent = document.getElementById("console-last-event-time");
+
+  if (counter) counter.textContent = `${consoleLogsBuffer.length} lines`;
+  if (bufferCount) bufferCount.textContent = `${consoleLogsBuffer.length} / 2,000 lines`;
+  if (lastEvent && lastTime) lastEvent.textContent = `Last update: ${lastTime}`;
+}
+
+function filterConsole(category) {
+  consoleCurrentFilter = category;
+  document.querySelectorAll(".console-filter-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.filter === category);
+  });
+  renderUniversalConsoleLogs();
+}
+
+function handleConsoleSearch(val) {
+  consoleSearchQuery = (val || "").toLowerCase().trim();
+  renderUniversalConsoleLogs();
+}
+
+function matchesFilter(entry) {
+  if (consoleCurrentFilter !== "all") {
+    if (consoleCurrentFilter === "error") {
+      if (entry.category !== "error" && !entry.text.toLowerCase().includes("error") && !entry.text.toLowerCase().includes("exception") && !entry.text.toLowerCase().includes("traceback")) {
+        return false;
+      }
+    } else if (entry.category !== consoleCurrentFilter) {
+      return false;
+    }
+  }
+  if (consoleSearchQuery) {
+    const text = (entry.text || "").toLowerCase();
+    const cat = (entry.category || "").toLowerCase();
+    if (!text.includes(consoleSearchQuery) && !cat.includes(consoleSearchQuery)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function renderUniversalConsoleLogs() {
+  const container = document.getElementById("universal-console-body");
+  if (!container) return;
+
+  container.innerHTML = "";
+  const filtered = consoleLogsBuffer.filter(matchesFilter);
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div class="terminal-line system-msg">
+        <span class="t-prefix">ℹ</span> No console log lines matching current filter.
+      </div>
+    `;
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  filtered.forEach(entry => {
+    const line = createLogLineElement(entry);
+    fragment.appendChild(line);
+  });
+  container.appendChild(fragment);
+
+  const autoScroll = document.getElementById("console-autoscroll-chk")?.checked ?? true;
+  if (autoScroll) {
+    container.scrollTop = container.scrollHeight;
+  }
+
+  const counter = document.getElementById("console-log-counter");
+  if (counter) {
+    counter.textContent = `${filtered.length} of ${consoleLogsBuffer.length} lines`;
+  }
+}
+
+function createLogLineElement(entry) {
+  const line = document.createElement("div");
+  line.className = "terminal-line";
+
+  const timeSpan = document.createElement("span");
+  timeSpan.className = "t-time";
+  timeSpan.textContent = `[${entry.time || "--:--:--"}]`;
+
+  const tagSpan = document.createElement("span");
+  const cat = entry.category || "general";
+  tagSpan.className = `t-tag t-tag-${cat}`;
+  tagSpan.textContent = cat.toUpperCase();
+
+  const msgSpan = document.createElement("span");
+  msgSpan.className = `t-msg ${cat === 'error' ? 't-msg-error' : (cat === 'success' ? 't-msg-success' : (cat === 'warning' ? 't-msg-warning' : ''))}`;
+  msgSpan.textContent = entry.text;
+
+  line.appendChild(timeSpan);
+  line.appendChild(tagSpan);
+  line.appendChild(msgSpan);
+  return line;
+}
+
+function appendUniversalConsoleEntry(entry) {
+  if (!matchesFilter(entry)) return;
+  const container = document.getElementById("universal-console-body");
+  if (!container) return;
+
+  const line = createLogLineElement(entry);
+  container.appendChild(line);
+
+  const autoScroll = document.getElementById("console-autoscroll-chk")?.checked ?? true;
+  if (autoScroll) {
+    container.scrollTop = container.scrollHeight;
+  }
+}
+
+async function clearUniversalConsole() {
+  try {
+    await fetch("/api/console/clear", { method: "POST" });
+    consoleLogsBuffer = [];
+    renderUniversalConsoleLogs();
+    showToast("Console cleared", "info");
+  } catch (err) {
+    consoleLogsBuffer = [];
+    renderUniversalConsoleLogs();
+  }
+}
+
+function copyUniversalConsole() {
+  const container = document.getElementById("universal-console-body");
+  if (!container) return;
+  const text = container.innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    showToast("All console logs copied to clipboard!", "success");
+  }).catch(() => {
+    showToast("Failed to copy console logs", "warning");
+  });
+}
+
+// Automatically start background SSE connection so logs are buffered early
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => {
+    setTimeout(initConsoleStream, 1500);
+  });
+} else {
+  setTimeout(initConsoleStream, 1500);
+}
+
 

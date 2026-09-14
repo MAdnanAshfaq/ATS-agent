@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   
   <!-- Custom Styles -->
-  <link rel="stylesheet" href="/static/style.css?v=4">
+  <link rel="stylesheet" href="/static/style.css?v=5">
 </head>
 <body>
 
@@ -60,8 +60,14 @@
 
         <!-- Optional Desktop Launcher for Offline Self-Hosting -->
         <a href="/api/download_launcher" class="btn btn-secondary btn-sm header-launcher-btn" title="Download Start_Agent.bat for offline local desktop use.">
-          <i class="fa-solid fa-terminal"></i> <span>Launcher (.bat)</span>
+          <i class="fa-solid fa-download"></i> <span>Launcher (.bat)</span>
         </a>
+
+        <!-- Live Console / Terminal Quick Toggle in Header -->
+        <button type="button" class="btn btn-secondary btn-sm header-console-btn" id="header-console-btn" onclick="toggleUniversalConsole()" title="View Live Backend / Render Cloud Terminal">
+          <span class="console-live-dot"></span>
+          <i class="fa-solid fa-terminal"></i> <span>Console</span>
+        </button>
 
         <!-- User Profile -->
         <div class="user-header-profile" id="user-header-profile" title="Signed in as {{ user.display_name or user.username }}">
@@ -137,6 +143,53 @@
             </div>
             <div class="form-hint">
               Supported ATS: LinkedIn, Lever, Greenhouse, Workday, Wellfound, Ashby, SmartRecruiters, iCIMS, + Generic
+            </div>
+
+            <!-- ── INLINE JOB ANALYSIS CONSOLE DRAWER ─────────────────────── -->
+            <div class="analyze-console-toggle-wrap" id="analyze-console-toggle-wrap">
+              <button type="button" class="analyze-console-toggle-btn" id="analyze-console-toggle-btn" onclick="toggleAnalyzeConsole()" title="Toggle live backend activity">
+                <div class="toggle-btn-left">
+                  <span class="toggle-icon-wrap"><i class="fa-solid fa-terminal"></i></span>
+                  <span class="toggle-title">Backend Activity & Progress</span>
+                  <span class="toggle-badge badge-idle" id="analyze-status-badge">Idle</span>
+                </div>
+                <div class="toggle-btn-right">
+                  <span class="toggle-hint" id="analyze-btn-hint">Click "Analyze & Cross-Check" to see backend logs</span>
+                  <span class="toggle-arrow-circle">
+                    <i class="fa-solid fa-chevron-down" id="analyze-arrow-icon"></i>
+                  </span>
+                </div>
+              </button>
+
+              <!-- Collapsible Inline Terminal -->
+              <div class="analyze-console-drawer hidden" id="analyze-console-drawer">
+                <div class="inline-terminal-header">
+                  <div class="terminal-dots">
+                    <span class="dot dot-red" onclick="toggleAnalyzeConsole(false)"></span>
+                    <span class="dot dot-yellow"></span>
+                    <span class="dot dot-green" onclick="toggleAnalyzeConsole(true)"></span>
+                  </div>
+                  <div class="inline-terminal-title">
+                    <i class="fa-solid fa-code"></i> Live Job Scraper & Analysis Log Stream
+                  </div>
+                  <div class="inline-terminal-actions">
+                    <button type="button" class="btn-terminal-sm" onclick="clearAnalyzeConsole()" title="Clear Output">
+                      <i class="fa-solid fa-trash-can"></i> Clear
+                    </button>
+                    <button type="button" class="btn-terminal-sm" onclick="copyAnalyzeConsole()" title="Copy Logs">
+                      <i class="fa-solid fa-copy"></i> Copy
+                    </button>
+                    <button type="button" class="btn-terminal-sm" onclick="toggleUniversalConsole(true)" title="Open Full Live Terminal">
+                      <i class="fa-solid fa-up-right-from-square"></i> Full Console
+                    </button>
+                  </div>
+                </div>
+                <div class="inline-terminal-body" id="analyze-terminal-body">
+                  <div class="terminal-line system-msg">
+                    <span class="t-prefix">$</span> Ready. Click <strong>Analyze & Cross-Check</strong> above to track live job scraping, HTML extraction, Simplify scores, and ATS keywords.
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1554,6 +1607,95 @@
         <iframe id="resume-preview-frame" style="width: 100%; height: 100%; border: none; background: #262935;" onload="hidePreviewLoader();" onerror="hidePreviewLoader();"></iframe>
       </div>
     </div>
+  <!-- ── UNIVERSAL LIVE CONSOLE LAUNCHER & DRAWER ────────────────────────── -->
+  <!-- Floating Launcher Button on Side/Bottom -->
+  <div id="universal-console-launcher" class="universal-console-launcher" onclick="toggleUniversalConsole()" title="Open Live Render & Backend Terminal">
+    <div class="console-launcher-icon-wrap">
+      <i class="fa-solid fa-terminal"></i>
+      <span class="console-pulse-ring"></span>
+      <span class="console-status-dot"></span>
+    </div>
+    <div class="console-launcher-pill">
+      <span class="console-pill-title">Live Terminal</span>
+      <span class="console-pill-sub">Cloud Console</span>
+    </div>
+  </div>
+
+  <!-- Universal Slide-Out Live Console Drawer -->
+  <div id="universal-console-drawer" class="universal-console-drawer hidden">
+    <!-- Header -->
+    <div class="universal-console-header">
+      <div class="console-header-left">
+        <div class="terminal-dots">
+          <span class="dot dot-red" onclick="toggleUniversalConsole(false)" title="Close Console"></span>
+          <span class="dot dot-yellow" onclick="clearUniversalConsole()" title="Clear Output"></span>
+          <span class="dot dot-green" onclick="toggleConsoleMaximize()" title="Toggle Fullscreen"></span>
+        </div>
+        <div class="console-title-group">
+          <div class="console-main-title">
+            <i class="fa-solid fa-terminal"></i>
+            <span>ATS Agent Live Terminal</span>
+            <span class="console-badge-env" id="console-badge-env">cloud / live</span>
+          </div>
+          <div class="console-sub-title">
+            <span class="live-dot-green"></span>
+            <span id="console-stream-status">Connected to live stream</span>
+          </div>
+        </div>
+      </div>
+      <div class="console-header-right">
+        <!-- Filter Tabs -->
+        <div class="console-filter-chips">
+          <button type="button" class="console-filter-btn active" data-filter="all" onclick="filterConsole('all')">All</button>
+          <button type="button" class="console-filter-btn" data-filter="analyze" onclick="filterConsole('analyze')">Analyze</button>
+          <button type="button" class="console-filter-btn" data-filter="scraper" onclick="filterConsole('scraper')">Scraper</button>
+          <button type="button" class="console-filter-btn" data-filter="pipeline" onclick="filterConsole('pipeline')">Pipeline</button>
+          <button type="button" class="console-filter-btn" data-filter="error" onclick="filterConsole('error')">Errors</button>
+        </div>
+        <!-- Action Buttons -->
+        <div class="console-action-btns">
+          <label class="console-autoscroll-label" title="Automatically scroll to bottom on new output">
+            <input type="checkbox" id="console-autoscroll-chk" checked>
+            <span>Auto-scroll</span>
+          </label>
+          <button type="button" class="btn-console-tool" onclick="clearUniversalConsole()" title="Clear Console">
+            <i class="fa-solid fa-trash-can"></i>
+          </button>
+          <button type="button" class="btn-console-tool" onclick="copyUniversalConsole()" title="Copy All Logs">
+            <i class="fa-solid fa-copy"></i>
+          </button>
+          <button type="button" class="btn-console-tool" onclick="toggleConsoleMaximize()" id="console-max-btn" title="Toggle Fullscreen">
+            <i class="fa-solid fa-expand"></i>
+          </button>
+          <button type="button" class="btn-console-tool btn-console-close" onclick="toggleUniversalConsole(false)" title="Close Console">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Search / Filter Sub-Bar -->
+    <div class="console-search-bar">
+      <i class="fa-solid fa-magnifying-glass"></i>
+      <input type="text" id="console-search-input" placeholder="Filter console logs (e.g. scrape, gemini, simplify, exception)..." oninput="handleConsoleSearch(this.value)">
+      <span class="console-log-counter" id="console-log-counter">0 lines</span>
+    </div>
+
+    <!-- Terminal Screen Body -->
+    <div class="universal-console-body" id="universal-console-body">
+      <!-- Output lines dynamically rendered -->
+    </div>
+
+    <!-- Terminal Footer Status Bar -->
+    <div class="universal-console-footer">
+      <div class="footer-status-left">
+        <span class="footer-stat"><i class="fa-solid fa-circle-nodes"></i> Stream: <strong id="console-stream-type">SSE (Real-Time)</strong></span>
+        <span class="footer-stat"><i class="fa-solid fa-memory"></i> Buffer: <strong id="console-buffer-count">0 / 2,000 lines</strong></span>
+      </div>
+      <div class="footer-status-right">
+        <span id="console-last-event-time">Last update: --:--:--</span>
+      </div>
+    </div>
   </div>
 
   <!-- ── HOLLABUDDY FLOATING AI COPILOT LAUNCHER & DRAWER ────────────────── -->
@@ -1693,6 +1835,6 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- JavaScript Application Bundle -->
-  <script src="/static/app.js?v=4"></script>
+  <script src="/static/app.js?v=5"></script>
 </body>
 </html>
