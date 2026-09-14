@@ -459,17 +459,18 @@ def convert_to_pdf(doc_path: str) -> str:
     except Exception as e:
         print(f"[PDF] Word COM conversion note: {e}")
 
-    # Attempt 2: docx2pdf fallback
+    # Attempt 3: Playwright Chromium HTML-to-PDF (Universal cross-platform, Render Linux & Docker)
     try:
-        from docx2pdf import convert
-        convert(doc_path, pdf_path)
-        if os.path.exists(pdf_path):
-            print(f"[PDF] [OK] Converted via docx2pdf: {pdf_path}")
+        from resume_html import docx_to_html, generate_pdf_from_html
+        html_content = docx_to_html(doc_path)
+        if generate_pdf_from_html(html_content, pdf_path):
+            print(f"[PDF] [OK] Converted via Playwright Chromium: {pdf_path}")
             return pdf_path
     except Exception as e:
-        print(f"[PDF] docx2pdf note: {e}")
+        print(f"[PDF] Playwright conversion note: {e}")
 
-    return pdf_path
+    return pdf_path if os.path.exists(pdf_path) else ""
+
 
 
 if __name__ == "__main__":

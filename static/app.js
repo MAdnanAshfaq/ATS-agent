@@ -2923,6 +2923,29 @@ async function submitHistoryRefinement() {
 /* ==========================================================================
    Universal In-Browser Resume Preview Modal
    ========================================================================== */
+function hidePreviewLoader() {
+  const loader = document.getElementById("preview-loader");
+  if (loader) loader.style.display = "none";
+  if (window._previewLoaderTimeout) {
+    clearTimeout(window._previewLoaderTimeout);
+    window._previewLoaderTimeout = null;
+  }
+}
+
+function printPreviewFrame() {
+  const frame = document.getElementById("resume-preview-frame");
+  if (frame && frame.contentWindow) {
+    try {
+      frame.contentWindow.focus();
+      frame.contentWindow.print();
+    } catch (e) {
+      window.print();
+    }
+  } else {
+    window.print();
+  }
+}
+
 function openPreviewModal(filePath, company = "Tailored Resume", role = "Document Preview") {
   if (!filePath) {
     showToast("No resume document file available for preview", "warning");
@@ -2952,7 +2975,16 @@ function openPreviewModal(filePath, company = "Tailored Resume", role = "Documen
   if (docxBtn) docxBtn.href = docxDownloadUrl;
   if (extBtn) extBtn.href = previewUrl;
 
-  if (loader) loader.style.display = "flex";
+  if (loader) {
+    loader.style.display = "flex";
+    if (window._previewLoaderTimeout) clearTimeout(window._previewLoaderTimeout);
+    window._previewLoaderTimeout = setTimeout(() => {
+      hidePreviewLoader();
+    }, 3500);
+  }
+
+  frame.onload = hidePreviewLoader;
+  frame.onerror = hidePreviewLoader;
   frame.src = previewUrl;
 
   modal.style.display = "flex";
@@ -2962,6 +2994,7 @@ function openPreviewModal(filePath, company = "Tailored Resume", role = "Documen
 function closePreviewModal() {
   const modal = document.getElementById("resume-preview-modal");
   const frame = document.getElementById("resume-preview-frame");
+  hidePreviewLoader();
   if (modal) modal.style.display = "none";
   if (frame) frame.src = "about:blank";
   document.body.style.overflow = "";

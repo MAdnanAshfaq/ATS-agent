@@ -921,9 +921,15 @@ def history():
     if db_layer.is_db_available():
         # ── DB mode: fetch from NeonDB ─────────────────────────────────────────
         applications = db_layer.db_get_history(current_user.username)
-        # Strip file-based paths (they're ephemeral on Render)
+        # Compute relative_file_path from output_file so preview and download buttons work
         for app_entry in applications:
-            app_entry["relative_file_path"] = ""
+            out_f = app_entry.get("output_file", "")
+            if out_f:
+                p_out = Path(out_f.replace("\\", "/"))
+                rel = f"{p_out.parent.name}/{p_out.name}" if (p_out.parent.name and p_out.parent.name != ".") else p_out.name
+                app_entry["relative_file_path"] = rel
+            else:
+                app_entry["relative_file_path"] = ""
     else:
         # ── File fallback: read from disk logs ────────────────────────────────
         user_output_dir = get_user_output_dir()
@@ -1145,6 +1151,28 @@ def download_file(filepath):
 
     import urllib.parse
     clean_fp = urllib.parse.unquote(filepath).replace("\\", "/").strip("/")
+    user_data_dir = current_user.data_dir if current_user.is_authenticated else BASE_DIR
+
+    # 0. Master resume explicit download handlers
+    if clean_fp in ("master", "master_resume", "master_resume.docx", "master.docx"):
+        user_orig_docx = user_data_dir / "master_resume_original.docx"
+        if user_orig_docx.exists():
+            return send_file(
+                str(user_orig_docx),
+                as_attachment=True,
+                download_name="Master_Resume.docx",
+                mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+    if clean_fp in ("master_resume.pdf", "master.pdf", "master_resume_original.pdf"):
+        user_orig_pdf = user_data_dir / "master_resume_original.pdf"
+        if user_orig_pdf.exists():
+            return send_file(str(user_orig_pdf), as_attachment=True, download_name="Master_Resume.pdf", mimetype="application/pdf")
+        user_orig_docx = user_data_dir / "master_resume_original.docx"
+        if user_orig_docx.exists():
+            from resume_builder import convert_to_pdf
+            pdf_res = convert_to_pdf(str(user_orig_docx))
+            if pdf_res and os.path.exists(pdf_res):
+                return send_file(str(pdf_res), as_attachment=True, download_name="Master_Resume.pdf", mimetype="application/pdf")
 
     # 1. Direct absolute path check
     target_path = Path(clean_fp)
@@ -1181,7 +1209,7 @@ def download_file(filepath):
             try:
                 from resume_builder import convert_to_pdf
                 pdf_res = convert_to_pdf(str(docx_matches[0]))
-                if pdf_res and Path(pdf_res).exists():
+                if pdf_res and os.path.exists(pdf_res):
                     target_path = Path(pdf_res).resolve()
             except Exception as e:
                 print(f"[Download] On-the-fly PDF conversion error: {e}")
@@ -1202,6 +1230,23 @@ def download_file(filepath):
         if resume_matches:
             resume_matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
             target_path = resume_matches[0].resolve()
+
+    # 7.5 If resume .docx requested and not found on disk, auto-regenerate from base_resume
+    if not target_path.exists() and "resume" in clean_fp.lower() and clean_fp.lower().endswith(".docx"):
+        folder_part = Path(clean_fp).parent.name
+        if folder_part and "_" in folder_part and user_resume_path.exists():
+            try:
+                parts = folder_part.split("_", 1)
+                comp = parts[0]
+                rol = parts[1] if len(parts) > 1 else ""
+                with open(user_resume_path, "r", encoding="utf-8") as rf:
+                    base_r = json.load(rf)
+                from resume_builder import build_resume_docx
+                regen_p = build_resume_docx(base_r, comp, rol, output_dir=str(user_output_dir))
+                if regen_p and os.path.exists(regen_p):
+                    target_path = Path(regen_p).resolve()
+            except Exception as regen_err:
+                print(f"[Download] Auto-regen error: {regen_err}")
 
     # 8. Fallback to user base_resume.json if json requested
     if not target_path.exists() and clean_fp.lower().endswith(".json"):
@@ -1233,7 +1278,9 @@ def download_file(filepath):
 def preview_file(filepath):
     """
     Preview a generated resume, cover letter, or master resume directly in-browser.
-    Converts .docx to .pdf on the fly if needed and sends inline for iframe rendering.
+    Renders high-fidelity HTML directly into the iframe (0ms, zero download, selectable text).
+    If a PDF is explicitly requested and exists, serves inline application/pdf.
+    NEVER sends binary docx directly to prevent unwanted browser downloads!
     """
     user_output_dir = get_user_output_dir()
     user_resume_path = get_user_resume_path()
@@ -1242,21 +1289,45 @@ def preview_file(filepath):
     import urllib.parse
     clean_fp = urllib.parse.unquote(filepath).replace("\\", "/").strip("/")
 
-    # Check for master resume preview requests
-    if clean_fp in ("master", "master_resume", "master.pdf", "master_resume_original.pdf"):
-        user_orig_pdf = user_data_dir / "master_resume_original.pdf"
-        if user_orig_pdf.exists():
-            return send_file(str(user_orig_pdf), as_attachment=False, mimetype="application/pdf")
+    from resume_html import resume_json_to_html, docx_to_html, _get_base_html_template
+
+    # 1. Master Resume Preview Requests
+    if clean_fp in ("master", "master_resume", "master_resume.docx", "master.docx"):
+        # Priority 1: Render directly from base_resume.json for instant, pixel-perfect HTML preview
+        if user_resume_path.exists():
+            try:
+                with open(user_resume_path, "r", encoding="utf-8") as f:
+                    r_data = json.load(f)
+                html_view = resume_json_to_html(r_data, role="Authentic Candidate Base Profile")
+                return Response(html_view, mimetype="text/html")
+            except Exception as e:
+                print(f"[Preview] Render master JSON error: {e}")
+
+        # Priority 2: Render from master_resume_original.docx via docx_to_html
         user_orig_docx = user_data_dir / "master_resume_original.docx"
         if user_orig_docx.exists():
-            from resume_builder import convert_to_pdf
             try:
-                pdf_p = convert_to_pdf(str(user_orig_docx))
-                return send_file(str(pdf_p), as_attachment=False, mimetype="application/pdf")
+                html_view = docx_to_html(str(user_orig_docx), role="Authentic Candidate Base Profile")
+                return Response(html_view, mimetype="text/html")
             except Exception as e:
                 print(f"[Preview] Convert master docx error: {e}")
 
-    # Standard path resolution
+        # Priority 3: Original PDF if exists and user requested it
+        user_orig_pdf = user_data_dir / "master_resume_original.pdf"
+        if user_orig_pdf.exists():
+            return send_file(str(user_orig_pdf), as_attachment=False, mimetype="application/pdf")
+
+    elif clean_fp in ("master.pdf", "master_resume_original.pdf", "master_resume.pdf"):
+        user_orig_pdf = user_data_dir / "master_resume_original.pdf"
+        if user_orig_pdf.exists():
+            return send_file(str(user_orig_pdf), as_attachment=False, mimetype="application/pdf")
+        # Otherwise render HTML version
+        if user_resume_path.exists():
+            with open(user_resume_path, "r", encoding="utf-8") as f:
+                r_data = json.load(f)
+            return Response(resume_json_to_html(r_data, role="Authentic Candidate Base Profile"), mimetype="text/html")
+
+    # 2. Standard Path Resolution
     target_path = Path(clean_fp)
     if not (target_path.is_absolute() and target_path.exists()):
         target_path = (user_output_dir / clean_fp).resolve()
@@ -1279,40 +1350,83 @@ def preview_file(filepath):
             matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
             target_path = matches[0].resolve()
 
-    # If PDF requested or target is docx, ensure we have a PDF for inline browser viewing
-    if clean_fp.lower().endswith(".docx") or target_path.suffix.lower() == ".docx":
-        pdf_cand = target_path.with_suffix(".pdf")
-        if pdf_cand.exists():
-            target_path = pdf_cand
-        else:
+    # If file was not found on disk, attempt self-healing from base_resume.json
+    if not target_path.exists() and ("resume" in clean_fp.lower() or clean_fp.endswith((".docx", ".pdf"))):
+        folder_part = Path(clean_fp).parent.name
+        if folder_part and "_" in folder_part and user_resume_path.exists():
             try:
-                from resume_builder import convert_to_pdf
-                pdf_res = convert_to_pdf(str(target_path))
-                if pdf_res and Path(pdf_res).exists():
-                    target_path = Path(pdf_res).resolve()
+                parts = folder_part.split("_", 1)
+                comp = parts[0]
+                rol = parts[1] if len(parts) > 1 else ""
+                with open(user_resume_path, "r", encoding="utf-8") as rf:
+                    base_r = json.load(rf)
+                from resume_builder import build_resume_docx
+                regen_p = build_resume_docx(base_r, comp, rol, output_dir=str(user_output_dir))
+                if regen_p and os.path.exists(regen_p):
+                    target_path = Path(regen_p).resolve()
             except Exception as e:
-                print(f"[Preview] On-the-fly conversion error: {e}")
-    elif not target_path.exists() and clean_fp.lower().endswith(".pdf"):
-        docx_name = Path(clean_fp).stem + ".docx"
-        docx_matches = list(user_output_dir.rglob(docx_name))
-        if docx_matches:
-            docx_matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-            try:
-                from resume_builder import convert_to_pdf
-                pdf_res = convert_to_pdf(str(docx_matches[0]))
-                if pdf_res and Path(pdf_res).exists():
-                    target_path = Path(pdf_res).resolve()
-            except Exception as e:
-                print(f"[Preview] On-the-fly PDF conversion error: {e}")
+                print(f"[Preview] Auto-regen error: {e}")
 
-    if not target_path.exists() or not target_path.is_file():
-        return jsonify({"error": f"Preview file '{filepath}' not found"}), 404
+    # If target is still missing:
+    if not target_path.exists():
+        error_html = _get_base_html_template(
+            f"""<div style="text-align: center; padding: 60px 20px; color: #4b5563;">
+              <div style="font-size: 36px; margin-bottom: 12px; color: #9ca3af;"><i class="fa-solid fa-file-circle-exclamation"></i></div>
+              <h2 style="font-size: 18px; font-weight: 700; color: #111827; margin-bottom: 6px;">Document Ready to Generate</h2>
+              <p style="font-size: 13px; color: #6b7280; max-width: 480px; margin: 0 auto 16px;">
+                The document for <b>{html.escape(Path(clean_fp).name)}</b> can be generated by tailoring your resume in the Apply tab.
+              </p>
+            </div>""",
+            title="Resume Document Preview"
+        )
+        return Response(error_html, mimetype="text/html")
 
-    return send_file(
-        str(target_path),
-        as_attachment=False,
-        download_name=target_path.name,
-        mimetype="application/pdf" if target_path.suffix.lower() == ".pdf" else "application/octet-stream",
+    # 3. Check for tailored_resume.json in the same folder
+    json_cand = target_path.parent / "tailored_resume.json"
+    if json_cand.exists():
+        try:
+            with open(json_cand, "r", encoding="utf-8") as jf:
+                tailored_dict = json.load(jf)
+            html_view = resume_json_to_html(tailored_dict)
+            return Response(html_view, mimetype="text/html")
+        except Exception as e:
+            print(f"[Preview] Failed reading tailored_resume.json: {e}")
+
+    # 4. If DOCX file, convert to HTML on the fly (NEVER send docx directly to iframe!)
+    if target_path.suffix.lower() == ".docx":
+        try:
+            html_view = docx_to_html(str(target_path))
+            return Response(html_view, mimetype="text/html")
+        except Exception as e:
+            print(f"[Preview] Error converting docx to html: {e}")
+
+    # 5. If PDF file and exists, send inline
+    if target_path.suffix.lower() == ".pdf":
+        return send_file(
+            str(target_path),
+            as_attachment=False,
+            download_name=target_path.name,
+            mimetype="application/pdf",
+        )
+
+    # 6. If JSON file, render as resume HTML
+    if target_path.suffix.lower() == ".json":
+        try:
+            with open(target_path, "r", encoding="utf-8") as jf:
+                j_data = json.load(jf)
+            return Response(resume_json_to_html(j_data), mimetype="text/html")
+        except Exception as e:
+            print(f"[Preview] Error rendering json: {e}")
+
+    # 7. Fallback: Convert via docx_to_html or send text
+    if target_path.suffix.lower() in (".txt", ".md"):
+        content = target_path.read_text(encoding="utf-8", errors="replace")
+        return Response(_get_base_html_template(f"<pre style='white-space: pre-wrap; font-family: inherit;'>{html.escape(content)}</pre>"), mimetype="text/html")
+
+    # If completely unrecognized, send as html
+    return Response(
+        _get_base_html_template(f"<p>Document available: {html.escape(target_path.name)}</p>"),
+        mimetype="text/html"
     )
 
 
