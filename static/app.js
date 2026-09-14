@@ -1662,7 +1662,14 @@ async function analyzeJobKeywords(opts = {}) {
       })
     });
 
-    const data = await res.json();
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (parseErr) {
+      throw new Error(`Server returned HTTP ${res.status}: ${text ? text.slice(0, 200) : "Empty response from server"}`);
+    }
+
     analyzeBtn.disabled = false;
     analyzeBtn.innerHTML = `<i class="fa-solid fa-magnifying-glass"></i> Analyze & Cross-Check`;
 
@@ -1920,7 +1927,13 @@ async function testSimplifyConnection() {
   }
   try {
     const res = await fetch("/api/simplify/test", { method: "POST" });
-    const data = await res.json();
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (parseErr) {
+      throw new Error(`Server returned HTTP ${res.status}: ${text ? text.slice(0, 200) : "Empty response from server"}`);
+    }
     if (btn) {
       btn.disabled = false;
       btn.innerHTML = `<i class="fa-solid fa-plug-circle-check text-cyan"></i> Test Simplify Connection`;
