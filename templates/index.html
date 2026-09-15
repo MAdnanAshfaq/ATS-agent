@@ -1707,7 +1707,7 @@
 
   <!-- ── UNIVERSAL LIVE CONSOLE LAUNCHER & DRAWER ────────────────────────── -->
   <!-- Floating Launcher Button on Side/Bottom -->
-  <div id="universal-console-launcher" class="universal-console-launcher" onclick="toggleUniversalConsole()" title="Open Live Render & Backend Terminal">
+  <div id="universal-console-launcher" class="universal-console-launcher" onclick="toggleUniversalConsole(undefined, event)" title="Open Live Render & Backend Terminal">
     <div class="console-launcher-icon-wrap">
       <i class="fa-solid fa-terminal"></i>
       <span class="console-pulse-ring"></span>
@@ -1717,8 +1717,10 @@
       <span class="console-pill-title">Live Terminal</span>
       <span class="console-pill-sub">Cloud Console</span>
     </div>
+  </div>
+
   <!-- Universal Slide-Out Live Console Drawer Backdrop -->
-  <div id="universal-console-backdrop" class="universal-console-backdrop hidden" onclick="toggleUniversalConsole(false)"></div>
+  <div id="universal-console-backdrop" class="universal-console-backdrop hidden" onclick="toggleUniversalConsole(false, event)"></div>
 
   <!-- Universal Slide-Out Live Console Drawer -->
   <div id="universal-console-drawer" class="universal-console-drawer hidden">
@@ -1726,7 +1728,7 @@
     <div class="universal-console-header">
       <div class="console-header-left">
         <div class="terminal-dots">
-          <span class="dot dot-red" onclick="toggleUniversalConsole(false)" title="Close Console (Esc)"></span>
+          <span class="dot dot-red" onclick="toggleUniversalConsole(false, event)" title="Close Console (Esc)"></span>
           <span class="dot dot-yellow" onclick="clearUniversalConsole()" title="Clear Output"></span>
           <span class="dot dot-green" onclick="toggleConsoleMaximize()" title="Toggle Fullscreen"></span>
         </div>
@@ -1759,7 +1761,7 @@
             <i class="fa-solid fa-expand"></i>
           </button>
           <!-- Prominent High-Contrast Close Button -->
-          <button type="button" class="btn-console-close-prominent" onclick="toggleUniversalConsole(false)" title="Close Terminal (Esc)">
+          <button type="button" class="btn-console-close-prominent" onclick="toggleUniversalConsole(false, event)" title="Close Terminal (Esc)">
             <i class="fa-solid fa-xmark"></i>
             <span>Close</span>
           </button>
@@ -1778,15 +1780,23 @@
         <button type="button" class="console-filter-btn" data-filter="error" onclick="filterConsole('error')">Errors</button>
       </div>
 
-      <!-- Search / Filter Sub-Bar -->
-      <div class="console-search-bar">
-        <i class="fa-solid fa-magnifying-glass"></i>
-        <input type="text" id="console-search-input" placeholder="Filter console logs (e.g. scrape, gemini, simplify, exception)..." oninput="handleConsoleSearch(this.value)">
-        <span class="console-log-counter" id="console-log-counter">0 lines</span>
+      <!-- Log Search Box -->
+      <div class="console-search-wrap">
+        <i class="fa-solid fa-magnifying-glass console-search-icon"></i>
+        <input
+          type="text"
+          id="console-search-input"
+          class="console-search-input"
+          placeholder="Filter live log stream..."
+          oninput="handleConsoleSearch(this.value)"
+        >
+        <button type="button" class="console-search-clear hidden" id="console-search-clear" onclick="clearConsoleSearch()" title="Clear filter">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
       </div>
     </div>
 
-    <!-- Terminal Screen Body -->
+    <!-- Terminal Output Log Container -->
     <div class="universal-console-body" id="universal-console-body">
       <!-- Output lines dynamically rendered -->
     </div>
@@ -1805,7 +1815,7 @@
 
   <!-- ── HOLLABUDDY FLOATING AI COPILOT LAUNCHER & DRAWER ────────────────── -->
   <!-- Cute Floating Launcher Widget (Available anytime, instant) -->
-  <div id="hollabuddy-launcher" class="hollabuddy-launcher" onclick="toggleHollaBuddy()" title="Chat with HollaBuddy AI Career Copilot">
+  <div id="hollabuddy-launcher" class="hollabuddy-launcher" onclick="toggleHollaBuddy(undefined, event)" title="Chat with HollaBuddy AI Career Copilot">
     <div class="hollabuddy-avatar-wrap">
       <div class="hollabuddy-bot-icon">
         <i class="fa-solid fa-robot"></i>

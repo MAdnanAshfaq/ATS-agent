@@ -3248,7 +3248,10 @@ document.addEventListener("keydown", (e) => {
 let hollabuddyChatHistory = [];
 let hollabuddyActiveJob = null;
 
-function toggleHollaBuddy(forceOpen) {
+function toggleHollaBuddy(forceOpen, evt) {
+  if (evt && typeof evt.stopPropagation === "function") {
+    evt.stopPropagation();
+  }
   const drawer = document.getElementById("hollabuddy-drawer");
   const launcher = document.getElementById("hollabuddy-launcher");
   if (!drawer) return;
@@ -3784,7 +3787,10 @@ let consoleCurrentFilter = "all";
 let consoleSearchQuery = "";
 let consoleHasFetchedInitial = false;
 
-function toggleUniversalConsole(forceState) {
+function toggleUniversalConsole(forceState, evt) {
+  if (evt && typeof evt.stopPropagation === "function") {
+    evt.stopPropagation();
+  }
   const drawer = document.getElementById("universal-console-drawer");
   const launcher = document.getElementById("universal-console-launcher");
   const headerBtn = document.getElementById("header-console-btn");

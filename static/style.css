@@ -3213,7 +3213,7 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
 .universal-console-launcher {
   position: fixed;
   bottom: 24px;
-  right: 185px; /* Neatly paired next to HollaBuddy at right: 28px */
+  right: 215px; /* Generously spaced next to HollaBuddy at right: 28px (width ~155px) */
   z-index: 9998;
   display: flex;
   align-items: center;
@@ -3707,10 +3707,10 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   color: #94a3b8;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 992px) {
   .universal-console-launcher {
-    right: 20px;
-    bottom: 85px; /* Stack above HollaBuddy on mobile */
+    right: 28px;
+    bottom: 84px; /* Stack cleanly above HollaBuddy on tablets and mobile */
   }
   .universal-console-drawer {
     width: 100vw;
