@@ -2395,6 +2395,8 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   width: 100%;
   height: 100%;
   transform-origin: center center;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
 }
 
 /* Idle floating */
@@ -2418,14 +2420,29 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   100% { transform: scale(1, 1) translateY(0); }
 }
 
-/* Giggle wiggle when belly tickled */
+/* Realistic Bouncy Belly Laugh Giggle */
 .hb-character-stage.giggle-wiggle {
-  animation: hbGiggle 0.45s ease-in-out 3;
+  animation: hbGiggleLaughter 0.5s ease-in-out 3;
 }
-@keyframes hbGiggle {
-  0%, 100% { transform: rotate(0deg) scale(1.02); }
-  25%      { transform: rotate(-8deg) scale(1.08, 0.95); }
-  75%      { transform: rotate(8deg) scale(1.08, 0.95); }
+@keyframes hbGiggleLaughter {
+  0%, 100% { transform: translateY(0) scale(1) rotate(0deg); }
+  12%      { transform: translateY(-4px) scale(1.05, 0.95) rotate(-2deg); }
+  26%      { transform: translateY(2px) scale(0.97, 1.03) rotate(2deg); }
+  40%      { transform: translateY(-5px) scale(1.06, 0.94) rotate(-2.5deg); }
+  55%      { transform: translateY(1px) scale(0.96, 1.04) rotate(2deg); }
+  70%      { transform: translateY(-3px) scale(1.04, 0.96) rotate(-1.5deg); }
+  85%      { transform: translateY(1px) scale(0.98, 1.02) rotate(1deg); }
+}
+
+/* Cheerful Hand Wave Perk */
+.hb-character-stage.hand-wave-perk {
+  animation: hbWavePerk 0.65s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+@keyframes hbWavePerk {
+  0%   { transform: translateY(0) scale(1) rotate(0deg); }
+  35%  { transform: translateY(-7px) scale(1.05) rotate(3deg); }
+  65%  { transform: translateY(-2px) scale(1.02) rotate(-1deg); }
+  100% { transform: translateY(0) scale(1) rotate(0deg); }
 }
 
 /* Lottie SVG Canvas */

@@ -3319,7 +3319,7 @@ function initInteractiveHollaBuddy() {
     return;
   }
 
-  // 1. Initialize Lottie Animation
+  // 1. Initialize Lottie Animation (Preserve all internal layers intact)
   let botAnim = null;
   const lottieConfig = {
     container: canvas,
@@ -3336,29 +3336,6 @@ function initInteractiveHollaBuddy() {
     lottieConfig.path = "https://lottie.host/a0a3e050-db0c-44be-bc89-1b6145620772/bbPYTuDKgM.json";
     botAnim = lottie.loadAnimation(lottieConfig);
   }
-
-  let eyeElements = [];
-  let handLElement = null;
-  let handRElement = null;
-  let bodyElement = null;
-
-  botAnim.addEventListener("DOMLoaded", () => {
-    if (botAnim.renderer && botAnim.renderer.elements) {
-      botAnim.renderer.elements.forEach((el) => {
-        if (!el.data || !el.data.nm || !el.layerElement) return;
-        const nm = el.data.nm;
-        if (nm.includes("глаз") || nm.includes("блеск")) {
-          eyeElements.push(el.layerElement);
-        } else if (nm.includes("рука 2")) {
-          handLElement = el.layerElement;
-        } else if (nm.includes("рука 1")) {
-          handRElement = el.layerElement;
-        } else if (nm.includes("тело")) {
-          bodyElement = el.layerElement;
-        }
-      });
-    }
-  });
 
   // 2. Position Restoration & Viewport Clamping
   const defaultW = 168;
@@ -3386,26 +3363,22 @@ function initInteractiveHollaBuddy() {
     container.style.top = clampedY + "px";
   });
 
-  // 3. Eye Tracking Cursor
+  // 3. Natural 3D Head & Body Cursor Tracking (tilts whole character toward cursor without tampering with SVG eyes)
   window.addEventListener("mousemove", (e) => {
-    if (isDragging) return;
+    if (isDragging || isGiggling) return;
 
     const rect = container.getBoundingClientRect();
     const botCenterX = rect.left + rect.width * 0.5;
-    const botCenterY = rect.top + rect.height * 0.42;
+    const botCenterY = rect.top + rect.height * 0.45;
 
-    const dx = e.clientX - botCenterX;
-    const dy = e.clientY - botCenterY;
-    const dist = Math.hypot(dx, dy);
+    const normX = (e.clientX - botCenterX) / (window.innerWidth / 2);
+    const normY = (e.clientY - botCenterY) / (window.innerHeight / 2);
 
-    if (dist > 5 && eyeElements.length > 0) {
-      const maxShift = 5.5;
-      const shiftX = Math.max(-maxShift, Math.min(maxShift, (dx / dist) * Math.min(maxShift, dist * 0.04)));
-      const shiftY = Math.max(-maxShift * 0.7, Math.min(maxShift * 0.7, (dy / dist) * Math.min(maxShift * 0.7, dist * 0.04)));
+    const tiltY = Math.max(-8, Math.min(8, normX * 8));
+    const tiltX = Math.max(-6, Math.min(6, -normY * 6));
 
-      eyeElements.forEach((el) => {
-        el.style.transform = `translate(${shiftX}px, ${shiftY}px)`;
-      });
+    if (!stage.classList.contains("giggle-wiggle") && !stage.classList.contains("landing-bounce") && !stage.classList.contains("hand-wave-perk")) {
+      stage.style.transform = `perspective(500px) rotateY(${tiltY}deg) rotateX(${tiltX}deg)`;
     }
   });
 
@@ -3432,7 +3405,7 @@ function initInteractiveHollaBuddy() {
     lastY = clientY;
     lastTime = performance.now();
 
-    stage.classList.remove("idle-float", "landing-bounce");
+    stage.classList.remove("idle-float", "landing-bounce", "hand-wave-perk");
     container.classList.add("is-dragging");
   }
 
@@ -3492,7 +3465,7 @@ function initInteractiveHollaBuddy() {
       stage.classList.add("landing-bounce");
       setTimeout(() => {
         stage.classList.remove("landing-bounce");
-        stage.classList.add("idle-float");
+        if (!isGiggling) stage.classList.add("idle-float");
       }, 600);
 
       // Save position
@@ -3529,28 +3502,41 @@ function initInteractiveHollaBuddy() {
     endDrag();
   });
 
-  // 5. Hand Reactions & Wave Sparkle Burst
+  // 5. Natural Hand Reactions & Cheerful Wave Bounce
+  let waveTimer = null;
   function triggerHandReaction(isLeft) {
-    const handEl = isLeft ? handLElement : handRElement;
-    if (handEl) {
-      handEl.style.transition = "transform 0.15s ease";
-      handEl.style.transform = isLeft ? "rotate(-18deg) scale(1.15)" : "rotate(18deg) scale(1.15)";
-      setTimeout(() => {
-        handEl.style.transform = "";
-      }, 350);
+    if (isDragging) return;
+
+    // Cheer up Lottie arm wave loop speed!
+    if (botAnim && typeof botAnim.setSpeed === "function") {
+      botAnim.setSpeed(1.6);
+      clearTimeout(waveTimer);
+      waveTimer = setTimeout(() => {
+        if (!isGiggling && botAnim) botAnim.setSpeed(1.0);
+      }, 900);
     }
+
+    // Playful cheer bounce on character stage (hands remain anatomically connected to body!)
+    stage.classList.remove("idle-float", "hand-wave-perk");
+    void stage.offsetWidth;
+    stage.classList.add("hand-wave-perk");
+    setTimeout(() => {
+      stage.classList.remove("hand-wave-perk");
+      if (!isDragging && !isGiggling) stage.classList.add("idle-float");
+    }, 650);
 
     const rect = (isLeft ? hotspotL : hotspotR).getBoundingClientRect();
     spawnParticles(["👋", "✨", "⭐", "💫"], rect.left + rect.width / 2, rect.top);
-    showSpeech(isLeft ? "Hey there! 👋" : "High five! ⭐");
+    showSpeech(isLeft ? "Hey friend! 👋" : "High five! Let's tailor! ⭐");
   }
 
   if (hotspotL) hotspotL.addEventListener("pointerenter", () => triggerHandReaction(true));
   if (hotspotR) hotspotR.addEventListener("pointerenter", () => triggerHandReaction(false));
 
-  // 6. Tickle the Belly (Rapid Reversals Required!)
+  // 6. Realistic Belly Tickle Engine (Rapid scrubbing/direction reversals)
   let tickleMoves = [];
   let isGiggling = false;
+  let giggleTimer = null;
 
   if (hotspotBody) {
     hotspotBody.addEventListener("pointermove", (e) => {
@@ -3558,14 +3544,15 @@ function initInteractiveHollaBuddy() {
 
       const now = performance.now();
       tickleMoves.push({ x: e.clientX, y: e.clientY, t: now });
-      tickleMoves = tickleMoves.filter((m) => now - m.t < 650);
+      tickleMoves = tickleMoves.filter((m) => now - m.t < 600);
 
-      if (tickleMoves.length >= 6) {
+      // Require at least 5 movement points within 600ms
+      if (tickleMoves.length >= 5) {
         let reversals = 0;
         let lastDx = 0;
         for (let i = 1; i < tickleMoves.length; i++) {
           const dx = tickleMoves[i].x - tickleMoves[i - 1].x;
-          if (Math.abs(dx) > 3) {
+          if (Math.abs(dx) > 3.5) {
             if (lastDx !== 0 && ((dx > 0 && lastDx < 0) || (dx < 0 && lastDx > 0))) {
               reversals++;
             }
@@ -3573,6 +3560,7 @@ function initInteractiveHollaBuddy() {
           }
         }
 
+        // At least 2 rapid back-and-forth direction reversals needed to count as a tickle
         if (reversals >= 2) {
           triggerTickleGiggle();
           tickleMoves = [];
@@ -3584,21 +3572,41 @@ function initInteractiveHollaBuddy() {
   function triggerTickleGiggle() {
     if (isGiggling) return;
     isGiggling = true;
-    stage.classList.remove("idle-float");
+
+    // 1. Accelerate Lottie animation to high-energy excited laugh!
+    if (botAnim && typeof botAnim.setSpeed === "function") {
+      botAnim.setSpeed(2.0);
+    }
+
+    // 2. Playful laughter vibration with squash & stretch
+    stage.classList.remove("idle-float", "hand-wave-perk");
+    void stage.offsetWidth;
     stage.classList.add("giggle-wiggle");
 
+    // 3. Spawn laughter emojis & sparkles from belly
     const rect = hotspotBody.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
     const cy = rect.top + rect.height / 2;
+    spawnParticles(["😆", "✨", "💖", "🥰", "🤭"], cx, cy, 7);
 
-    spawnParticles(["😄", "😆", "✨", "💖", "🥰"], cx, cy, 7);
-    showSpeech("Hehehe! Stop tickling! 😄", 1600);
+    // 4. Playful speech bubble
+    const gigglePhrases = [
+      "Hahaha! Stop, that tickles! 😆",
+      "Hehehe! Can't stop giggling! 🥰",
+      "Tickle attack! Let's get back to work! 🚀"
+    ];
+    showSpeech(gigglePhrases[Math.floor(Math.random() * gigglePhrases.length)], 1800);
 
-    setTimeout(() => {
+    // 5. Smooth recovery back to idle
+    clearTimeout(giggleTimer);
+    giggleTimer = setTimeout(() => {
       stage.classList.remove("giggle-wiggle");
-      stage.classList.add("idle-float");
+      if (!isDragging) stage.classList.add("idle-float");
+      if (botAnim && typeof botAnim.setSpeed === "function") {
+        botAnim.setSpeed(1.0);
+      }
       isGiggling = false;
-    }, 1400);
+    }, 1500);
   }
 
   // 7. Particle Spawner
