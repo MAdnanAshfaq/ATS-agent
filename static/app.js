@@ -3279,7 +3279,7 @@ function toggleHollaBuddy(forceOpen, evt) {
     evt.stopPropagation();
   }
   const drawer = document.getElementById("hollabuddy-drawer");
-  const launcher = document.getElementById("hollabuddy-launcher");
+  const launcher = document.getElementById("hollabuddy-companion") || document.getElementById("hollabuddy-launcher");
   if (!drawer) return;
 
   const isOpen = !drawer.classList.contains("hidden");
@@ -3296,6 +3296,338 @@ function toggleHollaBuddy(forceOpen, evt) {
   } else {
     drawer.classList.add("hidden");
     if (launcher) launcher.classList.remove("active");
+  }
+}
+
+/* ==========================================================================
+   HollaBuddy Living Interactive Companion (Lottie, Thrust Drag & Physics)
+   ========================================================================== */
+function initInteractiveHollaBuddy() {
+  const container = document.getElementById("hollabuddy-companion");
+  const canvas = document.getElementById("hollabuddy-lottie-canvas");
+  const stage = document.getElementById("hb-stage");
+  const flame = document.getElementById("hb-rocket-flame");
+  const hotspotL = document.getElementById("hotspot-hand-l");
+  const hotspotR = document.getElementById("hotspot-hand-r");
+  const hotspotBody = document.getElementById("hotspot-body");
+  const speech = document.getElementById("hb-speech-bubble");
+
+  if (!container || !canvas || !stage || !flame) return;
+  if (typeof lottie === "undefined") {
+    console.warn("[HollaBuddy] Lottie library not loaded yet, retrying in 300ms...");
+    setTimeout(initInteractiveHollaBuddy, 300);
+    return;
+  }
+
+  // 1. Initialize Lottie Animation
+  let botAnim = null;
+  const lottieConfig = {
+    container: canvas,
+    renderer: "svg",
+    loop: true,
+    autoplay: true,
+    path: "/static/hollabuddy-bot.json",
+  };
+
+  try {
+    botAnim = lottie.loadAnimation(lottieConfig);
+  } catch (err) {
+    console.warn("[HollaBuddy] Local Lottie load error, trying fallback remote URL...", err);
+    lottieConfig.path = "https://lottie.host/a0a3e050-db0c-44be-bc89-1b6145620772/bbPYTuDKgM.json";
+    botAnim = lottie.loadAnimation(lottieConfig);
+  }
+
+  let eyeElements = [];
+  let handLElement = null;
+  let handRElement = null;
+  let bodyElement = null;
+
+  botAnim.addEventListener("DOMLoaded", () => {
+    if (botAnim.renderer && botAnim.renderer.elements) {
+      botAnim.renderer.elements.forEach((el) => {
+        if (!el.data || !el.data.nm || !el.layerElement) return;
+        const nm = el.data.nm;
+        if (nm.includes("глаз") || nm.includes("блеск")) {
+          eyeElements.push(el.layerElement);
+        } else if (nm.includes("рука 2")) {
+          handLElement = el.layerElement;
+        } else if (nm.includes("рука 1")) {
+          handRElement = el.layerElement;
+        } else if (nm.includes("тело")) {
+          bodyElement = el.layerElement;
+        }
+      });
+    }
+  });
+
+  // 2. Position Restoration & Viewport Clamping
+  let posX = window.innerWidth - 170;
+  let posY = window.innerHeight - 150;
+  try {
+    const saved = JSON.parse(localStorage.getItem("hollabuddy_pos"));
+    if (saved && typeof saved.x === "number" && typeof saved.y === "number") {
+      posX = Math.max(10, Math.min(window.innerWidth - 150, saved.x));
+      posY = Math.max(10, Math.min(window.innerHeight - 130, saved.y));
+    }
+  } catch (e) {}
+
+  container.style.left = posX + "px";
+  container.style.top = posY + "px";
+
+  // Re-clamp on window resize
+  window.addEventListener("resize", () => {
+    const curX = container.offsetLeft;
+    const curY = container.offsetTop;
+    const clampedX = Math.max(10, Math.min(window.innerWidth - container.offsetWidth - 10, curX));
+    const clampedY = Math.max(10, Math.min(window.innerHeight - container.offsetHeight - 10, curY));
+    container.style.left = clampedX + "px";
+    container.style.top = clampedY + "px";
+  });
+
+  // 3. Eye Tracking Cursor
+  window.addEventListener("mousemove", (e) => {
+    if (isDragging) return;
+
+    const rect = container.getBoundingClientRect();
+    const botCenterX = rect.left + rect.width * 0.5;
+    const botCenterY = rect.top + rect.height * 0.42;
+
+    const dx = e.clientX - botCenterX;
+    const dy = e.clientY - botCenterY;
+    const dist = Math.hypot(dx, dy);
+
+    if (dist > 5 && eyeElements.length > 0) {
+      const maxShift = 5.5;
+      const shiftX = Math.max(-maxShift, Math.min(maxShift, (dx / dist) * Math.min(maxShift, dist * 0.04)));
+      const shiftY = Math.max(-maxShift * 0.7, Math.min(maxShift * 0.7, (dy / dist) * Math.min(maxShift * 0.7, dist * 0.04)));
+
+      eyeElements.forEach((el) => {
+        el.style.transform = `translate(${shiftX}px, ${shiftY}px)`;
+      });
+    }
+  });
+
+  // 4. Draggable with Rocket Flame & Physics
+  let isDragging = false;
+  let hasMoved = false;
+  let dragStartX = 0;
+  let dragStartY = 0;
+  let initBotX = 0;
+  let initBotY = 0;
+  let lastX = 0;
+  let lastY = 0;
+  let lastTime = 0;
+  let flameAngle = 0;
+
+  function startDrag(clientX, clientY) {
+    isDragging = true;
+    hasMoved = false;
+    dragStartX = clientX;
+    dragStartY = clientY;
+    initBotX = container.offsetLeft;
+    initBotY = container.offsetTop;
+    lastX = clientX;
+    lastY = clientY;
+    lastTime = performance.now();
+
+    stage.classList.remove("idle-float", "landing-bounce");
+    container.classList.add("is-dragging");
+  }
+
+  function onDragMove(clientX, clientY) {
+    if (!isDragging) return;
+    const dist = Math.hypot(clientX - dragStartX, clientY - dragStartY);
+    if (dist > 5) hasMoved = true;
+
+    if (!hasMoved) return;
+
+    const dx = clientX - dragStartX;
+    const dy = clientY - dragStartY;
+
+    let newX = initBotX + dx;
+    let newY = initBotY + dy;
+
+    // Viewport clamp
+    newX = Math.max(10, Math.min(window.innerWidth - container.offsetWidth - 10, newX));
+    newY = Math.max(10, Math.min(window.innerHeight - container.offsetHeight - 10, newY));
+
+    container.style.left = newX + "px";
+    container.style.top = newY + "px";
+
+    // Rocket flame physics & dynamic tilt
+    const now = performance.now();
+    const dt = Math.max(1, now - lastTime);
+    const vx = (clientX - lastX) / dt;
+    const vy = (clientY - lastY) / dt;
+    const speed = Math.hypot(vx, vy);
+
+    if (speed > 0.05) {
+      // Flame points OPPOSITE to movement direction
+      const moveAngle = (Math.atan2(vy, vx) * 180) / Math.PI;
+      flameAngle = moveAngle - 90; // Default flame points straight down (90deg)
+      flame.style.transform = `rotate(${flameAngle}deg)`;
+      flame.classList.add("active");
+
+      // Character body tilts into drag direction
+      const tilt = Math.max(-14, Math.min(14, vx * 12));
+      stage.style.transform = `rotate(${tilt}deg) scale(1.05)`;
+    }
+
+    lastX = clientX;
+    lastY = clientY;
+    lastTime = now;
+  }
+
+  function endDrag() {
+    if (!isDragging) return;
+    isDragging = false;
+    container.classList.remove("is-dragging");
+    flame.classList.remove("active");
+    stage.style.transform = "";
+
+    if (hasMoved) {
+      // Landing bounce
+      stage.classList.add("landing-bounce");
+      setTimeout(() => {
+        stage.classList.remove("landing-bounce");
+        stage.classList.add("idle-float");
+      }, 600);
+
+      // Save position
+      try {
+        localStorage.setItem("hollabuddy_pos", JSON.stringify({
+          x: container.offsetLeft,
+          y: container.offsetTop,
+        }));
+      } catch (e) {}
+    } else {
+      stage.classList.add("idle-float");
+      // Click action: Toggle Drawer!
+      toggleHollaBuddy();
+      showSpeech("Ready to tailor & prep! 🚀", 1400);
+    }
+  }
+
+  container.addEventListener("pointerdown", (e) => {
+    if (e.target.closest(".hb-speech-bubble")) return;
+    try {
+      container.setPointerCapture(e.pointerId);
+    } catch (err) {}
+    startDrag(e.clientX, e.clientY);
+  });
+
+  window.addEventListener("pointermove", (e) => {
+    onDragMove(e.clientX, e.clientY);
+  });
+
+  window.addEventListener("pointerup", () => {
+    endDrag();
+  });
+  window.addEventListener("pointercancel", () => {
+    endDrag();
+  });
+
+  // 5. Hand Reactions & Wave Sparkle Burst
+  function triggerHandReaction(isLeft) {
+    const handEl = isLeft ? handLElement : handRElement;
+    if (handEl) {
+      handEl.style.transition = "transform 0.15s ease";
+      handEl.style.transform = isLeft ? "rotate(-18deg) scale(1.15)" : "rotate(18deg) scale(1.15)";
+      setTimeout(() => {
+        handEl.style.transform = "";
+      }, 350);
+    }
+
+    const rect = (isLeft ? hotspotL : hotspotR).getBoundingClientRect();
+    spawnParticles(["👋", "✨", "⭐", "💫"], rect.left + rect.width / 2, rect.top);
+    showSpeech(isLeft ? "Hey there! 👋" : "High five! ⭐");
+  }
+
+  if (hotspotL) hotspotL.addEventListener("pointerenter", () => triggerHandReaction(true));
+  if (hotspotR) hotspotR.addEventListener("pointerenter", () => triggerHandReaction(false));
+
+  // 6. Tickle the Belly (Rapid Reversals Required!)
+  let tickleMoves = [];
+  let isGiggling = false;
+
+  if (hotspotBody) {
+    hotspotBody.addEventListener("pointermove", (e) => {
+      if (isDragging || isGiggling) return;
+
+      const now = performance.now();
+      tickleMoves.push({ x: e.clientX, y: e.clientY, t: now });
+      tickleMoves = tickleMoves.filter((m) => now - m.t < 650);
+
+      if (tickleMoves.length >= 6) {
+        let reversals = 0;
+        let lastDx = 0;
+        for (let i = 1; i < tickleMoves.length; i++) {
+          const dx = tickleMoves[i].x - tickleMoves[i - 1].x;
+          if (Math.abs(dx) > 3) {
+            if (lastDx !== 0 && ((dx > 0 && lastDx < 0) || (dx < 0 && lastDx > 0))) {
+              reversals++;
+            }
+            lastDx = dx;
+          }
+        }
+
+        if (reversals >= 2) {
+          triggerTickleGiggle();
+          tickleMoves = [];
+        }
+      }
+    });
+  }
+
+  function triggerTickleGiggle() {
+    if (isGiggling) return;
+    isGiggling = true;
+    stage.classList.remove("idle-float");
+    stage.classList.add("giggle-wiggle");
+
+    const rect = hotspotBody.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+
+    spawnParticles(["😄", "😆", "✨", "💖", "🥰"], cx, cy, 7);
+    showSpeech("Hehehe! Stop tickling! 😄", 1600);
+
+    setTimeout(() => {
+      stage.classList.remove("giggle-wiggle");
+      stage.classList.add("idle-float");
+      isGiggling = false;
+    }, 1400);
+  }
+
+  // 7. Particle Spawner
+  function spawnParticles(emojis, originX, originY, count = 4) {
+    for (let i = 0; i < count; i++) {
+      const p = document.createElement("span");
+      p.className = "hb-particle";
+      p.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+      p.style.left = originX + "px";
+      p.style.top = originY + "px";
+
+      const dx = (Math.random() - 0.5) * 60;
+      const dy = -(25 + Math.random() * 45);
+      p.style.setProperty("--p-dx", dx + "px");
+      p.style.setProperty("--p-dy", dy + "px");
+
+      document.body.appendChild(p);
+      setTimeout(() => p.remove(), 900);
+    }
+  }
+
+  // 8. Speech Bubble Controller
+  let speechTimer = null;
+  function showSpeech(text, duration = 1400) {
+    if (!speech) return;
+    speech.textContent = text;
+    speech.classList.add("visible");
+    clearTimeout(speechTimer);
+    speechTimer = setTimeout(() => {
+      speech.classList.remove("visible");
+    }, duration);
   }
 }
 
@@ -4124,10 +4456,12 @@ if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
     setTimeout(initConsoleStream, 1500);
     setTimeout(checkUrlAutoFill, 300);
+    initInteractiveHollaBuddy();
   });
 } else {
   setTimeout(initConsoleStream, 1500);
   setTimeout(checkUrlAutoFill, 300);
+  initInteractiveHollaBuddy();
 }
 
 /* ==========================================================================

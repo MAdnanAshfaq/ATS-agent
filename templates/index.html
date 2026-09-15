@@ -1862,18 +1862,32 @@
     </div>
   </div>
 
-  <!-- ── HOLLABUDDY FLOATING AI COPILOT LAUNCHER & DRAWER ────────────────── -->
-  <!-- Cute Floating Launcher Widget (Available anytime, instant) -->
-  <div id="hollabuddy-launcher" class="hollabuddy-launcher" onclick="toggleHollaBuddy(undefined, event)" title="Chat with HollaBuddy AI Career Copilot">
-    <div class="hollabuddy-avatar-wrap">
-      <div class="hollabuddy-bot-icon">
-        <i class="fa-solid fa-robot"></i>
+  <!-- ── HOLLABUDDY LIVING INTERACTIVE COMPANION & DRAWER ──────────────────── -->
+  <!-- Draggable, interactive Lottie companion with rocket thrust & reactions -->
+  <div id="hollabuddy-companion" class="hollabuddy-companion" title="HollaBuddy AI — Drag me anywhere or click to chat!">
+    <div class="hb-character-stage idle-float" id="hb-stage">
+      <!-- Lottie Animation Canvas -->
+      <div id="hollabuddy-lottie-canvas" class="hb-lottie-canvas"></div>
+
+      <!-- Blue Rocket Flame (activates during drag) -->
+      <div id="hb-rocket-flame" class="hb-rocket-flame">
+        <div class="hb-flame-core"></div>
+        <div class="hb-flame-inner"></div>
       </div>
-      <span class="hollabuddy-status-dot"></span>
+
+      <!-- Interactive Hotspot Zones -->
+      <div id="hotspot-hand-l" class="hb-hotspot" title="Wave to HollaBuddy!"></div>
+      <div id="hotspot-hand-r" class="hb-hotspot" title="High five!"></div>
+      <div id="hotspot-body" class="hb-hotspot" title="Tickle HollaBuddy!"></div>
+
+      <!-- Floating Speech Bubble -->
+      <div id="hb-speech-bubble" class="hb-speech-bubble">👋 Ready to prep!</div>
     </div>
-    <div class="hollabuddy-launcher-pill">
-      <span class="hollabuddy-name-label">HollaBuddy</span>
-      <span class="hollabuddy-status-label">Career AI</span>
+
+    <!-- Status pill badge under companion -->
+    <div class="hb-pill-label">
+      <span class="hb-pill-dot"></span>
+      <span class="hb-pill-name">HollaBuddy</span>
     </div>
   </div>
 
@@ -1997,7 +2011,10 @@
   <!-- Notification Toast -->
   <div id="toast-container" class="toast-container"></div>
 
+  <!-- Lottie Web Animation Engine -->
+  <script src="/static/lottie.min.js"></script>
+
   <!-- JavaScript Application Bundle -->
-  <script src="/static/app.js?v=9"></script>
+  <script src="/static/app.js?v=11"></script>
 </body>
 </html>

@@ -2304,91 +2304,243 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
    HOLLABUDDY AI CAREER COPILOT & INTERVIEW WINGMAN STYLES
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Floating Launcher Widget */
-.hollabuddy-launcher {
+/* ═══════════════════════════════════════════════════════════════════════════
+   HOLLABUDDY LIVING INTERACTIVE COMPANION & FLOATING WIDGET
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Draggable Living Companion Widget */
+.hollabuddy-companion {
   position: fixed;
   bottom: 24px;
   right: 28px;
+  width: 136px;
+  height: 110px;
   z-index: 9998;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: rgba(18, 22, 34, 0.92);
-  border: 1px solid rgba(0, 216, 255, 0.3);
-  padding: 6px 14px 6px 6px;
-  border-radius: 999px;
-  cursor: pointer;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 0 15px rgba(0, 216, 255, 0.2);
-  backdrop-filter: blur(12px);
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: grab;
+  touch-action: none;
+  filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.65));
+  transition: filter 0.2s ease;
   user-select: none;
 }
 
-.hollabuddy-launcher:hover {
-  transform: translateY(-3px) scale(1.03);
-  border-color: rgba(0, 216, 255, 0.6);
-  box-shadow: 0 14px 30px -5px rgba(0, 0, 0, 0.6), 0 0 22px rgba(0, 216, 255, 0.35);
+.hollabuddy-companion:active,
+.hollabuddy-companion.is-dragging {
+  cursor: grabbing;
+  filter: drop-shadow(0 18px 36px rgba(0, 216, 255, 0.45));
 }
 
-.hollabuddy-launcher.active {
-  border-color: #00d8ff;
-  box-shadow: 0 0 25px rgba(0, 216, 255, 0.4);
+.hollabuddy-companion.active {
+  filter: drop-shadow(0 0 25px rgba(0, 216, 255, 0.5));
 }
 
-.hollabuddy-avatar-wrap {
+.hb-character-stage {
   position: relative;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.hollabuddy-bot-icon {
   width: 100%;
   height: 100%;
+  transform-origin: center center;
+}
+
+/* Idle floating */
+.hb-character-stage.idle-float {
+  animation: hbIdleFloat 3.8s ease-in-out infinite;
+}
+@keyframes hbIdleFloat {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50%      { transform: translateY(-7px) rotate(1.2deg); }
+}
+
+/* Landing bounce on release */
+.hb-character-stage.landing-bounce {
+  animation: hbLandingBounce 0.55s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+@keyframes hbLandingBounce {
+  0%   { transform: scale(1, 1); }
+  30%  { transform: scale(1.18, 0.82) translateY(6px); }
+  55%  { transform: scale(0.92, 1.08) translateY(-4px); }
+  75%  { transform: scale(1.04, 0.96) translateY(1px); }
+  100% { transform: scale(1, 1) translateY(0); }
+}
+
+/* Giggle wiggle when belly tickled */
+.hb-character-stage.giggle-wiggle {
+  animation: hbGiggle 0.45s ease-in-out 3;
+}
+@keyframes hbGiggle {
+  0%, 100% { transform: rotate(0deg) scale(1.02); }
+  25%      { transform: rotate(-8deg) scale(1.08, 0.95); }
+  75%      { transform: rotate(8deg) scale(1.08, 0.95); }
+}
+
+/* Lottie SVG Canvas */
+.hb-lottie-canvas {
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.hb-lottie-canvas svg {
+  overflow: visible;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ── Blue Rocket Flame ── */
+.hb-rocket-flame {
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  width: 22px;
+  height: 38px;
+  margin-left: -11px;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform-origin: top center;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
+  z-index: -1;
+}
+.hb-rocket-flame.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.hb-flame-core {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(180deg, #ffffff 0%, #38bdf8 35%, #0284c7 70%, transparent 100%);
+  border-radius: 50% 50% 60% 60% / 30% 30% 70% 70%;
+  filter: drop-shadow(0 0 10px #00d8ff) drop-shadow(0 0 18px #38bdf8);
+  animation: hbFlameFlicker 0.12s ease-in-out infinite alternate;
+}
+.hb-flame-inner {
+  position: absolute;
+  top: 2px;
+  left: 20%;
+  width: 60%;
+  height: 65%;
+  background: linear-gradient(180deg, #ffffff 0%, #a5f3fc 60%, transparent 100%);
+  border-radius: 50% 50% 60% 60%;
+  filter: drop-shadow(0 0 6px #ffffff);
+}
+@keyframes hbFlameFlicker {
+  0%   { transform: scaleY(0.9) scaleX(0.92); opacity: 0.85; }
+  50%  { transform: scaleY(1.22) scaleX(1.08); opacity: 1; }
+  100% { transform: scaleY(0.85) scaleX(0.9); opacity: 0.9; }
+}
+
+/* ── Interactive Hotspot Hitboxes ── */
+.hb-hotspot {
+  position: absolute;
+  pointer-events: auto;
+  cursor: pointer;
+  z-index: 10;
+  /* Uncomment to see hitboxes: background: rgba(255, 0, 0, 0.15); */
+}
+#hotspot-hand-l {
+  top: 42%;
+  left: 14%;
+  width: 24%;
+  height: 24%;
   border-radius: 50%;
-  background: linear-gradient(135deg, #00d8ff, #7c3aed);
+}
+#hotspot-hand-r {
+  top: 50%;
+  left: 65%;
+  width: 20%;
+  height: 22%;
+  border-radius: 50%;
+}
+#hotspot-body {
+  top: 54%;
+  left: 40%;
+  width: 26%;
+  height: 28%;
+  border-radius: 50%;
+}
+
+/* ── Floating Speech Bubble (Tickle / Greet) ── */
+.hb-speech-bubble {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(6px) scale(0.85);
+  background: rgba(14, 18, 27, 0.95);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  color: #F8FAFC;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 5px 12px;
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 14px rgba(56, 189, 248, 0.2);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 20;
+}
+.hb-speech-bubble.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0) scale(1);
+}
+.hb-speech-bubble::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 5px;
+  border-style: solid;
+  border-color: rgba(14, 18, 27, 0.95) transparent transparent transparent;
+}
+
+/* ── Floating Emoji & Sparkle Particles ── */
+.hb-particle {
+  position: fixed;
+  pointer-events: none;
+  z-index: 99999;
+  font-size: 18px;
+  line-height: 1;
+  animation: hbFloatParticle 0.85s cubic-bezier(0.12, 0, 0.39, 0) forwards;
+}
+@keyframes hbFloatParticle {
+  0%   { transform: translate(0, 0) scale(0.5); opacity: 1; }
+  50%  { transform: translate(var(--p-dx, 0px), var(--p-dy, -30px)) scale(1.2); opacity: 0.9; }
+  100% { transform: translate(var(--p-dx, 0px), var(--p-dy, -60px)) scale(0.8); opacity: 0; }
+}
+
+/* ── Companion Label Badge Under Character ── */
+.hb-pill-label {
+  position: absolute;
+  top: calc(100% - 4px);
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
-  justify-content: center;
-  color: #ffffff;
-  font-size: 18px;
-  box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.3);
-  position: relative;
-  z-index: 2;
-}
-
-.hollabuddy-status-dot {
-  position: absolute;
-  bottom: 0px;
-  right: 0px;
-  width: 11px;
-  height: 11px;
-  background: #10b981;
-  border: 2px solid #121622;
-  border-radius: 50%;
-  z-index: 3;
-}
-
-.hollabuddy-launcher-pill {
-  display: flex;
-  flex-direction: column;
-}
-
-.hollabuddy-name-label {
-  font-size: 13px;
-  font-weight: 700;
-  color: #ffffff;
-  line-height: 1.2;
-}
-
-.hollabuddy-status-label {
+  gap: 5px;
+  background: rgba(14, 18, 27, 0.92);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 3px 9px 3px 6px;
+  border-radius: 999px;
   font-size: 10.5px;
-  font-weight: 600;
-  color: #38bdf8;
-  letter-spacing: 0.02em;
+  font-weight: 700;
+  color: #E2E8F0;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  white-space: nowrap;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.hb-pill-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10B981;
+  box-shadow: 0 0 6px #10B981;
+}
+.hollabuddy-companion:hover .hb-pill-label {
+  border-color: rgba(56, 189, 248, 0.65);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6), 0 0 12px rgba(56, 189, 248, 0.3);
 }
 
 /* Expandable Chat Drawer */
