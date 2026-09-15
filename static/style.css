@@ -2297,21 +2297,6 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   z-index: 3;
 }
 
-.hollabuddy-pulse-ring {
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  border: 2px solid rgba(0, 216, 255, 0.6);
-  animation: hb-pulse 2s cubic-bezier(0.24, 0, 0.38, 1) infinite;
-  z-index: 1;
-}
-
-@keyframes hb-pulse {
-  0% { transform: scale(0.9); opacity: 0.9; }
-  70% { transform: scale(1.4); opacity: 0; }
-  100% { transform: scale(1.4); opacity: 0; }
-}
-
 .hollabuddy-launcher-pill {
   display: flex;
   flex-direction: column;
@@ -3252,14 +3237,6 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   color: #ffffff;
   font-size: 13px;
   box-shadow: 0 2px 8px rgba(2, 132, 199, 0.4);
-}
-
-.console-pulse-ring {
-  position: absolute;
-  inset: -3px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(56, 189, 248, 0.6);
-  animation: pulseRing 2.2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
 }
 
 .console-status-dot {
