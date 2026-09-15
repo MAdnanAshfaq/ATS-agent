@@ -96,8 +96,8 @@
           <i class="fa-solid fa-terminal"></i> <span>Console</span>
         </button>
 
-        <!-- User Profile -->
-        <div class="user-header-profile" id="user-header-profile" title="Signed in as {{ user.display_name or user.username }}">
+        <!-- User Profile with Integrated Sign Out (Always Accessible & Reachable) -->
+        <div class="user-header-profile" id="user-header-profile" title="Signed in as {{ user.display_name or user.username }} ({{ user.email }})">
           <div class="user-avatar">
             <i class="fa-solid fa-user"></i>
           </div>
@@ -105,13 +105,11 @@
             <span class="user-display-name">{{ user.display_name or user.username }}</span>
             <span class="user-email-text">{{ user.email }}</span>
           </div>
+          <a href="/logout" class="btn-signout-nav" id="btn-header-signout" title="Sign Out of {{ user.display_name or user.username }}">
+            <i class="fa-solid fa-arrow-right-from-bracket"></i>
+            <span class="signout-label">Sign Out</span>
+          </a>
         </div>
-
-        <!-- Standalone Prominent Sign Out Button (Always Visible!) -->
-        <a href="/logout" class="btn-signout-nav" id="btn-header-signout" title="Sign Out of {{ user.display_name or user.username }}">
-          <i class="fa-solid fa-arrow-right-from-bracket"></i>
-          <span>Sign Out</span>
-        </a>
       </div>
     </div>
   </header>
