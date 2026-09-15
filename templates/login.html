@@ -5,9 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ATS Agent — Sign In</title>
   <meta name="description" content="AI-powered job application agent. Sign in to tailor your resume, match keywords, and apply smarter." />
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="/static/favicon-v2.svg" />
+  <link rel="alternate icon" href="/static/favicon.svg" />
+
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@600;700;800&family=Space+Grotesk:wght@500;600&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -33,6 +38,62 @@
       color: var(--text);
       font-family: 'Inter', system-ui, sans-serif;
       overflow-x: hidden;
+    }
+
+    /* ── Resume Scan Overlay on Signup ── */
+    .login-scan-overlay {
+      position: fixed; inset: 0; z-index: 99999;
+      background: rgba(8, 9, 13, 0.92);
+      backdrop-filter: blur(14px);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; visibility: hidden; pointer-events: none;
+      transition: opacity 0.3s ease, visibility 0.3s ease;
+    }
+    .login-scan-overlay.active {
+      opacity: 1; visibility: visible; pointer-events: all;
+    }
+    .login-scan-box {
+      background: #111218; border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 24px; padding: 36px 40px;
+      display: flex; flex-direction: column; align-items: center; gap: 16px;
+      box-shadow: 0 25px 60px rgba(0,0,0,0.8), 0 0 35px rgba(47,168,143,0.2);
+      text-align: center;
+    }
+    .resume-scan-card {
+      width: 140px; height: 168px; border-radius: 20px; background: #14171F;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 16px 36px rgba(0,0,0,0.45), 0 0 25px rgba(47,168,143,0.15), 0 0 0 1px rgba(255,255,255,0.08);
+    }
+    .resume-scan-card svg { overflow: visible; }
+    .page-outline {
+      fill: none; stroke: #F4F2ED; stroke-width: 3.5;
+      stroke-linecap: round; stroke-linejoin: round;
+    }
+    .line { fill: #3A3E48; animation: scanRead 2.4s ease-in-out infinite; }
+    .line1 { animation-delay: 0.00s; }
+    .line2 { animation-delay: 0.25s; }
+    .line3 { animation-delay: 0.50s; }
+    .line4 { animation-delay: 0.75s; }
+    .line5 { animation-delay: 1.00s; }
+    @keyframes scanRead {
+      0%, 14% { fill: #3A3E48; }
+      22% { fill: #2FA88F; filter: drop-shadow(0 0 4px rgba(47,168,143,0.6)); }
+      40%, 100% { fill: #3A3E48; }
+    }
+    .beam { animation: scanSweep 2.4s ease-in-out infinite; }
+    @keyframes scanSweep {
+      0% { transform: translateY(0); opacity: 0; }
+      4% { opacity: 1; }
+      88% { opacity: 1; }
+      96% { transform: translateY(94px); opacity: 0; }
+      100% { transform: translateY(94px); opacity: 0; }
+    }
+    .scan-title {
+      font-family: 'Space Grotesk', 'Outfit', sans-serif;
+      font-size: 17px; font-weight: 600; color: #f1f5f9;
+    }
+    .scan-sub {
+      font-size: 13px; color: var(--muted); max-width: 280px; line-height: 1.45;
     }
 
     /* ── Animated background ── */
@@ -326,10 +387,45 @@
 
     <!-- Brand -->
     <div class="brand">
-      <div class="brand-icon">🎯</div>
+      <div class="brand-icon" style="background: transparent; box-shadow: 0 4px 20px rgba(47, 168, 143, 0.25);">
+        <svg width="44" height="44" viewBox="0 0 100 100" fill="none">
+          <rect x="0" y="0" width="100" height="100" rx="22" fill="#14171F"/>
+          <path d="M24,52 L32,52 L36,38 L42,64 L48,44 L52,52" stroke="#E8553D" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M52,52 L61,61 L79,35" stroke="#2FA88F" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
       <div class="brand-text">
         <div class="brand-name">ATS Agent</div>
         <div class="brand-tagline">AI-Powered Job Application Engine</div>
+      </div>
+    </div>
+
+    <!-- Fullscreen scanning overlay during resume signup -->
+    <div id="login-scan-overlay" class="login-scan-overlay">
+      <div class="login-scan-box">
+        <div class="resume-scan-card">
+          <svg width="88" height="112" viewBox="0 0 88 112">
+            <path class="page-outline" d="M12,8 H60 L76,24 V100 Q76,104 72,104 H16 Q12,104 12,100 V12 Q12,8 16,8 Z" />
+            <path class="page-outline" d="M60,8 V24 H76" />
+            <rect class="line line1" x="24" y="38" width="40" height="5" rx="2.5" />
+            <rect class="line line2" x="24" y="50" width="34" height="5" rx="2.5" />
+            <rect class="line line3" x="24" y="62" width="38" height="5" rx="2.5" />
+            <rect class="line line4" x="24" y="74" width="28" height="5" rx="2.5" />
+            <rect class="line line5" x="24" y="86" width="36" height="5" rx="2.5" />
+            <g class="beam">
+              <rect x="10" y="30" width="68" height="14" fill="url(#loginBeamGradient)" />
+            </g>
+            <defs>
+              <linearGradient id="loginBeamGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#2FA88F" stop-opacity="0" />
+                <stop offset="50%" stop-color="#2FA88F" stop-opacity="0.55" />
+                <stop offset="100%" stop-color="#2FA88F" stop-opacity="0" />
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <div class="scan-title">Reading your resume…</div>
+        <div class="scan-sub">Gemini AI is analyzing your career profile and building your workspace.</div>
       </div>
     </div>
 
@@ -589,6 +685,10 @@
     document.getElementById('signup-spinner').style.display = 'block';
     document.getElementById('signup-btn-text').textContent = file ? 'Parsing resume…' : 'Creating account…';
     document.getElementById('signup-btn').disabled = true;
+
+    if (file) {
+      document.getElementById('login-scan-overlay').classList.add('active');
+    }
   });
 </script>
 

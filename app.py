@@ -817,6 +817,11 @@ ORIGINAL TEXT:
         return jsonify({"error": f"Humanizing failed: {str(e)}"}), 500
 
 
+@app.route("/favicon.ico")
+def favicon():
+    return send_from_directory("static", "favicon-v2.svg", mimetype="image/svg+xml")
+
+
 @app.route("/")
 @login_required
 def index():

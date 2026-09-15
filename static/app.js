@@ -4104,4 +4104,43 @@ if (document.readyState === "loading") {
   setTimeout(checkUrlAutoFill, 300);
 }
 
+/* ==========================================================================
+   ATS Agent Launch & Reload Splash Reveal Animation
+   ========================================================================== */
+let atsSplashTimer = null;
+
+function dismissAtsSplash() {
+  const splash = document.getElementById("ats-app-splash");
+  if (!splash || splash.classList.contains("splash-revealed")) return;
+  if (atsSplashTimer) clearTimeout(atsSplashTimer);
+  splash.classList.add("splash-revealed");
+  setTimeout(() => {
+    if (splash.parentNode) splash.parentNode.removeChild(splash);
+  }, 550);
+}
+
+function initAtsSplash() {
+  const splash = document.getElementById("ats-app-splash");
+  if (!splash) return;
+
+  // Dismiss on keydown
+  const keyHandler = () => {
+    dismissAtsSplash();
+    window.removeEventListener("keydown", keyHandler);
+  };
+  window.addEventListener("keydown", keyHandler);
+
+  // Automatically trigger the see-through reveal after full zoom animation plays
+  atsSplashTimer = setTimeout(() => {
+    dismissAtsSplash();
+  }, 2250);
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initAtsSplash);
+} else {
+  initAtsSplash();
+}
+
+
 
