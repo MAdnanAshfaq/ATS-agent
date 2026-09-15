@@ -3361,13 +3361,15 @@ function initInteractiveHollaBuddy() {
   });
 
   // 2. Position Restoration & Viewport Clamping
-  let posX = window.innerWidth - 170;
-  let posY = window.innerHeight - 150;
+  const defaultW = 168;
+  const defaultH = 134;
+  let posX = window.innerWidth - defaultW - 28;
+  let posY = window.innerHeight - defaultH - 24;
   try {
     const saved = JSON.parse(localStorage.getItem("hollabuddy_pos"));
     if (saved && typeof saved.x === "number" && typeof saved.y === "number") {
-      posX = Math.max(10, Math.min(window.innerWidth - 150, saved.x));
-      posY = Math.max(10, Math.min(window.innerHeight - 130, saved.y));
+      posX = Math.max(10, Math.min(window.innerWidth - defaultW - 10, saved.x));
+      posY = Math.max(10, Math.min(window.innerHeight - defaultH - 10, saved.y));
     }
   } catch (e) {}
 
