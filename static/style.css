@@ -995,8 +995,9 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
 }
 
 .step-card.working {
-  border-color: var(--border-focus);
-  background: var(--accent-dim);
+  border-color: rgba(47, 168, 143, 0.55);
+  background: rgba(47, 168, 143, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45), 0 0 16px rgba(47, 168, 143, 0.16);
 }
 
 .step-card.success {
@@ -1019,10 +1020,18 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   justify-content: center;
   font-size: 12px;
   color: var(--t1);
+  transition: all 0.2s ease;
 }
 
-.step-card.working .step-icon { color: var(--accent); background: transparent; }
-.step-card.success .step-icon { color: var(--ok); background: transparent; }
+.step-card.working .step-icon {
+  color: #2FA88F;
+  background: rgba(47, 168, 143, 0.15);
+  border: 1px solid rgba(47, 168, 143, 0.3);
+}
+.step-card.success .step-icon {
+  color: var(--ok);
+  background: rgba(16, 185, 129, 0.12);
+}
 
 .step-info { display: flex; flex-direction: column; }
 .step-num {
@@ -1031,6 +1040,10 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-family: var(--font-mono);
+}
+.step-card.working .step-num {
+  color: #2FA88F;
+  font-weight: 700;
 }
 .step-title {
   font-size: 12px;
@@ -1041,9 +1054,71 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
 .step-status {
   font-size: 12px;
   color: var(--t2);
+  min-height: 24px;
+  display: flex;
+  align-items: center;
 }
-.step-card.working .step-status { color: var(--accent); }
+.step-card.working .step-status { color: #2FA88F; }
 .step-card.success .step-status { color: var(--ok); }
+
+/* ── Step Card Mini Resume Scan Animation (From loading-resume-parsing.html) ── */
+.step-card-scan-wrap {
+  width: 18px;
+  height: 23px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.step-card-scan-wrap svg {
+  overflow: visible;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.step-card-scan-wrap .step-scan-outline {
+  fill: none;
+  stroke: #94A3B8;
+  stroke-width: 4.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke 0.2s ease;
+}
+
+.step-card.working .step-card-scan-wrap .step-scan-outline {
+  stroke: #E2E8F0;
+}
+
+.step-card-scan-wrap .step-scan-line {
+  fill: #334155;
+  animation: stepScanRead 2.4s ease-in-out infinite;
+}
+
+.step-card-scan-wrap .step-scan-l1 { animation-delay: 0.00s; }
+.step-card-scan-wrap .step-scan-l2 { animation-delay: 0.25s; }
+.step-card-scan-wrap .step-scan-l3 { animation-delay: 0.50s; }
+.step-card-scan-wrap .step-scan-l4 { animation-delay: 0.75s; }
+.step-card-scan-wrap .step-scan-l5 { animation-delay: 1.00s; }
+
+@keyframes stepScanRead {
+  0%, 14%   { fill: #334155; }
+  22%       { fill: #2FA88F; filter: drop-shadow(0 0 3px rgba(47, 168, 143, 0.8)); }
+  40%, 100% { fill: #334155; }
+}
+
+.step-card-scan-wrap .step-scan-beam {
+  animation: stepScanSweep 2.4s ease-in-out infinite;
+}
+
+@keyframes stepScanSweep {
+  0%   { transform: translateY(0); opacity: 0; }
+  4%   { opacity: 1; }
+  88%  { opacity: 1; }
+  96%  { transform: translateY(70px); opacity: 0; }
+  100% { transform: translateY(70px); opacity: 0; }
+}
 
 /* ── LIVE TERMINAL LOG PANEL ────────────────────────────────────────────── */
 .terminal-card {

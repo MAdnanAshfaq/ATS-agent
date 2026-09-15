@@ -302,6 +302,32 @@ function resetPipelineVisuals() {
   document.getElementById("pipeline-progress-bar").style.width = "5%";
 }
 
+function getStepScanAnimationSvg() {
+  return `
+    <div class="step-card-scan-wrap" title="Processing...">
+      <svg width="18" height="23" viewBox="0 0 88 112" fill="none">
+        <path class="step-scan-outline" d="M12,8 H60 L76,24 V100 Q76,104 72,104 H16 Q12,104 12,100 V12 Q12,8 16,8 Z" />
+        <path class="step-scan-outline" d="M60,8 V24 H76" />
+        <rect class="step-scan-line step-scan-l1" x="24" y="38" width="40" height="5" rx="2.5" />
+        <rect class="step-scan-line step-scan-l2" x="24" y="50" width="34" height="5" rx="2.5" />
+        <rect class="step-scan-line step-scan-l3" x="24" y="62" width="38" height="5" rx="2.5" />
+        <rect class="step-scan-line step-scan-l4" x="24" y="74" width="28" height="5" rx="2.5" />
+        <rect class="step-scan-line step-scan-l5" x="24" y="86" width="36" height="5" rx="2.5" />
+        <g class="step-scan-beam">
+          <rect x="8" y="28" width="72" height="15" fill="url(#stepScanBeamGradient)" />
+        </g>
+        <defs>
+          <linearGradient id="stepScanBeamGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#2FA88F" stop-opacity="0" />
+            <stop offset="50%" stop-color="#2FA88F" stop-opacity="0.8" />
+            <stop offset="100%" stop-color="#2FA88F" stop-opacity="0" />
+          </linearGradient>
+        </defs>
+      </svg>
+    </div>
+  `;
+}
+
 function updateStepState(stepNum, status, message) {
   const card = document.querySelector(`.step-card[data-step="${stepNum}"]`);
   if (!card) return;
@@ -310,7 +336,7 @@ function updateStepState(stepNum, status, message) {
 
   const statusIcon = card.querySelector(".step-status");
   if (status === "working") {
-    statusIcon.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin text-cyan"></i>`;
+    statusIcon.innerHTML = getStepScanAnimationSvg();
   } else if (status === "success") {
     statusIcon.innerHTML = `<i class="fa-solid fa-circle-check text-emerald"></i>`;
   } else if (status === "error") {
