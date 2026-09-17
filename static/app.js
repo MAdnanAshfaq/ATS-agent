@@ -3321,8 +3321,31 @@ async function checkHollaBuddyApiHealth() {
     const res  = await fetch("/api/gemini/health");
     const data = await res.json();
 
-    const statusColor = { ok: "#22c55e", quota_exhausted: "#f59e0b", invalid: "#ef4444", error: "#ef4444", unconfigured: "#64748b" };
-    const statusIcon  = { ok: "fa-check-circle", quota_exhausted: "fa-triangle-exclamation", invalid: "fa-xmark-circle", error: "fa-xmark-circle", unconfigured: "fa-circle-dashed" };
+    const statusColor = {
+      ok:              "#22c55e",
+      quota_exhausted: "#f59e0b",
+      transient:       "#f59e0b",   // 503 server busy = amber, NOT a key error
+      invalid:         "#ef4444",
+      error:           "#ef4444",
+      unconfigured:    "#64748b",
+    };
+    const statusIcon = {
+      ok:              "fa-check-circle",
+      quota_exhausted: "fa-triangle-exclamation",
+      transient:       "fa-clock",             // amber clock = temporarily unavailable
+      invalid:         "fa-xmark-circle",
+      error:           "fa-xmark-circle",
+      unconfigured:    "fa-circle-dashed",
+    };
+    // Friendly tooltip explaining what each status means
+    const statusTip = {
+      ok:              "Key is active and responding normally",
+      quota_exhausted: "This key has hit its free-tier rate limit — wait a minute or add another key",
+      transient:       "Gemini's servers were momentarily busy — your key is correctly configured and will work fine",
+      invalid:         "This key is invalid or was revoked — re-copy it from aistudio.google.com",
+      error:           "Unexpected error — try refreshing",
+      unconfigured:    "No key configured",
+    };
 
     if (!data.keys || data.keys.length === 0) {
       keysEl.innerHTML = `<span class="hb-health-none"><i class="fa-solid fa-key" style="opacity:.4"></i> No keys configured</span>`;
@@ -3334,10 +3357,11 @@ async function checkHollaBuddyApiHealth() {
       const isActive = i === data.active_index;
       const col  = statusColor[k.status]  || "#64748b";
       const ico  = statusIcon[k.status]   || "fa-circle";
+      const tip  = statusTip[k.status]    || k.label;
       const name = k.env === "GEMINI_API_KEY" ? "Key 1" : "Key 2";
       const activeBadge = isActive ? `<span class="hb-active-badge">ACTIVE</span>` : "";
       return `
-        <span class="hb-key-pill" style="--key-col:${col}" title="${k.label}">
+        <span class="hb-key-pill" style="--key-col:${col}" title="${tip}">
           <i class="fa-solid ${ico}" style="color:${col};font-size:.7rem;"></i>
           <span class="hb-key-name">${name}</span>
           <span class="hb-key-masked">${k.masked}</span>
@@ -3345,6 +3369,7 @@ async function checkHollaBuddyApiHealth() {
           <span class="hb-key-status-label">${k.label}</span>
         </span>`;
     }).join("");
+
 
     // Update the header signal icon
     if (icon) {

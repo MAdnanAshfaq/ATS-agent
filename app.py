@@ -883,19 +883,25 @@ def health():
 def gemini_key_health():
     """
     Live-ping each configured Gemini API key and return per-key status.
-    Used by the HollaBuddy drawer to show real-time API health.
-    Statuses: ok | quota_exhausted | invalid | error
+    Results are cached per-user for 60 seconds to avoid hammering the API.
+    Statuses: ok | quota_exhausted | invalid | transient | unconfigured
+    503 UNAVAILABLE = Gemini server momentarily busy (amber, NOT a key error).
     """
+    from gemini_client import is_quota_error, _ACTIVE_KEY_INDEX
+    from google import genai
+    from google.genai import types as gtypes
+
     user_settings = get_user_settings()
-    # Inject keys so gemini_client pool is up-to-date
     for env_key in ("GEMINI_API_KEY", "GEMINI_API_KEY_2"):
         val = (user_settings.get(env_key) or "").strip()
         if val:
             os.environ[env_key] = val
 
-    from gemini_client import is_quota_error, _ACTIVE_KEY_INDEX
-    from google import genai
-    from google.genai import types as gtypes
+    # --- 60-second per-user result cache ---
+    cache_key = f"_gemini_health_{getattr(current_user, 'username', 'anon')}"
+    cached = getattr(app, cache_key, None)
+    if cached and (time.time() - cached.get("ts", 0)) < 60:
+        return jsonify(cached["data"])
 
     # Collect configured keys in order
     raw_keys = []
@@ -912,53 +918,85 @@ def gemini_key_health():
             "message": "No API keys configured. Open Settings to add your Gemini key."
         })
 
+    def _ping_key(key: str) -> tuple[str, str]:
+        """
+        Ping a single Gemini API key. Returns (status, label).
+        Retries once on 503/transient before failing.
+        """
+        for attempt in range(2):
+            try:
+                test_client = genai.Client(api_key=key)
+                test_client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=[gtypes.Content(role="user", parts=[gtypes.Part(text="Reply: ok")])],
+                    config=gtypes.GenerateContentConfig(max_output_tokens=5, temperature=0),
+                )
+                return "ok", "Active & Working"
+            except Exception as e:
+                err_up = str(e).upper()
+
+                # Real quota / rate limit
+                if is_quota_error(e):
+                    return "quota_exhausted", "Quota / Rate Limit Exhausted"
+
+                # Invalid or wrong key
+                if "API_KEY_INVALID" in err_up or "INVALID_ARGUMENT" in err_up:
+                    return "invalid", "Invalid API Key"
+                if "403" in err_up or "PERMISSION_DENIED" in err_up:
+                    return "invalid", "Permission Denied"
+
+                # 503 / transient: Gemini servers busy — NOT a key problem.
+                # Retry once; if it still fails, flag as transient (amber).
+                if "503" in err_up or "UNAVAILABLE" in err_up or "DEADLINE_EXCEEDED" in err_up:
+                    if attempt == 0:
+                        time.sleep(1.2)
+                        continue  # one retry
+                    return "transient", "Gemini servers momentarily busy — key is fine"
+
+                # Unknown error after retry
+                if attempt == 0:
+                    time.sleep(0.8)
+                    continue
+                short_msg = str(e)[:60].rstrip()
+                return "error", f"Unexpected error — try refreshing"
+
+        return "error", "Unexpected error — try refreshing"
+
     key_results = []
     for env_name, key in raw_keys:
         masked = (key[:6] + "..." + key[-4:]) if len(key) > 10 else "***"
-        try:
-            test_client = genai.Client(api_key=key)
-            test_resp = test_client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=[gtypes.Content(role="user", parts=[gtypes.Part(text="Reply with exactly: ok")])],
-                config=gtypes.GenerateContentConfig(max_output_tokens=5, temperature=0),
-            )
-            key_results.append({
-                "env": env_name,
-                "masked": masked,
-                "status": "ok",
-                "label": "Active & Working",
-            })
-        except Exception as e:
-            err_str = str(e).upper()
-            if is_quota_error(e):
-                status, label = "quota_exhausted", "Quota / Rate Limit Exhausted"
-            elif "API_KEY_INVALID" in err_str or "INVALID_ARGUMENT" in err_str:
-                status, label = "invalid", "Invalid Key"
-            elif "403" in err_str or "PERMISSION_DENIED" in err_str:
-                status, label = "invalid", "Permission Denied"
-            else:
-                status, label = "error", f"Error ({str(e)[:60]})"
-            key_results.append({
-                "env": env_name,
-                "masked": masked,
-                "status": status,
-                "label": label,
-            })
+        status, label = _ping_key(key)
+        key_results.append({
+            "env":    env_name,
+            "masked": masked,
+            "status": status,
+            "label":  label,
+        })
 
-    any_ok = any(k["status"] == "ok" for k in key_results)
-    active_idx = _ACTIVE_KEY_INDEX % max(len(key_results), 1)
+    any_ok       = any(k["status"] in ("ok", "transient") for k in key_results)
+    all_broken   = all(k["status"] in ("quota_exhausted", "invalid", "error") for k in key_results)
+    active_idx   = _ACTIVE_KEY_INDEX % max(len(key_results), 1)
 
-    return jsonify({
-        "ok": any_ok,
-        "all_exhausted": not any_ok,
-        "keys": key_results,
+    if all_broken:
+        msg = "⚠️ All keys exhausted or invalid — add a new key in Settings"
+    elif any_ok:
+        msg = "API keys operational ✅"
+    else:
+        msg = "Some keys are temporarily busy — retrying automatically"
+
+    result = {
+        "ok":          any_ok,
+        "all_exhausted": all_broken,
+        "keys":        key_results,
         "active_index": active_idx,
-        "total_keys": len(key_results),
-        "message": (
-            "All API keys operational ✅" if any_ok
-            else "⚠️ All keys exhausted or invalid — add a new key in Settings"
-        ),
-    })
+        "total_keys":  len(key_results),
+        "message":     msg,
+    }
+
+    # Cache result for 60 seconds
+    setattr(app, cache_key, {"data": result, "ts": time.time()})
+
+    return jsonify(result)
 
 
 @app.route("/api/settings", methods=["GET", "POST"])
