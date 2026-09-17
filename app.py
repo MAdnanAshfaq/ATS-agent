@@ -1210,15 +1210,37 @@ def history():
     if db_layer.is_db_available():
         # ── DB mode: fetch from NeonDB ─────────────────────────────────────────
         applications = db_layer.db_get_history(current_user.username)
-        # Compute relative_file_path from output_file so preview and download buttons work
+        user_output_dir = get_user_output_dir()
         for app_entry in applications:
-            out_f = app_entry.get("output_file", "")
+            out_f    = app_entry.get("output_file", "")
+            company  = app_entry.get("company", "")
+            role     = app_entry.get("role", "")
+            c_slug   = _safe_slugify(company)
+            r_slug   = _safe_slugify(role)
+            folder   = f"{c_slug}_{r_slug}" if (c_slug or r_slug) else ""
+
+            rel_path = ""
             if out_f:
                 p_out = Path(out_f.replace("\\", "/"))
-                rel = f"{p_out.parent.name}/{p_out.name}" if (p_out.parent.name and p_out.parent.name != ".") else p_out.name
-                app_entry["relative_file_path"] = rel
-            else:
-                app_entry["relative_file_path"] = ""
+                if p_out.exists():
+                    # File exists at stored absolute path — build relative from output dir
+                    try:
+                        rel_path = os.path.relpath(str(p_out), str(user_output_dir)).replace("\\", "/")
+                    except ValueError:
+                        rel_path = f"{p_out.parent.name}/{p_out.name}"
+                elif folder:
+                    # File missing on disk — build a canonical path the download route can regen from
+                    fname = p_out.name if p_out.name else f"{c_slug}_{r_slug}_Resume.docx"
+                    rel_path = f"{folder}/{fname}"
+                    app_entry["_needs_regen"] = True
+                else:
+                    rel_path = f"{p_out.parent.name}/{p_out.name}" if p_out.parent.name else p_out.name
+            elif folder:
+                rel_path = f"{folder}/{c_slug}_{r_slug}_Resume.docx"
+                app_entry["_needs_regen"] = True
+
+            app_entry["relative_file_path"] = rel_path
+
     else:
         # ── File fallback: read from disk logs ────────────────────────────────
         user_output_dir = get_user_output_dir()
@@ -1536,6 +1558,41 @@ def download_file(filepath):
                     target_path = Path(regen_p).resolve()
             except Exception as regen_err:
                 print(f"[Download] Auto-regen error: {regen_err}")
+
+    # 7.6 DB-backed on-the-fly regeneration:
+    # If file not found on disk but we have company+role from the path, search DB history
+    # and rebuild the DOCX from the stored tailored resume JSON.
+    if not target_path.exists():
+        try:
+            path_parts = clean_fp.replace("\\", "/").split("/")
+            # folder name is company_role slug, e.g. BrightVision_SeniorDataEngineer
+            folder_name = path_parts[0] if len(path_parts) > 1 else ""
+            if folder_name and "_" in folder_name and db_layer.is_db_available():
+                all_hist = db_layer.db_get_history(current_user.username)
+                matched = None
+                for h in all_hist:
+                    c_slug = _safe_slugify(h.get("company", ""))
+                    r_slug = _safe_slugify(h.get("role", ""))
+                    hist_folder = f"{c_slug}_{r_slug}"
+                    if hist_folder.lower() == folder_name.lower() or \
+                       folder_name.lower().startswith(c_slug.lower()[:8]):
+                        matched = h
+                        break
+
+                if matched:
+                    tailored = matched.get("tailored_resume") or matched.get("resume_json") or matched.get("output_data")
+                    if tailored:
+                        if isinstance(tailored, str):
+                            tailored = json.loads(tailored)
+                        from resume_builder import build_resume_docx
+                        company  = matched.get("company", "Company")
+                        role_str = matched.get("role", "Role")
+                        regen_p  = build_resume_docx(tailored, company, role_str, output_dir=str(user_output_dir))
+                        if regen_p and os.path.exists(regen_p):
+                            target_path = Path(regen_p).resolve()
+                            print(f"[Download] Regenerated missing file from DB history: {target_path.name}")
+        except Exception as regen_db_err:
+            print(f"[Download] DB regen error: {regen_db_err}")
 
     # 8. Fallback to user base_resume.json if json requested
     if not target_path.exists() and clean_fp.lower().endswith(".json"):
