@@ -34,12 +34,18 @@ You have direct, permanent access to the candidate's authentic master resume pro
    - NEVER hallucinate companies, degrees, or years that do not exist in the candidate's profile.
    - If asked about a skill or technology not in the candidate's background, be candid: explain what adjacent experience they have or how they can bridge the gap honestly.
 
-2. **HUMAN-VOICE TONE (Rules 0–16)**:
-   - When drafting answers to job application or interview questions:
-     - **Front-load value**: Put the concrete result or accomplishment in the very first sentence.
-     - **No throat-clearing AI fluff**: Ban openers like "I am thrilled to apply...", "Throughout my career...", "As a seasoned professional...", "In today's fast-paced world...".
-     - **Quantified evidence**: Use real numbers, percentages, dollar amounts, and scale metrics from their background whenever relevant.
-     - **STAR Structure**: For behavioral questions ("Tell me about a time..."), use concise Situation/Task -> Action -> Measurable Result format (typically 80-150 words).
+2. **DANI'S HUMAN-VOICE & ANTI-AI MANDATE (Rules 0–16)**:
+   - **STRICTLY BANNED AI BUZZWORDS**: NEVER use these statistical-average AI filler words:
+     `delve`, `tapestry`, `robust`, `seamless`, `seamlessly`, `multifaceted`, `holistic`, `synergy`, `pivotal`, `testament`, `transformative`, `groundbreaking`, `cutting-edge`, `game-changer`, `beacon`, `cornerstone`, `linchpin`, `vibrant`, `dynamic`, `paramount`, `relentless`, `unwavering`, `moreover`, `furthermore`, `additionally`, `in conclusion`, `fast-paced environment`, `deep dive`.
+   - **STRICTLY BANNED CLICHÉ OPENERS**: NEVER open sentences or bullets with overused AI verbs:
+     `spearheaded`, `leveraged`, `utilized`, `facilitated`, `championed`, `fostered`, `orchestrated`, `pioneered`, `empowered`, `elevated`, `unlocked`.
+     -> Use crisp, authentic human verbs instead: `built`, `led`, `shipped`, `designed`, `wrote`, `cut`, `grew`, `automated`, `reduced`, `managed`.
+   - **BANNED FORMULAIC OPENERS**: NEVER start answers with fluff:
+     `results-driven`, `seasoned professional`, `proven track record`, `passionate and dedicated`, `I am thrilled to apply...`, `Throughout my career...`, `As a...`.
+   - **HIGH BURSTINESS & NATURAL RHYTHM**: Vary sentence lengths intentionally like a real human. Alternate between punchy short sentences (4–8 words) and longer compound sentences (18–25 words). Avoid robotic, uniform paragraph blocks.
+   - **FRONT-LOAD VALUE**: Put the concrete result, metric, or accomplishment in the very first sentence.
+   - **QUANTIFIED EVIDENCE**: Use real numbers, percentages, dollar amounts, and scale metrics from their background.
+   - **STAR STRUCTURE**: For behavioral questions ("Tell me about a time..."), use concise Situation/Task -> Action -> Measurable Result format (typically 80-150 words).
 
 3. **CLEAN, READABLE FORMATTING MANDATE (CRITICAL)**:
    - When providing a **written application answer** or **drafted bullet**, deliver it cleanly using Markdown blockquotes with `>` syntax (e.g. `> At [Company], I built...`) or standard paragraphs.
@@ -135,20 +141,28 @@ def chat_with_hollabuddy(
     user_text = message.strip()
     chat_contents.append(types.Content(role="user", parts=[types.Part(text=user_text)]))
 
-    # Ordered model fallback list
-    models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+    # Fast, low-latency model fallback chain (avoids deprecated 404 models and thinking delays)
+    models = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-2.5-flash", "gemini-3.6-flash"]
     last_err = None
     all_quota_exhausted = False
 
     for model_name in models:
         def _call(client, _model=model_name, _contents=chat_contents, _sys=system_content):
-            config = types.GenerateContentConfig(
-                system_instruction=_sys,
-                temperature=0.6,
-                top_p=0.92,
-                max_output_tokens=8192,  # Raised from 2048 — detailed resume comparisons need room
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-            )
+            config_params = {
+                "system_instruction": _sys,
+                "temperature": 0.55,
+                "top_p": 0.92,
+                "max_output_tokens": 4096,
+                "automatic_function_calling": types.AutomaticFunctionCallingConfig(disable=True),
+            }
+            # Set thinking_budget=0 on thinking-enabled models to avoid multi-second pauses
+            if "2.5" in _model:
+                try:
+                    config_params["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+                except Exception:
+                    pass
+
+            config = types.GenerateContentConfig(**config_params)
             return client.models.generate_content(
                 model=_model,
                 contents=_contents,

@@ -782,7 +782,7 @@ ORIGINAL TEXT:
 {text}"""
 
         def _call_humanizer(client):
-            for m in ["gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash"]:
+            for m in ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash"]:
                 try:
                     response = client.models.generate_content(
                         model=m,

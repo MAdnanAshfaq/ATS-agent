@@ -4023,6 +4023,7 @@ function appendHollaBuddyMessage(role, text, followups = []) {
       `;
     }
 
+    msgDiv.dataset.rawText = text;
     msgDiv.innerHTML = `
       <div class="hollabuddy-msg-avatar">
         <i class="fa-solid fa-robot"></i>
@@ -4030,6 +4031,9 @@ function appendHollaBuddyMessage(role, text, followups = []) {
       <div class="hollabuddy-bubble hollabuddy-bubble-bot">
         <div class="hollabuddy-bubble-content">${formattedHtml}</div>
         <div class="hollabuddy-bubble-actions">
+          <button type="button" class="hollabuddy-humanize-btn" title="Refine with Dani's Human Voice engine to maximize burstiness and remove all AI tells">
+            <i class="fa-solid fa-wand-magic-sparkles"></i> Humanize
+          </button>
           <button type="button" class="hollabuddy-copy-btn" title="Copy answer to clipboard">
             <i class="fa-regular fa-copy"></i> Copy Answer
           </button>
@@ -4041,7 +4045,12 @@ function appendHollaBuddyMessage(role, text, followups = []) {
     // Attach click listeners cleanly via JS — eliminates double-box HTML injection bug
     const copyBtn = msgDiv.querySelector(".hollabuddy-copy-btn");
     if (copyBtn) {
-      copyBtn.addEventListener("click", () => copyHollaBuddyText(copyBtn, text));
+      copyBtn.addEventListener("click", () => copyHollaBuddyText(copyBtn, msgDiv.dataset.rawText || text));
+    }
+
+    const humanizeBtn = msgDiv.querySelector(".hollabuddy-humanize-btn");
+    if (humanizeBtn) {
+      humanizeBtn.addEventListener("click", () => humanizeHollaBuddyBubble(humanizeBtn, msgDiv));
     }
 
     msgDiv.querySelectorAll(".hollabuddy-followup-chip").forEach(chip => {
@@ -4175,6 +4184,61 @@ function copyHollaBuddyText(btn, text) {
   }).catch(() => {
     showToast("Failed to copy to clipboard", "warning");
   });
+}
+
+async function humanizeHollaBuddyBubble(btn, msgDiv) {
+  if (btn.classList.contains("loading")) return;
+  const currentRaw = msgDiv.dataset.rawText || "";
+  if (!currentRaw || currentRaw.trim().length < 25) {
+    showToast("Text is too short to humanize.", "info");
+    return;
+  }
+
+  const contentEl = msgDiv.querySelector(".hollabuddy-bubble-content");
+  if (!contentEl) return;
+
+  const originalHtml = btn.innerHTML;
+  btn.classList.add("loading");
+  btn.disabled = true;
+  btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Humanizing...`;
+
+  try {
+    const res = await fetch("/api/humanize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: currentRaw, style: "professional" }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || "Failed to humanize text");
+    }
+
+    const humanized = data.humanized_text || currentRaw;
+    msgDiv.dataset.rawText = humanized;
+    contentEl.innerHTML = formatHollaBuddyMarkdown(humanized);
+
+    btn.classList.remove("loading");
+    btn.classList.add("humanized");
+    btn.innerHTML = `<i class="fa-solid fa-check"></i> Humanized ✨`;
+    btn.title = "Refined with Dani's Anti-AI Human Voice Engine";
+
+    // Add or update badge
+    let badge = msgDiv.querySelector(".hollabuddy-human-badge");
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.className = "hollabuddy-human-badge";
+      badge.innerHTML = `<i class="fa-solid fa-feather-pointed"></i> Dani's Voice`;
+      const actions = msgDiv.querySelector(".hollabuddy-bubble-actions");
+      if (actions) actions.insertBefore(badge, actions.firstChild);
+    }
+    showToast("Answer humanized with Dani's voice!", "success");
+  } catch (err) {
+    console.error("[HollaBuddy Humanize Error]", err);
+    btn.classList.remove("loading");
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+    showToast("Could not humanize: " + err.message, "warning");
+  }
 }
 
 function clearHollaBuddyChat() {
