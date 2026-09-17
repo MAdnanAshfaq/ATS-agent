@@ -878,6 +878,89 @@ def health():
     })
 
 
+@app.route("/api/gemini/health")
+@login_required
+def gemini_key_health():
+    """
+    Live-ping each configured Gemini API key and return per-key status.
+    Used by the HollaBuddy drawer to show real-time API health.
+    Statuses: ok | quota_exhausted | invalid | error
+    """
+    user_settings = get_user_settings()
+    # Inject keys so gemini_client pool is up-to-date
+    for env_key in ("GEMINI_API_KEY", "GEMINI_API_KEY_2"):
+        val = (user_settings.get(env_key) or "").strip()
+        if val:
+            os.environ[env_key] = val
+
+    from gemini_client import is_quota_error, _ACTIVE_KEY_INDEX
+    from google import genai
+    from google.genai import types as gtypes
+
+    # Collect configured keys in order
+    raw_keys = []
+    for ek in ("GEMINI_API_KEY", "GEMINI_API_KEY_2"):
+        val = (user_settings.get(ek) or "").strip()
+        if val:
+            raw_keys.append((ek, val))
+
+    if not raw_keys:
+        return jsonify({
+            "ok": False,
+            "keys": [],
+            "active_index": 0,
+            "message": "No API keys configured. Open Settings to add your Gemini key."
+        })
+
+    key_results = []
+    for env_name, key in raw_keys:
+        masked = (key[:6] + "..." + key[-4:]) if len(key) > 10 else "***"
+        try:
+            test_client = genai.Client(api_key=key)
+            test_resp = test_client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[gtypes.Content(role="user", parts=[gtypes.Part(text="Reply with exactly: ok")])],
+                config=gtypes.GenerateContentConfig(max_output_tokens=5, temperature=0),
+            )
+            key_results.append({
+                "env": env_name,
+                "masked": masked,
+                "status": "ok",
+                "label": "Active & Working",
+            })
+        except Exception as e:
+            err_str = str(e).upper()
+            if is_quota_error(e):
+                status, label = "quota_exhausted", "Quota / Rate Limit Exhausted"
+            elif "API_KEY_INVALID" in err_str or "INVALID_ARGUMENT" in err_str:
+                status, label = "invalid", "Invalid Key"
+            elif "403" in err_str or "PERMISSION_DENIED" in err_str:
+                status, label = "invalid", "Permission Denied"
+            else:
+                status, label = "error", f"Error ({str(e)[:60]})"
+            key_results.append({
+                "env": env_name,
+                "masked": masked,
+                "status": status,
+                "label": label,
+            })
+
+    any_ok = any(k["status"] == "ok" for k in key_results)
+    active_idx = _ACTIVE_KEY_INDEX % max(len(key_results), 1)
+
+    return jsonify({
+        "ok": any_ok,
+        "all_exhausted": not any_ok,
+        "keys": key_results,
+        "active_index": active_idx,
+        "total_keys": len(key_results),
+        "message": (
+            "All API keys operational ✅" if any_ok
+            else "⚠️ All keys exhausted or invalid — add a new key in Settings"
+        ),
+    })
+
+
 @app.route("/api/settings", methods=["GET", "POST"])
 @login_required
 def settings():

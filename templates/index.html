@@ -1908,6 +1908,9 @@
         </div>
       </div>
       <div class="hollabuddy-header-actions">
+        <button type="button" class="btn-icon-subtle" id="hollabuddy-key-health-btn" onclick="checkHollaBuddyApiHealth()" title="Check API Key Health">
+          <i class="fa-solid fa-signal" id="hollabuddy-health-icon"></i>
+        </button>
         <button type="button" class="btn-icon-subtle" onclick="clearHollaBuddyChat()" title="Clear Chat History">
           <i class="fa-solid fa-rotate-left"></i>
         </button>
@@ -1921,6 +1924,17 @@
     <div class="hollabuddy-context-banner" id="hollabuddy-context-banner">
       <span class="badge badge-cyan" id="hollabuddy-mode-badge"><i class="fa-solid fa-briefcase"></i> Standalone Career Copilot</span>
       <span class="hollabuddy-banner-tip">Available anytime — no analyzer required!</span>
+    </div>
+
+    <!-- API Key Health Bar (loaded on drawer open) -->
+    <div class="hollabuddy-api-health-bar hidden" id="hollabuddy-api-health-bar">
+      <div class="hb-health-label"><i class="fa-solid fa-key"></i> API Keys</div>
+      <div class="hb-health-keys" id="hb-health-keys">
+        <span class="hb-health-checking"><i class="fa-solid fa-spinner fa-spin"></i> Checking…</span>
+      </div>
+      <button type="button" class="hb-health-refresh" onclick="checkHollaBuddyApiHealth()" title="Refresh key health">
+        <i class="fa-solid fa-arrows-rotate"></i>
+      </button>
     </div>
 
     <!-- Quick Suggestion Prompt Chips -->

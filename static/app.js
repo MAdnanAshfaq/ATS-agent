@@ -3293,11 +3293,76 @@ function toggleHollaBuddy(forceOpen, evt) {
       if (input) input.focus();
     }, 150);
     updateHollaBuddyJobContext();
+    // Auto-check API health each time the drawer opens
+    checkHollaBuddyApiHealth();
   } else {
     drawer.classList.add("hidden");
     if (launcher) launcher.classList.remove("active");
   }
 }
+
+/**
+ * Live-ping /api/gemini/health and render a per-key status bar
+ * inside the HollaBuddy drawer header.
+ */
+async function checkHollaBuddyApiHealth() {
+  const bar    = document.getElementById("hollabuddy-api-health-bar");
+  const keysEl = document.getElementById("hb-health-keys");
+  const icon   = document.getElementById("hollabuddy-health-icon");
+
+  if (!bar || !keysEl) return;
+
+  // Show bar with spinner
+  bar.classList.remove("hidden");
+  keysEl.innerHTML = `<span class="hb-health-checking"><i class="fa-solid fa-spinner fa-spin"></i> Checking…</span>`;
+  if (icon) { icon.className = "fa-solid fa-spinner fa-spin"; }
+
+  try {
+    const res  = await fetch("/api/gemini/health");
+    const data = await res.json();
+
+    const statusColor = { ok: "#22c55e", quota_exhausted: "#f59e0b", invalid: "#ef4444", error: "#ef4444", unconfigured: "#64748b" };
+    const statusIcon  = { ok: "fa-check-circle", quota_exhausted: "fa-triangle-exclamation", invalid: "fa-xmark-circle", error: "fa-xmark-circle", unconfigured: "fa-circle-dashed" };
+
+    if (!data.keys || data.keys.length === 0) {
+      keysEl.innerHTML = `<span class="hb-health-none"><i class="fa-solid fa-key" style="opacity:.4"></i> No keys configured</span>`;
+      if (icon) icon.className = "fa-solid fa-signal" + " hb-icon-red";
+      return;
+    }
+
+    keysEl.innerHTML = data.keys.map((k, i) => {
+      const isActive = i === data.active_index;
+      const col  = statusColor[k.status]  || "#64748b";
+      const ico  = statusIcon[k.status]   || "fa-circle";
+      const name = k.env === "GEMINI_API_KEY" ? "Key 1" : "Key 2";
+      const activeBadge = isActive ? `<span class="hb-active-badge">ACTIVE</span>` : "";
+      return `
+        <span class="hb-key-pill" style="--key-col:${col}" title="${k.label}">
+          <i class="fa-solid ${ico}" style="color:${col};font-size:.7rem;"></i>
+          <span class="hb-key-name">${name}</span>
+          <span class="hb-key-masked">${k.masked}</span>
+          ${activeBadge}
+          <span class="hb-key-status-label">${k.label}</span>
+        </span>`;
+    }).join("");
+
+    // Update the header signal icon
+    if (icon) {
+      if (data.ok) {
+        icon.className = "fa-solid fa-signal hb-icon-green";
+        icon.title = "API Keys OK";
+      } else {
+        icon.className = "fa-solid fa-triangle-exclamation hb-icon-amber";
+        icon.title = "API Key issue — click to check";
+      }
+    }
+  } catch (err) {
+    keysEl.innerHTML = `<span class="hb-health-checking" style="color:#ef4444"><i class="fa-solid fa-xmark"></i> Health check failed</span>`;
+    if (icon) icon.className = "fa-solid fa-signal hb-icon-red";
+    console.warn("[HollaBuddy Health]", err);
+  }
+}
+
 
 /* ==========================================================================
    HollaBuddy Living Interactive Companion (Lottie, Thrust Drag & Physics)

@@ -146,7 +146,7 @@ def chat_with_hollabuddy(
                 system_instruction=_sys,
                 temperature=0.6,
                 top_p=0.92,
-                max_output_tokens=2048,
+                max_output_tokens=8192,  # Raised from 2048 — detailed resume comparisons need room
                 automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
             )
             return client.models.generate_content(
@@ -162,7 +162,26 @@ def chat_with_hollabuddy(
                 if response.text
                 else "I'm right here! How can I help you with your resume or job search?"
             )
+
+            # Detect if Gemini hit the token ceiling mid-answer
+            was_truncated = False
+            try:
+                finish_reason = str(response.candidates[0].finish_reason) if response.candidates else ""
+                if "MAX_TOKENS" in finish_reason.upper():
+                    was_truncated = True
+            except Exception:
+                pass
+
+            if was_truncated:
+                reply_text += (
+                    "\n\n---\n"
+                    "✂️ *My answer was cut off here because it got very long. "
+                    "Reply **\"Continue\"** and I'll pick up right where I left off!*"
+                )
+
             followups = _generate_quick_followups(user_text, reply_text)
+            if was_truncated and "Continue" not in followups:
+                followups = ["Continue"] + followups[:2]
             return {
                 "reply": reply_text,
                 "suggested_followups": followups,

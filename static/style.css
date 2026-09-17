@@ -2727,6 +2727,92 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   white-space: nowrap;
 }
 
+/* ── API Key Health Bar ──────────────────────────────────────── */
+.hollabuddy-api-health-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: rgba(0,0,0,0.2);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  font-size: 0.72rem;
+  flex-wrap: wrap;
+  min-height: 32px;
+}
+.hb-health-label {
+  color: #64748b;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.hb-health-keys {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex: 1;
+  align-items: center;
+}
+.hb-health-checking {
+  color: #64748b;
+  font-size: 0.72rem;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.hb-health-none {
+  color: #475569;
+  font-size: 0.72rem;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.hb-key-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid color-mix(in srgb, var(--key-col, #64748b) 25%, transparent);
+  color: #94a3b8;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  cursor: default;
+  transition: background 0.15s;
+}
+.hb-key-pill:hover { background: rgba(255,255,255,0.08); }
+.hb-key-name { font-weight: 700; color: #cbd5e1; }
+.hb-key-masked { color: #64748b; font-family: monospace; letter-spacing: .02em; }
+.hb-key-status-label { color: #64748b; font-style: italic; }
+.hb-active-badge {
+  background: rgba(99,102,241,0.22);
+  color: #a5b4fc;
+  border: 1px solid rgba(99,102,241,0.35);
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+.hb-health-refresh {
+  background: transparent;
+  border: none;
+  color: #475569;
+  cursor: pointer;
+  padding: 3px 5px;
+  border-radius: 6px;
+  transition: color 0.15s, background 0.15s;
+  font-size: 0.72rem;
+  margin-left: auto;
+}
+.hb-health-refresh:hover { color: #94a3b8; background: rgba(255,255,255,0.06); }
+/* Header signal icon color variants */
+.hb-icon-green { color: #22c55e !important; }
+.hb-icon-amber { color: #f59e0b !important; }
+.hb-icon-red   { color: #ef4444 !important; }
+
 /* Quick Suggestion Chips */
 .hollabuddy-chips-bar {
   padding: 9px 14px;
