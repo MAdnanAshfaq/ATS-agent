@@ -534,9 +534,9 @@ async def solve_captcha_interactively(p, url: str) -> Optional[str]:
 
         print("[Scraper] 👁 Browser window is open on your desktop. If a captcha/human check is present, please solve it...")
 
-        # Poll up to 30 seconds (20 checks * 1.5s)
-        for _ in range(20):
-            await asyncio.sleep(1.5)
+        # Poll up to 10 seconds (8 checks * 1.2s)
+        for _ in range(8):
+            await asyncio.sleep(1.2)
             try:
                 content = await page.content()
                 soup = BeautifulSoup(content, 'lxml')

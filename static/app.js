@@ -1647,8 +1647,84 @@ function showToast(message, type = "info") {
 }
 
 /* ── Simplify-Style Interactive Keyword Cross-Check ─────────────────────── */
+/* ── Simplify-Style Interactive Keyword Cross-Check ─────────────────────── */
 let analyzedMissingKeywords = [];
 let selectedMissingKeywords = new Set();
+let analyzeAbortController = null;
+
+function stopAnalyzeJob() {
+  if (analyzeAbortController) {
+    analyzeAbortController.abort();
+    analyzeAbortController = null;
+  }
+  const analyzeBtn = document.getElementById("analyze-btn");
+  const stopBtn = document.getElementById("analyze-stop-btn");
+  if (analyzeBtn) {
+    analyzeBtn.disabled = false;
+    analyzeBtn.innerHTML = `<i class="fa-solid fa-magnifying-glass"></i> Analyze & Cross-Check`;
+  }
+  if (stopBtn) stopBtn.classList.add("hidden");
+  setAnalyzeConsoleState("idle", "Analysis stopped");
+  appendAnalyzeConsoleLine("⏹ Analysis cancelled by user.", "warning");
+  showToast("Analysis stopped. You can paste the job manually or try another link.", "info");
+}
+
+function resetJobApplication() {
+  // If analyzing, stop it immediately
+  if (analyzeAbortController) {
+    analyzeAbortController.abort();
+    analyzeAbortController = null;
+  }
+
+  // 1. Reset input fields
+  const urlInput = document.getElementById("jd-url");
+  if (urlInput) urlInput.value = "";
+  const kwInput = document.getElementById("custom-keywords-input");
+  if (kwInput) kwInput.value = "";
+  const bulletsInput = document.getElementById("matrix-custom-bullets-input") || document.getElementById("custom-bullets-input");
+  if (bulletsInput) bulletsInput.value = "";
+
+  // 2. Hide platform badge
+  const badge = document.getElementById("detected-platform-badge");
+  if (badge) badge.classList.add("hidden");
+
+  // 3. Reset buttons
+  const analyzeBtn = document.getElementById("analyze-btn");
+  if (analyzeBtn) {
+    analyzeBtn.disabled = false;
+    analyzeBtn.innerHTML = `<i class="fa-solid fa-magnifying-glass"></i> Analyze & Cross-Check`;
+  }
+  const stopBtn = document.getElementById("analyze-stop-btn");
+  if (stopBtn) stopBtn.classList.add("hidden");
+
+  // 4. Hide error card & simplify card & execution container
+  _analyzeHideError();
+  const simplifyCard = document.getElementById("simplify-card");
+  if (simplifyCard) simplifyCard.classList.add("hidden");
+  const execContainer = document.getElementById("execution-container");
+  if (execContainer) execContainer.classList.add("hidden");
+
+  // 5. Clear global state
+  analyzeScoreBefore = null;
+  analyzeCompany = "";
+  analyzeRole = "";
+  analyzeJdText = "";
+  analyzedMissingKeywords = [];
+  selectedMissingKeywords.clear();
+
+  // 6. Reset console drawer
+  clearAnalyzeConsole();
+  setAnalyzeConsoleState("idle", "Idle");
+  toggleAnalyzeConsole(false);
+
+  // 7. Focus on URL input
+  if (urlInput) {
+    urlInput.focus();
+    urlInput.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  showToast("Ready for new job! Enter URL or click 'Manual Paste'.", "info");
+}
 
 async function analyzeJobKeywords(opts = {}) {
   let url = document.getElementById("jd-url").value.trim();
@@ -1665,8 +1741,18 @@ async function analyzeJobKeywords(opts = {}) {
   }
 
   const analyzeBtn = document.getElementById("analyze-btn");
-  analyzeBtn.disabled = true;
-  analyzeBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Analyzing...`;
+  const stopBtn = document.getElementById("analyze-stop-btn");
+  if (analyzeBtn) {
+    analyzeBtn.disabled = true;
+    analyzeBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Analyzing...`;
+  }
+  if (stopBtn) stopBtn.classList.remove("hidden");
+
+  // Abort any prior request and initialize new controller
+  if (analyzeAbortController) {
+    analyzeAbortController.abort();
+  }
+  analyzeAbortController = new AbortController();
 
   // Clear any previous inline error and activate inline live terminal drawer
   _analyzeHideError();
@@ -1682,6 +1768,7 @@ async function analyzeJobKeywords(opts = {}) {
   try {
     const res = await fetch("/api/analyze", {
       method: "POST",
+      signal: analyzeAbortController.signal,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         url: url || "Manual Job Description",
@@ -1700,8 +1787,11 @@ async function analyzeJobKeywords(opts = {}) {
       throw new Error(`Server returned HTTP ${res.status}: ${text ? text.slice(0, 200) : "Empty response from server"}`);
     }
 
-    analyzeBtn.disabled = false;
-    analyzeBtn.innerHTML = `<i class="fa-solid fa-magnifying-glass"></i> Analyze & Cross-Check`;
+    if (analyzeBtn) {
+      analyzeBtn.disabled = false;
+      analyzeBtn.innerHTML = `<i class="fa-solid fa-magnifying-glass"></i> Analyze & Cross-Check`;
+    }
+    if (stopBtn) stopBtn.classList.add("hidden");
 
     if (!data.success) {
       setAnalyzeConsoleState("error", "Analysis failed");
@@ -1731,11 +1821,20 @@ async function analyzeJobKeywords(opts = {}) {
     showToast(`Scraped ${data.role} at ${data.company}! Keywords cross-checked.`, "success");
     openReviewConfirmModal(data);
   } catch (err) {
-    analyzeBtn.disabled = false;
-    analyzeBtn.innerHTML = `<i class="fa-solid fa-magnifying-glass"></i> Analyze & Cross-Check`;
+    if (err.name === "AbortError") {
+      return; // Handled cleanly by stopAnalyzeJob()
+    }
+    if (analyzeBtn) {
+      analyzeBtn.disabled = false;
+      analyzeBtn.innerHTML = `<i class="fa-solid fa-magnifying-glass"></i> Analyze & Cross-Check`;
+    }
+    if (stopBtn) stopBtn.classList.add("hidden");
     setAnalyzeConsoleState("error", "Connection error");
     appendAnalyzeConsoleLine(`❌ Connection error: ${err.message}`, "error");
     showToast("Server connection error during analysis", "error");
+  } finally {
+    analyzeAbortController = null;
+    if (stopBtn) stopBtn.classList.add("hidden");
   }
 }
 
@@ -1771,6 +1870,34 @@ function openManualJdModal(company = "", role = "", source = "pipeline") {
   manualJdSource = source;
   const modal = document.getElementById("manual-jd-modal");
   if (!modal) return;
+
+  const titleEl = document.getElementById("manual-jd-title");
+  const subtitleEl = document.getElementById("manual-jd-subtitle");
+  const iconEl = document.getElementById("manual-jd-icon");
+  const iconBadge = document.getElementById("manual-jd-icon-badge");
+  const noticeText = document.getElementById("manual-jd-notice-text");
+
+  if (source === "manual_click" || source === "user") {
+    if (titleEl) titleEl.innerText = "Paste Job Description Manually";
+    if (subtitleEl) subtitleEl.innerText = "Directly paste job text to bypass LinkedIn, Wellfound, or bot-blocks";
+    if (iconEl) iconEl.className = "fa-solid fa-paste";
+    if (iconBadge) {
+      iconBadge.style.background = "rgba(56, 189, 248, 0.15)";
+      iconBadge.style.color = "#38bdf8";
+      iconBadge.style.borderColor = "rgba(56, 189, 248, 0.35)";
+    }
+    if (noticeText) noticeText.innerText = "Paste the full job posting text below. The AI pipeline will extract technical skills, calculate your ATS match score, and tailor your resume without any web scraper delays.";
+  } else {
+    if (titleEl) titleEl.innerText = "Bot-Protection Detected on Portal";
+    if (subtitleEl) subtitleEl.innerText = "Target site blocked automated scraping (403 / Captcha / Login Wall)";
+    if (iconEl) iconEl.className = "fa-solid fa-shield-halved";
+    if (iconBadge) {
+      iconBadge.style.background = "var(--warn-dim)";
+      iconBadge.style.color = "var(--warn)";
+      iconBadge.style.borderColor = "var(--warn-border)";
+    }
+    if (noticeText) noticeText.innerText = "Copy the job text directly from your open browser tab and paste it below. The pipeline will automatically parse hard/soft skills, extract ATS keywords, and tailor your resume without losing your progress.";
+  }
 
   const compInput = document.getElementById("manual-jd-company");
   const roleInput = document.getElementById("manual-jd-role");
@@ -1811,6 +1938,14 @@ function continuePipelineWithManualJd() {
   const customCompany = document.getElementById("manual-jd-company")?.value.trim() || "";
   const customRole = document.getElementById("manual-jd-role")?.value.trim() || "";
 
+  // Set the visual input box so user sees what's being run
+  const urlBox = document.getElementById("jd-url");
+  if (urlBox) {
+    urlBox.value = customRole && customCompany 
+      ? `[Direct] ${customRole} @ ${customCompany}`
+      : `[Direct Text] Job Description (${text.length.toLocaleString()} chars)`;
+  }
+
   closeManualJdModal();
   showToast("Resuming pipeline with pasted Job Description...", "info");
 
@@ -1831,6 +1966,14 @@ function continueAnalyzeWithManualJd() {
 
   const customCompany = document.getElementById("manual-jd-company")?.value.trim() || "";
   const customRole = document.getElementById("manual-jd-role")?.value.trim() || "";
+
+  // Set the visual input box so user sees what's being analyzed
+  const urlBox = document.getElementById("jd-url");
+  if (urlBox) {
+    urlBox.value = customRole && customCompany 
+      ? `[Direct] ${customRole} @ ${customCompany}`
+      : `[Direct Text] Job Description (${text.length.toLocaleString()} chars)`;
+  }
 
   closeManualJdModal();
   _analyzeHideError();
