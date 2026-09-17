@@ -452,7 +452,9 @@ function downloadCurrentResume(ext = 'docx') {
   }
   let relPath = window.lastResult.relative_path;
   if (ext === 'pdf') {
-    relPath = relPath.replace(/\.docx$/i, '.pdf');
+    relPath = relPath.replace(/\.(docx|pdf|json)$/i, '.pdf');
+  } else if (ext === 'docx') {
+    relPath = relPath.replace(/\.(docx|pdf|json)$/i, '.docx');
   }
   const cleanUrl = `/api/download/${encodeURIComponent(relPath).replace(/%2F/g, '/')}`;
   window.location.href = cleanUrl;
@@ -560,6 +562,8 @@ function renderHistoryCards(apps, query = "") {
     const afterScore = app.score_after != null ? app.score_after : (app.match_score_after != null ? app.match_score_after : 0);
     const deltaScore = app.score_delta != null ? app.score_delta : (app.match_score_delta != null ? app.match_score_delta : Math.max(0, afterScore - beforeScore));
     const jobUrl = app.url || "";
+    const historyDocxRel = (app.relative_file_path || '').replace(/\.(docx|pdf|json)$/i, '.docx');
+    const historyPdfRel = (app.relative_file_path || '').replace(/\.(docx|pdf|json)$/i, '.pdf');
 
     const card = document.createElement("div");
     card.className = "history-card";
@@ -605,13 +609,13 @@ function renderHistoryCards(apps, query = "") {
         </div>
       </div>
       <div class="history-actions">
-        <button class="btn btn-blue btn-sm" onclick="openPreviewModal('${escapeHtml(app.relative_file_path)}', '${escapeHtml(app.company)}', '${escapeHtml(app.role)}')" title="Preview resume in browser before downloading">
+        <button class="btn btn-blue btn-sm" onclick="openPreviewModal('${escapeHtml(historyDocxRel)}', '${escapeHtml(app.company)}', '${escapeHtml(app.role)}')" title="Preview resume in browser before downloading">
           <i class="fa-solid fa-eye"></i> Preview
         </button>
-        <a href="/api/download/${app.relative_file_path}" class="btn btn-emerald btn-sm" download>
+        <a href="/api/download/${historyDocxRel}" class="btn btn-emerald btn-sm" download>
           <i class="fa-solid fa-download"></i> .docx
         </a>
-        ${app.relative_file_path ? `<a href="/api/download/${app.relative_file_path.replace('.docx', '.pdf')}" class="btn btn-cyan btn-sm" download><i class="fa-solid fa-file-pdf"></i> .pdf</a>` : ''}
+        ${historyPdfRel ? `<a href="/api/download/${historyPdfRel}" class="btn btn-cyan btn-sm" download><i class="fa-solid fa-file-pdf"></i> .pdf</a>` : ''}
         <button class="btn btn-purple-sm" onclick="openRefineFromHistory('${escapeHtml(app.log_file_name)}', '${escapeHtml(app.output_file)}', '${escapeHtml(app.company)}', '${escapeHtml(app.role)}', '${escapeHtml(jobUrl)}')">
           <i class="fa-solid fa-wand-magic-sparkles"></i> Refine
         </button>
@@ -2383,7 +2387,10 @@ async function openCurrentCoverLetter() {
     if (clean.toLowerCase().includes("resume.docx")) {
       return clean.replace(/_Resume\.docx$/i, "_Cover_Letter.docx").replace(/Resume\.docx$/i, "Cover_Letter.docx");
     }
-    return clean.replace(/[^\/]+\.docx$/i, (m) => m.replace(/resume/i, "Cover_Letter"));
+    if (/resume/i.test(clean)) {
+      return clean.replace(/resume/i, "Cover_Letter");
+    }
+    return clean.replace(/\.(docx|pdf|json)$/i, "_Cover_Letter.docx");
   }
 
   if (window.lastResult.cover_letter_text) {
@@ -2429,7 +2436,10 @@ async function generateOrViewHistoryCoverLetter(company, role, relativePath, url
     if (clean.toLowerCase().includes("resume.docx")) {
       return clean.replace(/_Resume\.docx$/i, "_Cover_Letter.docx").replace(/Resume\.docx$/i, "Cover_Letter.docx");
     }
-    return clean.replace(/[^\/]+\.docx$/i, (m) => m.replace(/resume/i, "Cover_Letter"));
+    if (/resume/i.test(clean)) {
+      return clean.replace(/resume/i, "Cover_Letter");
+    }
+    return clean.replace(/\.(docx|pdf|json)$/i, "_Cover_Letter.docx");
   }
 
   const coverLetterRel = _getCoverLetterRelPath(relativePath);
@@ -3210,10 +3220,10 @@ function openPreviewModal(filePath, company = "Tailored Resume", role = "Documen
   if (subtitle) subtitle.textContent = role ? `${role} · In-Browser Inspector` : "In-Browser Document Inspector";
 
   // Normalize path
-  let cleanPath = filePath;
+  let cleanPath = (filePath || '').replace(/\\/g, '/');
   const previewUrl = `/api/preview/${encodeURIComponent(cleanPath).replace(/%2F/g, '/')}`;
-  const pdfDownloadUrl = `/api/download/${encodeURIComponent(cleanPath.replace(/\.docx$/i, '.pdf')).replace(/%2F/g, '/')}`;
-  const docxDownloadUrl = `/api/download/${encodeURIComponent(cleanPath.replace(/\.pdf$/i, '.docx')).replace(/%2F/g, '/')}`;
+  const pdfDownloadUrl = `/api/download/${encodeURIComponent(cleanPath.replace(/\.(docx|pdf|json)$/i, '.pdf')).replace(/%2F/g, '/')}`;
+  const docxDownloadUrl = `/api/download/${encodeURIComponent(cleanPath.replace(/\.(docx|pdf|json)$/i, '.docx')).replace(/%2F/g, '/')}`;
 
   if (pdfBtn) pdfBtn.href = pdfDownloadUrl;
   if (docxBtn) docxBtn.href = docxDownloadUrl;

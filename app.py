@@ -1230,14 +1230,19 @@ def history():
                         rel_path = f"{p_out.parent.name}/{p_out.name}"
                 elif folder:
                     # File missing on disk — build a canonical path the download route can regen from
-                    fname = p_out.name if p_out.name else f"{c_slug}_{r_slug}_Resume.docx"
+                    fname = p_out.name if (p_out.name and p_out.name.lower().endswith((".docx", ".pdf"))) else f"{c_slug}_{r_slug}_Resume.docx"
                     rel_path = f"{folder}/{fname}"
                     app_entry["_needs_regen"] = True
                 else:
-                    rel_path = f"{p_out.parent.name}/{p_out.name}" if p_out.parent.name else p_out.name
+                    fname = p_out.name if (p_out.name and p_out.name.lower().endswith((".docx", ".pdf"))) else "Resume.docx"
+                    rel_path = f"{p_out.parent.name}/{fname}" if p_out.parent.name else fname
             elif folder:
                 rel_path = f"{folder}/{c_slug}_{r_slug}_Resume.docx"
                 app_entry["_needs_regen"] = True
+
+            # Normalize any lingering .json extension to .docx
+            if rel_path and rel_path.lower().endswith(".json"):
+                rel_path = re.sub(r'\.json$', '.docx', rel_path, flags=re.IGNORECASE)
 
             app_entry["relative_file_path"] = rel_path
 
@@ -1253,7 +1258,16 @@ def history():
                     output_file = log_data.get("output_file", "")
                     rel_file = ""
                     if output_file and os.path.exists(output_file):
-                        rel_file = os.path.relpath(output_file, str(user_output_dir))
+                        rel_file = os.path.relpath(output_file, str(user_output_dir)).replace("\\", "/")
+                    else:
+                        co = log_data.get("company", "")
+                        ro = log_data.get("role", "")
+                        c_slug = _safe_slugify(co)
+                        r_slug = _safe_slugify(ro)
+                        if c_slug or r_slug:
+                            rel_file = f"{c_slug}_{r_slug}/{c_slug}_{r_slug}_Resume.docx"
+                    if rel_file and rel_file.lower().endswith(".json"):
+                        rel_file = re.sub(r'\.json$', '.docx', rel_file, flags=re.IGNORECASE)
                     log_data["relative_file_path"] = rel_file
                     log_data["log_file_name"] = log_file.name
                     applications.append(log_data)
@@ -1511,8 +1525,12 @@ def download_file(filepath):
             matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
             target_path = matches[0].resolve()
 
-    # 5. If PDF requested but doesn't exist, search for .docx counterpart and convert on the fly!
-    if not target_path.exists() and clean_fp.lower().endswith(".pdf"):
+    # 5. If PDF requested and target_path not found, search for .docx counterpart and convert on the fly!
+    is_pdf_req = clean_fp.lower().endswith(".pdf")
+    is_docx_req = clean_fp.lower().endswith(".docx")
+    is_json_req = clean_fp.lower().endswith(".json")
+
+    if not target_path.exists() and is_pdf_req:
         docx_name = Path(clean_fp).stem + ".docx"
         docx_matches = list(user_output_dir.rglob(docx_name))
         if docx_matches:
@@ -1534,76 +1552,149 @@ def download_file(filepath):
             cl_matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
             target_path = cl_matches[0].resolve()
 
-    # 7. If generic resume requested and not found, find the newest generated resume in output
-    if not target_path.exists() and "resume" in clean_fp.lower():
-        ext = ".pdf" if clean_fp.lower().endswith(".pdf") else ".docx"
-        resume_matches = list(user_output_dir.rglob(f"*Resume*{ext}"))
-        if resume_matches:
-            resume_matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-            target_path = resume_matches[0].resolve()
-
-    # 7.5 If resume .docx requested and not found on disk, auto-regenerate from base_resume
-    if not target_path.exists() and "resume" in clean_fp.lower() and clean_fp.lower().endswith(".docx"):
-        folder_part = Path(clean_fp).parent.name
-        if folder_part and "_" in folder_part and user_resume_path.exists():
-            try:
-                parts = folder_part.split("_", 1)
-                comp = parts[0]
-                rol = parts[1] if len(parts) > 1 else ""
-                with open(user_resume_path, "r", encoding="utf-8") as rf:
-                    base_r = json.load(rf)
-                from resume_builder import build_resume_docx
-                regen_p = build_resume_docx(base_r, comp, rol, output_dir=str(user_output_dir))
-                if regen_p and os.path.exists(regen_p):
-                    target_path = Path(regen_p).resolve()
-            except Exception as regen_err:
-                print(f"[Download] Auto-regen error: {regen_err}")
-
-    # 7.6 DB-backed on-the-fly regeneration:
-    # If file not found on disk but we have company+role from the path, search DB history
-    # and rebuild the DOCX from the stored tailored resume JSON.
-    if not target_path.exists():
+    # 7. Robust On-the-fly Regeneration for any missing resume .docx or .pdf
+    # Handles previous sessions, Render container rebuilds, and disk wipeouts.
+    if not target_path.exists() and (is_docx_req or is_pdf_req or "resume" in clean_fp.lower()):
         try:
             path_parts = clean_fp.replace("\\", "/").split("/")
-            # folder name is company_role slug, e.g. BrightVision_SeniorDataEngineer
             folder_name = path_parts[0] if len(path_parts) > 1 else ""
-            if folder_name and "_" in folder_name and db_layer.is_db_available():
+            file_stem = Path(clean_fp).stem
+
+            # Attempt 1: Match metadata from NeonDB history or local logs
+            matched = None
+            if db_layer.is_db_available() and current_user.is_authenticated:
                 all_hist = db_layer.db_get_history(current_user.username)
-                matched = None
                 for h in all_hist:
                     c_slug = _safe_slugify(h.get("company", ""))
                     r_slug = _safe_slugify(h.get("role", ""))
                     hist_folder = f"{c_slug}_{r_slug}"
-                    if hist_folder.lower() == folder_name.lower() or \
-                       folder_name.lower().startswith(c_slug.lower()[:8]):
+                    if (hist_folder and hist_folder.lower() == folder_name.lower()) or \
+                       (c_slug and c_slug.lower() in folder_name.lower()) or \
+                       (c_slug and c_slug.lower() in file_stem.lower()) or \
+                       (_safe_slugify(Path(h.get("output_file", "")).name).lower() == _safe_slugify(Path(clean_fp).name).lower()):
                         matched = h
                         break
 
-                if matched:
-                    tailored = matched.get("tailored_resume") or matched.get("resume_json") or matched.get("output_data")
-                    if tailored:
-                        if isinstance(tailored, str):
-                            tailored = json.loads(tailored)
-                        from resume_builder import build_resume_docx
-                        company  = matched.get("company", "Company")
-                        role_str = matched.get("role", "Role")
-                        regen_p  = build_resume_docx(tailored, company, role_str, output_dir=str(user_output_dir))
-                        if regen_p and os.path.exists(regen_p):
-                            target_path = Path(regen_p).resolve()
-                            print(f"[Download] Regenerated missing file from DB history: {target_path.name}")
-        except Exception as regen_db_err:
-            print(f"[Download] DB regen error: {regen_db_err}")
+            if not matched:
+                # Check local log files
+                logs_dir = user_output_dir / "logs"
+                if logs_dir.exists():
+                    for lf in sorted(logs_dir.glob("run_*.json"), reverse=True):
+                        try:
+                            with open(lf, "r", encoding="utf-8") as lff:
+                                ldata = json.load(lff)
+                            c_slug = _safe_slugify(ldata.get("company", ""))
+                            r_slug = _safe_slugify(ldata.get("role", ""))
+                            hist_folder = f"{c_slug}_{r_slug}"
+                            if (hist_folder and hist_folder.lower() == folder_name.lower()) or \
+                               (c_slug and c_slug.lower() in folder_name.lower()) or \
+                               (c_slug and c_slug.lower() in file_stem.lower()):
+                                matched = ldata
+                                break
+                        except Exception:
+                            continue
+
+            company = matched.get("company") if matched else ""
+            role_str = matched.get("role") if matched else ""
+            if not company and folder_name and "_" in folder_name:
+                parts = folder_name.split("_", 1)
+                company = parts[0].replace("_", " ")
+                role_str = parts[1].replace("_", " ") if len(parts) > 1 else "Role"
+            if not company:
+                company = "Company"
+                role_str = "Role"
+
+            # Retrieve tailored resume dict if present, or base_resume.json
+            tailored = (matched.get("tailored_resume") or matched.get("resume_json") or matched.get("output_data")) if matched else None
+            resume_dict = None
+            if tailored:
+                resume_dict = json.loads(tailored) if isinstance(tailored, str) else tailored
+            elif user_resume_path.exists():
+                with open(user_resume_path, "r", encoding="utf-8") as rf:
+                    resume_dict = json.load(rf)
+            elif RESUME_PATH.exists():
+                with open(RESUME_PATH, "r", encoding="utf-8") as rf:
+                    resume_dict = json.load(rf)
+
+            if resume_dict:
+                # Check for user master template
+                user_orig_docx = user_data_dir / "master_resume_original.docx"
+                orig_docx_path = user_orig_docx if user_orig_docx.exists() else (BASE_DIR / "master_resume_original.docx")
+
+                gen_docx = None
+                if orig_docx_path.exists():
+                    try:
+                        from docx_patcher import patch_docx_with_rewritten_resume
+                        gen_docx = patch_docx_with_rewritten_resume(
+                            original_docx_path=str(orig_docx_path),
+                            rewritten_resume=resume_dict,
+                            company=company,
+                            role=role_str,
+                            output_dir=str(user_output_dir),
+                        )
+                    except Exception as pe:
+                        print(f"[Download] Patcher on-the-fly note: {pe}")
+
+                if not gen_docx or not os.path.exists(gen_docx):
+                    from resume_builder import build_resume_docx
+                    gen_docx = build_resume_docx(
+                        resume=resume_dict,
+                        company=company,
+                        role=role_str,
+                        output_dir=str(user_output_dir),
+                    )
+
+                if gen_docx and os.path.exists(gen_docx):
+                    if is_pdf_req:
+                        from resume_builder import convert_to_pdf
+                        pdf_res = convert_to_pdf(gen_docx)
+                        if not pdf_res or not os.path.exists(pdf_res):
+                            try:
+                                from resume_html import docx_to_html, generate_pdf_from_html
+                                html_c = docx_to_html(gen_docx)
+                                cand_pdf = str(Path(gen_docx).with_suffix(".pdf"))
+                                if generate_pdf_from_html(html_c, cand_pdf):
+                                    pdf_res = cand_pdf
+                            except Exception as html_pdf_err:
+                                print(f"[Download] HTML-to-PDF note: {html_pdf_err}")
+
+                        if pdf_res and os.path.exists(pdf_res):
+                            target_path = Path(pdf_res).resolve()
+                        else:
+                            target_path = Path(gen_docx).resolve()
+                    else:
+                        target_path = Path(gen_docx).resolve()
+                    print(f"[Download] Successfully generated missing document: {target_path.name}")
+        except Exception as auto_gen_err:
+            print(f"[Download] Auto regeneration error: {auto_gen_err}")
 
     # 8. Fallback to user base_resume.json if json requested
-    if not target_path.exists() and clean_fp.lower().endswith(".json"):
+    if not target_path.exists() and is_json_req:
         if user_resume_path.exists():
             target_path = user_resume_path.resolve()
+
+    # 9. Last-ditch recovery: If target_path still does not exist, find newest resume in output_dir
+    if not target_path.exists() or not target_path.is_file():
+        ext_to_find = ".pdf" if is_pdf_req else ".docx"
+        any_matches = list(user_output_dir.rglob(f"*{ext_to_find}")) or list(user_output_dir.rglob("*.docx"))
+        if any_matches:
+            any_matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            target_path = any_matches[0].resolve()
 
     if not target_path.exists() or not target_path.is_file():
         return jsonify({"error": f"File '{filepath}' not found"}), 404
 
-    # Determine MIME type
-    mimetype = None
+    # Determine correct download filename and MIME type
+    download_name = target_path.name
+    req_name = Path(clean_fp).name
+    if req_name and Path(req_name).suffix.lower() == target_path.suffix.lower():
+        download_name = req_name
+    elif target_path.suffix.lower() == ".docx" and not download_name.lower().endswith(".docx"):
+        download_name = Path(download_name).stem + ".docx"
+    elif target_path.suffix.lower() == ".pdf" and not download_name.lower().endswith(".pdf"):
+        download_name = Path(download_name).stem + ".pdf"
+
+    mimetype = "application/octet-stream"
     if target_path.suffix.lower() == ".docx":
         mimetype = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     elif target_path.suffix.lower() == ".pdf":
@@ -1614,7 +1705,7 @@ def download_file(filepath):
     return send_file(
         str(target_path),
         as_attachment=True,
-        download_name=target_path.name,
+        download_name=download_name,
         mimetype=mimetype,
     )
 
@@ -3035,6 +3126,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                     "keyword_coverage_pct": coverage_pct,
                     "cover_letter_text": cover_letter_text,
                     "output_file": doc_path,
+                    "tailored_resume": cleaned_resume,
                     "log_file_name": f"{run_id}.json",
                 }
                 db_layer.db_save_run_log(user_username, run_id, db_log)
