@@ -3820,16 +3820,79 @@ async function sendHollaBuddyMessage() {
     hollabuddyChatHistory.push({ role: "user", content: message });
     hollabuddyChatHistory.push({ role: "assistant", content: data.reply });
 
-    appendHollaBuddyMessage("assistant", data.reply, data.suggested_followups);
+    // Render with special quota-exhausted banner if needed
+    if (data.error_code === "quota_exhausted") {
+      appendHollaBuddyQuotaBanner(data.reply, data.keys_in_pool || 1, data.suggested_followups);
+    } else {
+      appendHollaBuddyMessage("assistant", data.reply, data.suggested_followups);
+    }
 
   } catch (err) {
     console.error("[HollaBuddy Error]", err);
-    appendHollaBuddyMessage("assistant", `⚠️ Connection note: ${err.message}. Make sure your Gemini API key is configured in Settings.`);
+    const isQuota = /quota|rate.?limit|429|exhausted/i.test(err.message);
+    if (isQuota) {
+      appendHollaBuddyQuotaBanner(
+        "⚠️ Your Gemini API key appears to have hit its quota limit. Please wait a moment or add a second key in **Settings**.",
+        1,
+        ["Open Settings", "Try again in a moment"]
+      );
+    } else {
+      appendHollaBuddyMessage(
+        "assistant",
+        `⚠️ **Couldn't reach Gemini right now.** ${err.message}\n\nCheck your internet connection or try again in a moment.`
+      );
+    }
   } finally {
     if (typing) typing.classList.add("hidden");
     if (sendBtn) sendBtn.disabled = false;
     scrollHollaBuddyToBottom();
   }
+}
+
+/** Show a styled amber quota-exhausted warning card inside the HollaBuddy drawer */
+function appendHollaBuddyQuotaBanner(replyMarkdown, keyCount, followups = []) {
+  const container = document.getElementById("hollabuddy-messages");
+  if (!container) return;
+
+  const keyLabel = keyCount > 1
+    ? `All <strong>${keyCount} API keys</strong> have hit their quota`
+    : `Your <strong>Gemini API key</strong> has used up its credits`;
+
+  const formattedBody = formatHollaBuddyMarkdown(replyMarkdown);
+
+  let followupsHtml = "";
+  if (followups && followups.length > 0) {
+    followupsHtml = `
+      <div class="hollabuddy-followups">
+        ${followups.map(f => `<button type="button" class="hollabuddy-followup-chip" data-prompt="${escapeHtml(f)}">${escapeHtml(f)}</button>`).join("")}
+      </div>`;
+  }
+
+  const banner = document.createElement("div");
+  banner.className = "hollabuddy-msg hollabuddy-msg-bot";
+  banner.innerHTML = `
+    <div class="hollabuddy-msg-avatar" style="background:rgba(245,158,11,0.15);color:#f59e0b;">
+      <i class="fa-solid fa-triangle-exclamation"></i>
+    </div>
+    <div class="hollabuddy-bubble hollabuddy-bubble-bot hollabuddy-quota-banner">
+      <div class="hollabuddy-quota-header">
+        <i class="fa-solid fa-key" style="color:#f59e0b;margin-right:6px;"></i>
+        <strong>API Quota Limit Reached</strong>
+      </div>
+      <div class="hollabuddy-bubble-content" style="margin-top:8px;">${formattedBody}</div>
+      <div class="hollabuddy-quota-actions">
+        <a href="#" onclick="openSettingsTab();return false;" class="hb-quota-btn hb-quota-btn-primary">
+          <i class="fa-solid fa-gear"></i> Open Settings
+        </a>
+        <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" class="hb-quota-btn hb-quota-btn-secondary">
+          <i class="fa-solid fa-arrow-up-right-from-square"></i> Get Free Key
+        </a>
+      </div>
+      ${followupsHtml}
+    </div>
+  `;
+  container.appendChild(banner);
+  scrollHollaBuddyToBottom();
 }
 
 function appendHollaBuddyMessage(role, text, followups = []) {

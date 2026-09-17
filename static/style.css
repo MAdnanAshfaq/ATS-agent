@@ -2824,6 +2824,57 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   border-top-left-radius: 4px;
 }
 
+/* Quota Exhausted Warning Banner */
+.hollabuddy-quota-banner {
+  border-left-color: #f59e0b !important;
+  background: rgba(245, 158, 11, 0.07) !important;
+  border-color: rgba(245, 158, 11, 0.22) !important;
+}
+.hollabuddy-quota-header {
+  display: flex;
+  align-items: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #fbbf24;
+  margin-bottom: 2px;
+}
+.hollabuddy-quota-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.hb-quota-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.hb-quota-btn-primary {
+  background: rgba(245, 158, 11, 0.18);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+}
+.hb-quota-btn-primary:hover {
+  background: rgba(245, 158, 11, 0.32);
+  color: #fde68a;
+}
+.hb-quota-btn-secondary {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: #94a3b8;
+}
+.hb-quota-btn-secondary:hover {
+  background: rgba(255,255,255,0.12);
+  color: #e2e8f0;
+}
+
 .hollabuddy-bubble-user {
   background: linear-gradient(135deg, #6366f1, #3b82f6);
   color: #ffffff;

@@ -8,11 +8,12 @@ questions, behavioral scenarios, technical deep dives, or general enquiries.
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from typing import Any, Optional
 
-from gemini_client import get_gemini_client, is_quota_error, rotate_key
+from gemini_client import get_gemini_client, execute_with_failover, is_quota_error, rotate_key, get_all_gemini_keys
 from google import genai
 from google.genai import types
 
@@ -65,29 +66,37 @@ def chat_with_hollabuddy(
 ) -> dict[str, Any]:
     """
     Generate an instant response from HollaBuddy using the candidate's master resume.
-    
+
+    Uses the full multi-key failover pool from gemini_client.py:
+      - GEMINI_API_KEY (Primary)
+      - GEMINI_API_KEY_2 (Backup — automatically rotated to on quota/429 errors)
+
     Args:
         message: User's chat message or question prompt
         history: List of prior turns [{"role": "user"|"assistant", "content": "..."}]
         base_resume: Candidate's master resume JSON (ground truth)
         job_context: Optional active job posting string or dict
         user_settings: Optional user settings for custom API keys
-        
+
     Returns:
         {"reply": str, "suggested_followups": list[str]}
+        On quota exhaustion: adds "error_code": "quota_exhausted" so the UI can show a banner.
     """
-    try:
-        if user_settings and user_settings.get("GEMINI_API_KEY"):
-            client = genai.Client(api_key=user_settings["GEMINI_API_KEY"])
-        else:
-            client = get_gemini_client()
-    except Exception as e:
-        client = None
+    # --- Inject user API keys into environment so gemini_client pool sees them ---
+    # This ensures GEMINI_API_KEY_2 is always available as a live failover backup.
+    if user_settings:
+        for env_key in ("GEMINI_API_KEY", "GEMINI_API_KEY_2"):
+            val = (user_settings.get(env_key) or "").strip()
+            if val:
+                os.environ[env_key] = val
 
-    if not client:
+    # Verify at least one key is configured
+    keys = get_all_gemini_keys()
+    if not keys:
         return {
-            "reply": "I need a Gemini API key to chat! Please open **Settings** (top right) and paste your free Google Gemini API key.",
-            "suggested_followups": ["Open Settings"]
+            "reply": "I need a Gemini API key to chat! Please open **Settings** (⚙️ top right) and paste your free Google Gemini API key.",
+            "suggested_followups": ["Open Settings"],
+            "error_code": "no_api_key",
         }
 
     # Format Candidate Truth
@@ -116,8 +125,6 @@ def chat_with_hollabuddy(
 
     # Build conversation contents
     chat_contents = []
-    
-    # We prepend system prompt to the first message or instructions
     if history:
         for turn in history[-8:]:  # Keep last 8 turns for token efficiency
             role = "user" if turn.get("role") == "user" else "model"
@@ -125,46 +132,80 @@ def chat_with_hollabuddy(
             if content_text:
                 chat_contents.append(types.Content(role=role, parts=[types.Part(text=content_text)]))
 
-    # Add current user message
     user_text = message.strip()
     chat_contents.append(types.Content(role="user", parts=[types.Part(text=user_text)]))
 
-    # Fallback model array
-    models = ["gemini-2.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.6-flash"]
+    # Ordered model fallback list
+    models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
     last_err = None
+    all_quota_exhausted = False
 
     for model_name in models:
-        try:
+        def _call(client, _model=model_name, _contents=chat_contents, _sys=system_content):
             config = types.GenerateContentConfig(
-                system_instruction=system_content,
+                system_instruction=_sys,
                 temperature=0.6,
                 top_p=0.92,
                 max_output_tokens=2048,
                 automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
             )
-            response = client.models.generate_content(
-                model=model_name,
-                contents=chat_contents,
+            return client.models.generate_content(
+                model=_model,
+                contents=_contents,
                 config=config,
             )
-            reply_text = response.text.strip() if response.text else "I'm right here! How can I help you with your resume or job search?"
-            
-            # Generate quick contextual suggestions
+
+        try:
+            response = execute_with_failover(_call)
+            reply_text = (
+                response.text.strip()
+                if response.text
+                else "I'm right here! How can I help you with your resume or job search?"
+            )
             followups = _generate_quick_followups(user_text, reply_text)
-            
             return {
                 "reply": reply_text,
                 "suggested_followups": followups,
-                "model_used": model_name
+                "model_used": model_name,
+                "keys_in_pool": len(keys),
             }
         except Exception as e:
             last_err = e
-            print(f"[HollaBuddy] Model {model_name} note: {e}")
+            print(f"[HollaBuddy] Model {model_name} failed after all key rotations: {e}")
+            if is_quota_error(e):
+                all_quota_exhausted = True
             time.sleep(0.5)
 
+    # --- Compose a clear, actionable error response ---
+    if all_quota_exhausted:
+        key_count = len(keys)
+        if key_count > 1:
+            quota_msg = (
+                f"⚠️ **Both your Gemini API keys have hit their quota/rate limit** and I couldn't get a reply right now.\n\n"
+                f"**What you can do:**\n"
+                f"- Wait a minute and try again (free-tier limits reset quickly).\n"
+                f"- Add a third API key in **Settings → API Keys** (`GEMINI_API_KEY_3`).\n"
+                f"- Upgrade your Google AI Studio plan for higher limits."
+            )
+        else:
+            quota_msg = (
+                f"⚠️ **Your Gemini API key has used up its quota/credits** and I can't respond right now.\n\n"
+                f"**What you can do:**\n"
+                f"- Wait a minute and try again (free-tier limits reset hourly).\n"
+                f"- Add a **second API key** in **Settings → API Keys** (`GEMINI_API_KEY_2`) so I can automatically switch to it.\n"
+                f"- Get a free key at [aistudio.google.com](https://aistudio.google.com/apikey)."
+            )
+        return {
+            "reply": quota_msg,
+            "suggested_followups": ["Open Settings", "Try again in a moment"],
+            "error_code": "quota_exhausted",
+            "keys_in_pool": key_count,
+        }
+
     return {
-        "reply": f"Sorry! I hit a temporary connection hiccup: {last_err}. Please try asking again in a moment!",
-        "suggested_followups": ["Try again", "What can you help me with?"]
+        "reply": f"Sorry! I hit a temporary connection issue. Please try again in a moment! 🔄\n\n*(Technical detail: {last_err})*",
+        "suggested_followups": ["Try again", "What can you help me with?"],
+        "error_code": "transient_error",
     }
 
 
