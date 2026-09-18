@@ -570,7 +570,7 @@ from pathlib import Path
 
 CACHE_FILE = Path(__file__).parent / "jd_cache.json"
 _MEM_CACHE = {}          # url -> {timestamp, data} — bounded, LRU-evicted
-_MAX_MEM_CACHE = 30      # max entries kept in-process
+_MAX_MEM_CACHE = 100     # ~500KB max at 5KB/entry; safety net only
 
 def _evict_mem_cache():
     """Drop oldest half of _MEM_CACHE when it exceeds _MAX_MEM_CACHE."""

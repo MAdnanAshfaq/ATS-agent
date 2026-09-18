@@ -287,17 +287,22 @@ active_runs = {}          # run_id -> (msg_queue, created_at)
 _active_runs_lock = threading.Lock()
 
 # In-memory intelligence cache for parsed ATS jobs & Simplify scores
-# Bounded to _MAX_ANALYSIS_CACHE entries; oldest evicted when full
-_MAX_ANALYSIS_CACHE = 50
+# Bounded to _MAX_ANALYSIS_CACHE entries; oldest 25% evicted when full.
+# At ~5KB per entry × 200 entries = ~1MB max — well within Render's limits.
+_MAX_ANALYSIS_CACHE = 200
 GLOBAL_ANALYSIS_CACHE = {}  # url -> {company, role, jd_text}
 
 
 def _trim_analysis_cache():
-    """Evict oldest entries when GLOBAL_ANALYSIS_CACHE exceeds limit."""
+    """Evict oldest entries when GLOBAL_ANALYSIS_CACHE exceeds limit.
+    Python 3.7+ dicts preserve insertion order, so keys()[0] is oldest.
+    Newly inserted key is always last, so it is never evicted here.
+    """
     if len(GLOBAL_ANALYSIS_CACHE) > _MAX_ANALYSIS_CACHE:
-        # Drop oldest half so we don't trim on every insert
+        # Drop oldest quarter — keeps the cache useful while reclaiming memory
         keys = list(GLOBAL_ANALYSIS_CACHE.keys())
-        for k in keys[:len(keys)//2]:
+        n_drop = max(1, len(keys) // 4)
+        for k in keys[:n_drop]:
             GLOBAL_ANALYSIS_CACHE.pop(k, None)
 
 
@@ -2789,15 +2794,18 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
         os.environ["HF_API_KEY"] = _settings["HF_API_KEY"]
 
     def send_log(step, stage, message, data=None, status="info"):
-        msg_queue.put({
-            "type": "progress",
-            "step": step,
-            "stage": stage,
-            "message": message,
-            "status": status,
-            "data": data or {},
-            "timestamp": datetime.now().isoformat(),
-        })
+        try:
+            msg_queue.put_nowait({
+                "type": "progress",
+                "step": step,
+                "stage": stage,
+                "message": message,
+                "status": status,
+                "data": data or {},
+                "timestamp": datetime.now().isoformat(),
+            })
+        except queue.Full:
+            pass  # SSE client disconnected; pipeline continues silently
 
     try:
         from dotenv import load_dotenv
@@ -3200,46 +3208,54 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                 logging.warning(f"[Pipeline] DB log save failed: {_db_log_err}")
 
         # Final complete message
-        msg_queue.put({
-            "type": "complete",
-            "status": "success",
-            "message": "Pipeline completed successfully!",
-            "result": {
-                "company": company,
-                "role": role,
-                "output_file": doc_path,
-                "relative_path": rel_path,
-                "score_before": score_before_val,
-                "score_after": score_after_val,
-                "score_delta": score_delta_val,
-                "simplify_score_before": simplify_score_before,
-                "keywords_injected": len(embedded_keywords),
-                "keywords_total": len(missing_keywords),
-                "coverage_pct": coverage_pct,
-                "newly_added": embedded_keywords,
-                "embedded_keywords": embedded_keywords,
-                "still_missing": still_missing,
-                "folder_path": str(Path(doc_path).parent),
-                "tailored_resume": cleaned_resume,
-                "cover_letter_text": cover_letter_text,
-                "next_step": "Upload the .docx to your Simplify profile to verify your new score",
-            }
-        })
+        try:
+            msg_queue.put_nowait({
+                "type": "complete",
+                "status": "success",
+                "message": "Pipeline completed successfully!",
+                "result": {
+                    "company": company,
+                    "role": role,
+                    "output_file": doc_path,
+                    "relative_path": rel_path,
+                    "score_before": score_before_val,
+                    "score_after": score_after_val,
+                    "score_delta": score_delta_val,
+                    "simplify_score_before": simplify_score_before,
+                    "keywords_injected": len(embedded_keywords),
+                    "keywords_total": len(missing_keywords),
+                    "coverage_pct": coverage_pct,
+                    "newly_added": embedded_keywords,
+                    "embedded_keywords": embedded_keywords,
+                    "still_missing": still_missing,
+                    "folder_path": str(Path(doc_path).parent),
+                    "tailored_resume": cleaned_resume,
+                    "cover_letter_text": cover_letter_text,
+                    "next_step": "Upload the .docx to your Simplify profile to verify your new score",
+                }
+            })
+        except queue.Full:
+            logging.warning(f"[Pipeline] complete message dropped — SSE queue full for run {run_id}")
+
 
     except Exception as e:
         import traceback
         err_msg = str(e)
         traceback.print_exc()
         is_bot = ("bot-block" in err_msg.lower() or "jd validation failed" in err_msg.lower() or "captcha" in err_msg.lower())
-        msg_queue.put({
-            "type": "error",
-            "status": "failed",
-            "error_type": "bot_block" if is_bot else "general",
-            "company": custom_company or (company if 'company' in locals() and company != "Careers Navitus" else ""),
-            "role": custom_role or (role if 'role' in locals() and "confirm you are human" not in role.lower() else ""),
-            "message": f"Pipeline Error: {err_msg}",
-            "traceback": traceback.format_exc(),
-        })
+        try:
+            msg_queue.put_nowait({
+                "type": "error",
+                "status": "failed",
+                "error_type": "bot_block" if is_bot else "general",
+                "company": custom_company or (company if 'company' in locals() and company != "Careers Navitus" else ""),
+                "role": custom_role or (role if 'role' in locals() and "confirm you are human" not in role.lower() else ""),
+                "message": f"Pipeline Error: {err_msg}",
+                "traceback": traceback.format_exc(),
+            })
+        except queue.Full:
+            pass  # SSE client gone; log to stderr only
+
 
 
 @app.route("/api/stream/<run_id>")
