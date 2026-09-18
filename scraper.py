@@ -255,6 +255,9 @@ def clean_role_title(role: str, company: str = "") -> str:
     # 5. Remove trailing suffixes like '- Remote', ' - Full Time', ' - US'
     role = re.sub(r'\s*[-–—|/]\s*(?:remote|hybrid|onsite|full[- ]?time|contract|part[- ]?time|intern|internship|us|usa|uk|canada|emea|latam|apac|tier\s*\d+|l\d+|level\s*\d+|requisition\s*#?\s*\d+|req\s*#?\s*\d+|req\d+|job\s*id\s*\d+|careers?).*$', '', role, flags=re.IGNORECASE)
     
+    # 5b. Remove trailing corporate leveling/contractor classification codes (e.g. 'Con II', 'Con I', 'Cons II', 'IC4')
+    role = re.sub(r'\s*[-–—|/,]?\s*\b(?:con|cons|consultant|tier|grade|band|ic)\s*(?:i{1,3}|iv|v|\d+)\b.*$', '', role, flags=re.IGNORECASE)
+    
     # 6. Strip leftover punctuation and spaces
     role = re.sub(r'\s+', ' ', role).strip(' -–—|/,:;')
     

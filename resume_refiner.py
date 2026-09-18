@@ -30,6 +30,7 @@ The candidate has reviewed the current tailored resume and said:
 "I want the resume to be like this: should have this, not this, change this, etc."
 
 You must execute their revision instructions with 100% precision across ANY requested part of the resume:
+- Target role / title under candidate name (e.g., "Senior Data Engineer", remove unwanted leveling tags, codes like "Con II", or change headline)
 - Summary (length, tone, focus, specific tech, executive level)
 - Skills list (add technologies, remove tools, reorganize, specialize)
 - Experience bullets (rewrite specific bullets, add hard numbers/metrics, front-load impact, change focus)
@@ -51,6 +52,7 @@ JSON Schema:
   "change_summary": "1-2 sentence human-readable summary of exactly what you revised",
   "refined_resume": {
     "name": "Candidate Name",
+    "target_role": "Target role or headline subtitle under candidate name (e.g. Senior Data Engineer)",
     "contact": { "email": "...", "phone": "...", "location": "...", "linkedin": "...", "github": "..." },
     "summary": "Updated professional summary",
     "skills": ["Skill 1", "Skill 2"],
@@ -175,10 +177,28 @@ INSTRUCTIONS:
         # Ensure mandatory keys exist
         if "name" not in refined and "name" in current_resume:
             refined["name"] = current_resume["name"]
+        if "target_role" not in refined and "target_role" in current_resume:
+            refined["target_role"] = current_resume["target_role"]
         if "contact" not in refined and "contact" in current_resume:
             refined["contact"] = current_resume["contact"]
         if "experience" not in refined and "experience" in current_resume:
             refined["experience"] = current_resume["experience"]
+
+        # Deterministic handler for target_role adjustments (e.g. user asks to remove "Con Ii" from title under name)
+        inst_lower = (instruction or "").lower()
+        if any(kw in inst_lower for kw in ("title under", "under name", "subtitle", "target_role", "target role", "headline", "con ii", "con 2", "con i")):
+            curr_target = refined.get("target_role") or current_resume.get("target_role") or role or ""
+            if "con ii" in inst_lower or "con 2" in inst_lower:
+                curr_target = re.sub(r'[\s\-–—|/,]*\bcon\s*(?:ii|2)\b', '', curr_target, flags=re.I).strip(' -–—|/,:;')
+                refined["target_role"] = curr_target
+            elif "con i" in inst_lower or "con 1" in inst_lower:
+                curr_target = re.sub(r'[\s\-–—|/,]*\bcon\s*(?:i|1)\b', '', curr_target, flags=re.I).strip(' -–—|/,:;')
+                refined["target_role"] = curr_target
+            elif "remove the title" in inst_lower or "delete the title" in inst_lower or "no title under" in inst_lower:
+                refined["target_role"] = ""
+            elif refined.get("target_role"):
+                # Also strip any leftover leveling tags
+                refined["target_role"] = re.sub(r'[\s\-–—|/,]*\b(?:con|cons|consultant|tier|grade|band|ic)\s*(?:i{1,3}|iv|v|\d+)\b.*$', '', refined["target_role"], flags=re.I).strip(' -–—|/,:;')
 
         # Normalize experience entries (ensure title exists and multi-role is preserved)
         ref_exp = refined.get("experience", [])

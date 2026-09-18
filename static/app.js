@@ -456,7 +456,7 @@ function downloadCurrentResume(ext = 'docx') {
   } else if (ext === 'docx') {
     relPath = relPath.replace(/\.(docx|pdf|json)$/i, '.docx');
   }
-  const cleanUrl = `/api/download/${encodeURIComponent(relPath).replace(/%2F/g, '/')}`;
+  const cleanUrl = `/api/download/${encodeURIComponent(relPath).replace(/%2F/g, '/')}?t=${Date.now()}`;
   window.location.href = cleanUrl;
 }
 
@@ -1684,6 +1684,23 @@ function resetJobApplication() {
   const bulletsInput = document.getElementById("matrix-custom-bullets-input") || document.getElementById("custom-bullets-input");
   if (bulletsInput) bulletsInput.value = "";
 
+  // 1b. Reset Application Questions Copilot input & generated answers
+  const qaInput = document.getElementById("qa-copilot-input");
+  if (qaInput) qaInput.value = "";
+  const qaContainer = document.getElementById("qa-answers-container");
+  if (qaContainer) {
+    qaContainer.innerHTML = "";
+    qaContainer.classList.add("hidden");
+  }
+
+  // 1c. Reset Refinement Copilot
+  const refineInput = document.getElementById("refine-input");
+  if (refineInput) refineInput.value = "";
+  const refineStatusBox = document.getElementById("refine-status-box");
+  if (refineStatusBox) refineStatusBox.classList.add("hidden");
+  const refineStatusText = document.getElementById("refine-status-text");
+  if (refineStatusText) refineStatusText.textContent = "";
+
   // 2. Hide platform badge
   const badge = document.getElementById("detected-platform-badge");
   if (badge) badge.classList.add("hidden");
@@ -1697,18 +1714,36 @@ function resetJobApplication() {
   const stopBtn = document.getElementById("analyze-stop-btn");
   if (stopBtn) stopBtn.classList.add("hidden");
 
-  // 4. Hide error card & simplify card & execution container
+  // 4. Hide error card & simplify card & execution container & matrix card & results dashboard
   _analyzeHideError();
   const simplifyCard = document.getElementById("simplify-card");
   if (simplifyCard) simplifyCard.classList.add("hidden");
+  const matrixCard = document.getElementById("analyze-matrix-card");
+  if (matrixCard) matrixCard.classList.add("hidden");
   const execContainer = document.getElementById("execution-container");
   if (execContainer) execContainer.classList.add("hidden");
+  const pBar = document.getElementById("pipeline-progress-bar");
+  if (pBar) pBar.style.width = "0%";
+  const resultsDash = document.getElementById("results-dashboard");
+  if (resultsDash) resultsDash.classList.add("hidden");
+
+  // Close preview modal if open
+  if (typeof closePreviewModal === "function") {
+    closePreviewModal();
+  }
 
   // 5. Clear global state
+  window.lastResult = null;
+  window.lastGeneratedRun = null;
+  window._currentRunDir = null;
   analyzeScoreBefore = null;
   analyzeCompany = "";
   analyzeRole = "";
   analyzeJdText = "";
+  currentCompany = "";
+  currentRole = "";
+  currentJdText = "";
+  hollabuddyActiveJob = null;
   analyzedMissingKeywords = [];
   selectedMissingKeywords.clear();
 
@@ -3364,9 +3399,10 @@ function openPreviewModal(filePath, company = "Tailored Resume", role = "Documen
 
   // Normalize path
   let cleanPath = (filePath || '').replace(/\\/g, '/');
-  const previewUrl = `/api/preview/${encodeURIComponent(cleanPath).replace(/%2F/g, '/')}`;
-  const pdfDownloadUrl = `/api/download/${encodeURIComponent(cleanPath.replace(/\.(docx|pdf|json)$/i, '.pdf')).replace(/%2F/g, '/')}`;
-  const docxDownloadUrl = `/api/download/${encodeURIComponent(cleanPath.replace(/\.(docx|pdf|json)$/i, '.docx')).replace(/%2F/g, '/')}`;
+  const cacheBuster = `?t=${Date.now()}`;
+  const previewUrl = `/api/preview/${encodeURIComponent(cleanPath).replace(/%2F/g, '/')}${cacheBuster}`;
+  const pdfDownloadUrl = `/api/download/${encodeURIComponent(cleanPath.replace(/\.(docx|pdf|json)$/i, '.pdf')).replace(/%2F/g, '/')}${cacheBuster}`;
+  const docxDownloadUrl = `/api/download/${encodeURIComponent(cleanPath.replace(/\.(docx|pdf|json)$/i, '.docx')).replace(/%2F/g, '/')}${cacheBuster}`;
 
   if (pdfBtn) pdfBtn.href = pdfDownloadUrl;
   if (docxBtn) docxBtn.href = docxDownloadUrl;

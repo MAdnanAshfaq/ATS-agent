@@ -244,6 +244,14 @@ app.secret_key = auth_module.ensure_secret_key(ENV_PATH)
 
 CORS(app, supports_credentials=True)
 
+@app.after_request
+def add_no_cache_headers(response):
+    if request.path.startswith(("/api/preview", "/api/download", "/download")):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
 # Reverse proxy support (Cloudflare Tunnel, Nginx, Caddy, custom live domains)
 from werkzeug.middleware.proxy_fix import ProxyFix
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
@@ -2582,6 +2590,8 @@ def refine_resume_api():
         user_orig_docx = user_data_dir / "master_resume_original.docx"
         orig_docx_path = user_orig_docx if user_orig_docx.exists() else (BASE_DIR / "master_resume_original.docx")
 
+        effective_role = refined_resume.get("target_role") or role
+
         doc_path = None
         if orig_docx_path.exists():
             try:
@@ -2590,7 +2600,7 @@ def refine_resume_api():
                     original_docx_path=str(orig_docx_path),
                     rewritten_resume=refined_resume,
                     company=company,
-                    role=role,
+                    role=effective_role,
                     output_dir=str(target_dir),
                 )
             except Exception as patch_err:
@@ -2598,14 +2608,14 @@ def refine_resume_api():
                 doc_path = build_resume_docx(
                     resume=refined_resume,
                     company=company,
-                    role=role,
+                    role=effective_role,
                     output_dir=str(target_dir),
                 )
         else:
             doc_path = build_resume_docx(
                 resume=refined_resume,
                 company=company,
-                role=role,
+                role=effective_role,
                 output_dir=str(target_dir),
             )
 
@@ -2618,6 +2628,27 @@ def refine_resume_api():
 
         rel_doc = os.path.relpath(doc_path, str(user_output_dir)).replace("\\", "/")
         rel_pdf = os.path.relpath(pdf_path, str(user_output_dir)).replace("\\", "/") if pdf_path else ""
+
+        # 8. Persist refined resume in Neon DB so it survives deploys / reloads
+        if db_layer.is_db_available() and user_username:
+            try:
+                db_layer.db_save_run_log(
+                    user_username,
+                    f"refine_{int(time.time()*1000)}",
+                    {
+                        "timestamp": datetime.now().isoformat(),
+                        "url": url,
+                        "company": company,
+                        "role": effective_role,
+                        "output_file": doc_path,
+                        "tailored_resume": refined_resume,
+                        "change_summary": change_summary,
+                        "relative_path": rel_doc,
+                        "relative_pdf": rel_pdf,
+                    }
+                )
+            except Exception as _db_err:
+                logging.warning(f"[Refine] DB persist failed: {_db_err}")
 
         return jsonify({
             "success": True,

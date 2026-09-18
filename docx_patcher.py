@@ -182,21 +182,30 @@ def patch_docx_with_rewritten_resume(
     print(f"[Patcher] Found {len(all_paras)} paragraphs in original DOCX")
 
     # ── 1. Patch Target Role (if present in header) ───────────────────────────
-    target_role = rewritten_resume.get("target_role") or role or ""
-    if target_role and len(all_paras) > 1:
+    if "target_role" in rewritten_resume:
+        target_role = rewritten_resume["target_role"]
+    else:
+        target_role = role or ""
+
+    if len(all_paras) > 1:
         p1_text = _get_para_full_text(all_paras[1]).strip()
-        # If paragraph 1 is a role subtitle (short, uppercase, not contact)
-        if 2 <= len(p1_text) <= 50 and "@" not in p1_text and not p1_text.startswith("+"):
-            from scraper import clean_role_title
-            clean_r = clean_role_title(target_role)
-            if p1_text.isupper():
-                clean_r = clean_r.upper()
+        # If paragraph 1 is a role subtitle (short, not email/phone)
+        if (2 <= len(p1_text) <= 60 or p1_text.lower() == "resume") and "@" not in p1_text and not p1_text.startswith("+"):
+            if target_role:
+                from scraper import clean_role_title
+                clean_r = clean_role_title(target_role)
+                if p1_text.isupper() and p1_text.lower() != "resume":
+                    clean_r = clean_r.upper()
+                else:
+                    clean_r = clean_r.title()
+                if clean_r:
+                    _set_para_text_preserve_format(all_paras[1], clean_r)
+                    all_paras[1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    print(f"[Patcher] Updated target role subtitle to: {clean_r} (centered)")
             else:
-                clean_r = clean_r.title()
-            if clean_r:
-                _set_para_text_preserve_format(all_paras[1], clean_r)
-                all_paras[1].alignment = WD_ALIGN_PARAGRAPH.CENTER
-                print(f"[Patcher] Updated target role subtitle to: {clean_r} (centered)")
+                # Explicit empty string: user requested title removal under their name
+                _set_para_text_preserve_format(all_paras[1], "")
+                print(f"[Patcher] Cleared target role subtitle under candidate name as requested")
 
     # ── 2. Patch Professional Summary ─────────────────────────────────────────
     rewritten_summary = rewritten_resume.get("summary", "").strip()
