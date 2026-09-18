@@ -353,6 +353,23 @@
 </head>
 <body>
 
+<!-- ── AUTHENTIC GOOGLE ANTIGRAVITY PARTICLE CANVAS (1:1 CLONE FROM antigravity.google) ── -->
+<div class="main-particles-component-section" 
+     id="antigravity-bg-login"
+     data-main-particles-component 
+     data-theme="dark" 
+     data-color1="#2c64ed"
+     data-color2="#f84242"
+     data-color3="#ffcf03"
+     data-ring-width="0.006" 
+     data-ring-width2="0.107" 
+     data-ring-displacement="0.62" 
+     data-density="230" 
+     data-particles-scale="0.65"
+     style="position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 0; overflow: hidden;">
+  <div class="main-particles-container" data-container style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;"></div>
+</div>
+
 <div class="page">
   <div class="card" id="auth-card" data-first-time="{{ '1' if first_time else '0' }}">
 
@@ -663,7 +680,7 @@
   });
 </script>
 
-<!-- Google Antigravity Background — glowing particle vortex behind sign-in/up card -->
-<script src="/static/antigravity-bg.js?v=1"></script>
+<!-- Google Antigravity WebGL GPU Particle Engine (Direct 1:1 clone from antigravity.google) -->
+<script type="module" src="/static/antigravity/MainParticlesComponent.js"></script>
 </body>
 </html>

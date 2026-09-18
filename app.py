@@ -867,6 +867,12 @@ def favicon():
     return send_from_directory("static", "favicon-v2.svg", mimetype="image/svg+xml")
 
 
+@app.route("/antigravity")
+def antigravity_demo():
+    """Standalone 1:1 Google Antigravity Particle Experience (pure canvas, zero UI clutter)."""
+    return render_template("antigravity.html")
+
+
 @app.route("/")
 @login_required
 def index():

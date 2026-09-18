@@ -29,6 +29,23 @@
 </head>
 <body>
 
+  <!-- ── AUTHENTIC GOOGLE ANTIGRAVITY PARTICLE CANVAS (1:1 CLONE FROM antigravity.google) ── -->
+  <div class="main-particles-component-section" 
+       id="antigravity-bg"
+       data-main-particles-component 
+       data-theme="dark" 
+       data-color1="#2c64ed"
+       data-color2="#f84242"
+       data-color3="#ffcf03"
+       data-ring-width="0.006" 
+       data-ring-width2="0.107" 
+       data-ring-displacement="0.62" 
+       data-density="230" 
+       data-particles-scale="0.65"
+       style="position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 0; overflow: hidden;">
+    <div class="main-particles-container" data-container style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;"></div>
+  </div>
+
   <!-- ── ATS AGENT LAUNCH & RELOAD SPLASH OVERLAY ────────────────────────── -->
   <div id="ats-app-splash" class="ats-splash-overlay" onclick="dismissAtsSplash()" title="Click to skip animation">
     <div class="ats-splash-stage">
@@ -91,6 +108,11 @@
           <span class="status-dot dot-checking"></span>
           <span class="status-text">Checking System...</span>
         </div>
+
+        <!-- Google Antigravity Fullscreen Showcase -->
+        <a href="/antigravity" target="_blank" class="btn btn-secondary btn-sm header-antigravity-btn" title="Open Fullscreen Google Antigravity Particle Experience">
+          <i class="fa-solid fa-atom"></i> <span>Antigravity</span>
+        </a>
 
         <!-- Optional Desktop Launcher for Offline Self-Hosting -->
         <a href="/api/download_launcher" class="btn btn-secondary btn-sm header-launcher-btn" title="Download Start_Agent.bat for offline local desktop use.">
@@ -2032,9 +2054,8 @@
   <!-- Lottie Web Animation Engine -->
   <script src="/static/lottie.min.js"></script>
 
-  <!-- Google Antigravity Background — glowing particle vortex behind all content -->
-  <!-- pointer-events:none canvas, z-index:0. Zero impact on any UI interaction. -->
-  <script src="/static/antigravity-bg.js?v=1"></script>
+  <!-- Google Antigravity WebGL GPU Particle Engine (Direct 1:1 clone from antigravity.google) -->
+  <script type="module" src="/static/antigravity/MainParticlesComponent.js"></script>
 
   <!-- JavaScript Application Bundle -->
   <script src="/static/app.js?v=14"></script>
