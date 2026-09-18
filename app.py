@@ -283,10 +283,42 @@ def sync_user_environment():
             logging.warning(f"[Auth] sync_user_environment note: {e}")
 
 # Active background runs & message queues for SSE
-active_runs = {}
+active_runs = {}          # run_id -> (msg_queue, created_at)
+_active_runs_lock = threading.Lock()
 
 # In-memory intelligence cache for parsed ATS jobs & Simplify scores
-GLOBAL_ANALYSIS_CACHE = {}
+# Bounded to _MAX_ANALYSIS_CACHE entries; oldest evicted when full
+_MAX_ANALYSIS_CACHE = 50
+GLOBAL_ANALYSIS_CACHE = {}  # url -> {company, role, jd_text}
+
+
+def _trim_analysis_cache():
+    """Evict oldest entries when GLOBAL_ANALYSIS_CACHE exceeds limit."""
+    if len(GLOBAL_ANALYSIS_CACHE) > _MAX_ANALYSIS_CACHE:
+        # Drop oldest half so we don't trim on every insert
+        keys = list(GLOBAL_ANALYSIS_CACHE.keys())
+        for k in keys[:len(keys)//2]:
+            GLOBAL_ANALYSIS_CACHE.pop(k, None)
+
+
+def _reap_orphaned_runs():
+    """Background thread: remove active_runs entries older than 10 min to prevent queue leaks."""
+    while True:
+        try:
+            time.sleep(120)  # check every 2 minutes
+            cutoff = time.time() - 600  # 10-minute TTL
+            with _active_runs_lock:
+                stale = [rid for rid, (_, created_at) in active_runs.items() if created_at < cutoff]
+                for rid in stale:
+                    logging.info(f"[Reaper] Evicting orphaned run: {rid}")
+                    active_runs.pop(rid, None)
+        except Exception as _reap_err:
+            logging.warning(f"[Reaper] Error: {_reap_err}")
+
+
+_reaper_thread = threading.Thread(target=_reap_orphaned_runs, daemon=True, name="RunReaper")
+_reaper_thread.start()
+
 
 
 def get_env_vars() -> dict:
@@ -2178,6 +2210,7 @@ def analyze_job():
             "jd_data": jd_data,
             "matrix": res_payload,
         }
+        _trim_analysis_cache()
 
         print(f"[Analyze] ✅ Analysis complete for {role} at {company}! Score: {score}% | Matched: {len(matching_keywords)} | Missing: {len(missing_keywords)}")
         return jsonify(res_payload)
@@ -2697,8 +2730,9 @@ def run_agent():
         url = direct_jd_text
 
     run_id = f"run_{int(time.time()*1000)}"
-    msg_queue = queue.Queue()
-    active_runs[run_id] = msg_queue
+    msg_queue = queue.Queue(maxsize=500)  # bounded to prevent OOM from stuck pipelines
+    with _active_runs_lock:
+        active_runs[run_id] = (msg_queue, time.time())
 
     # Start background thread for execution
     thread = threading.Thread(
@@ -2789,6 +2823,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
             role = clean_role_title(custom_role) if custom_role else "Data Engineer"
             no_simplify = True
             GLOBAL_ANALYSIS_CACHE[url] = {"company": company, "role": role, "jd_text": jd_text}
+            _trim_analysis_cache()
             send_log(2, "Scrape JD", f"Using direct Job Description text ({len(jd_text):,} chars)",
                      data={"company": company, "role": role, "jd_length": len(jd_text)}, status="success")
         elif is_direct_text:
@@ -3212,21 +3247,27 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
 def stream_run_logs(run_id):
     """Server-Sent Events endpoint streaming pipeline progress."""
     def event_stream():
-        msg_queue = active_runs.get(run_id)
-        if not msg_queue:
+        entry = active_runs.get(run_id)
+        if not entry:
             yield f"data: {json.dumps({'type': 'error', 'message': 'Run not found'})}\n\n"
             return
-
-        while True:
-            try:
-                msg = msg_queue.get(timeout=30)
-                yield f"data: {json.dumps(msg)}\n\n"
-                if msg.get("type") in ("complete", "error"):
-                    active_runs.pop(run_id, None)
-                    break
-            except queue.Empty:
-                # Keep-alive ping
-                yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+        msg_queue, _ = entry
+        try:
+            while True:
+                try:
+                    msg = msg_queue.get(timeout=30)
+                    yield f"data: {json.dumps(msg)}\n\n"
+                    if msg.get("type") in ("complete", "error"):
+                        break
+                except queue.Empty:
+                    # Keep-alive ping
+                    yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+        except GeneratorExit:
+            pass
+        finally:
+            # Always clean up whether client disconnected or pipeline completed
+            with _active_runs_lock:
+                active_runs.pop(run_id, None)
 
     return Response(event_stream(), mimetype="text/event-stream")
 
@@ -3280,6 +3321,33 @@ def api_console_clear():
     """Clear the in-memory console buffer."""
     GLOBAL_CONSOLE_BUFFER.clear()
     return jsonify({"success": True, "message": "Console buffer cleared"})
+
+
+@app.route("/api/health/memory", methods=["GET"])
+@login_required
+def api_health_memory():
+    """Memory diagnostics endpoint — useful for monitoring OOM pressure on Render."""
+    try:
+        import resource
+        rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        rss_mb = rss_kb / 1024
+    except Exception:
+        try:
+            import psutil
+            proc = psutil.Process()
+            rss_mb = proc.memory_info().rss / (1024 * 1024)
+        except Exception:
+            rss_mb = -1
+
+    import scraper as _scraper_mod
+    return jsonify({
+        "rss_mb": round(rss_mb, 1),
+        "active_runs": len(active_runs),
+        "analysis_cache_entries": len(GLOBAL_ANALYSIS_CACHE),
+        "console_buffer_lines": len(GLOBAL_CONSOLE_BUFFER.buffer),
+        "console_subscribers": len(GLOBAL_CONSOLE_BUFFER.subscribers),
+        "scraper_mem_cache_entries": len(_scraper_mod._MEM_CACHE),
+    })
 
 
 def main():

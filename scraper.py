@@ -569,7 +569,15 @@ import time
 from pathlib import Path
 
 CACHE_FILE = Path(__file__).parent / "jd_cache.json"
-_MEM_CACHE = {}
+_MEM_CACHE = {}          # url -> {timestamp, data} — bounded, LRU-evicted
+_MAX_MEM_CACHE = 30      # max entries kept in-process
+
+def _evict_mem_cache():
+    """Drop oldest half of _MEM_CACHE when it exceeds _MAX_MEM_CACHE."""
+    if len(_MEM_CACHE) > _MAX_MEM_CACHE:
+        sorted_keys = sorted(_MEM_CACHE, key=lambda k: _MEM_CACHE[k].get("timestamp", 0))
+        for k in sorted_keys[:len(sorted_keys)//2]:
+            _MEM_CACHE.pop(k, None)
 
 def get_cached_jd(url: str, max_age_hours: float = 24.0) -> Optional[dict]:
     """Retrieve verified cached JD data for a URL if available and fresh."""
@@ -581,6 +589,8 @@ def get_cached_jd(url: str, max_age_hours: float = 24.0) -> Optional[dict]:
         entry = _MEM_CACHE[clean_url]
         if now - entry.get("timestamp", 0) < max_age_hours * 3600:
             return entry.get("data")
+        else:
+            _MEM_CACHE.pop(clean_url, None)  # expired — evict immediately
 
     # 2. Disk cache
     if CACHE_FILE.exists():
@@ -591,6 +601,7 @@ def get_cached_jd(url: str, max_age_hours: float = 24.0) -> Optional[dict]:
                     entry = disk_data[clean_url]
                     if now - entry.get("timestamp", 0) < max_age_hours * 3600:
                         _MEM_CACHE[clean_url] = entry
+                        _evict_mem_cache()
                         return entry.get("data")
         except Exception:
             pass
@@ -606,6 +617,7 @@ def save_cached_jd(url: str, data: dict):
         "data": data
     }
     _MEM_CACHE[clean_url] = entry
+    _evict_mem_cache()
     try:
         disk_data = {}
         if CACHE_FILE.exists():
@@ -620,6 +632,7 @@ def save_cached_jd(url: str, data: dict):
             json.dump(disk_data, f, indent=2, ensure_ascii=False)
     except Exception as e:
         print(f"[Scraper Cache] Note saving cache: {e}")
+
 
 
 def slugify(text: str) -> str:
