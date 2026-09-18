@@ -79,6 +79,140 @@
   --r-pill: 9999px;
 }
 
+/* ── LIGHT THEME TOKENS ─────────────────────────────────────────────────── */
+html[data-theme="light"],
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* Surface Elevation Hierarchy (Crisp, High-End Clean Modern UI) */
+  --canvas: #F4F6F9;
+  --panel: #FFFFFF;
+  --card: #FFFFFF;
+  --card-elevated: #F8FAFC;
+  --card-hover: #F1F5F9;
+  --surface-inset: #F1F5F9;
+  --surface-active: #E2E8F0;
+
+  /* Structural Borders */
+  --border-base: #E2E8F0;
+  --border-muted: rgba(0, 0, 0, 0.08);
+  --border-highlight: rgba(0, 0, 0, 0.12);
+  --border-focus: #2563EB;
+
+  /* Text & Labels (Strict WCAG AAA contrast on white/light surfaces) */
+  --t0: #090D1A;        /* Primary: Near black for supreme readability */
+  --t1: #1E293B;        /* Secondary: Dark slate */
+  --t2: #475569;        /* Tertiary: Mid slate */
+  --t3: #64748B;        /* Muted / Sub-labels */
+
+  /* Inner Highlights & Shadows */
+  --inner-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.9);
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.04);
+  --card-shadow-lg: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 12px 24px -2px rgba(0, 0, 0, 0.08);
+
+  /* Status Dims */
+  --accent-dim: rgba(37, 99, 235, 0.08);
+  --accent-border: rgba(37, 99, 235, 0.3);
+  --ok-dim: rgba(16, 185, 129, 0.08);
+  --ok-border: rgba(16, 185, 129, 0.3);
+  --warn-dim: rgba(245, 158, 11, 0.08);
+  --warn-border: rgba(245, 158, 11, 0.3);
+  --danger-dim: rgba(239, 68, 68, 0.08);
+  --danger-border: rgba(239, 68, 68, 0.3);
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+/* ── THEME TOGGLE BUTTON STYLES ─────────────────────────────────────────── */
+.theme-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+.theme-toggle-btn i {
+  font-size: 13px;
+  transition: transform 0.3s ease, color 0.2s ease;
+}
+
+.theme-toggle-btn:hover i {
+  transform: rotate(25deg) scale(1.18);
+}
+
+html[data-theme="light"] .theme-toggle-btn i {
+  color: #2563EB;
+}
+
+html[data-theme="dark"] .theme-toggle-btn i {
+  color: #FBBF24;
+}
+
+/* Light Mode Overrides for High Polish */
+html[data-theme="light"] .app-header {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+html[data-theme="light"] .nav-tab:hover {
+  background: var(--card-hover);
+  color: var(--t0);
+}
+
+html[data-theme="light"] .nav-tab.active {
+  color: #2563EB;
+  background: #FFFFFF;
+  border-color: #CBD5E1;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+html[data-theme="light"] .tab-badge {
+  background: #E2E8F0;
+  color: #475569;
+}
+
+html[data-theme="light"] .tab-badge-hf {
+  background: rgba(245, 158, 11, 0.12) !important;
+  color: #D97706 !important;
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+html[data-theme="light"] .universal-console-launcher {
+  background: #FFFFFF;
+  border-color: #E2E8F0;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+  color: var(--t0);
+}
+
+html[data-theme="light"] .universal-console-launcher:hover {
+  background: #F8FAFC;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+}
+
+html[data-theme="light"] .hb-window {
+  background: #FFFFFF;
+  border-color: #E2E8F0;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.12);
+}
+
+html[data-theme="light"] .btn-secondary:hover {
+  border-color: rgba(0, 0, 0, 0.2);
+}
+
+html[data-theme="light"] .step-card {
+  background: #FFFFFF;
+}
+
+html[data-theme="light"] .ats-splash-overlay {
+  background: #F8FAFC;
+}
+html[data-theme="light"] .ats-splash-overlay .label {
+  color: #475569;
+}
+
 /* ── RESET & BASE ───────────────────────────────────────────────────────── */
 *, *::before, *::after {
   margin: 0;
@@ -2654,7 +2788,7 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   max-width: calc(100vw - 32px);
   height: 630px;
   max-height: calc(100vh - 100px);
-  background: #0E121B;
+  background: var(--panel);
   border: 1px solid var(--border-base);
   border-radius: 20px;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.08);
@@ -3722,7 +3856,7 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   display: flex;
   align-items: center;
   gap: 10px;
-  background: #0E121B;
+  background: var(--panel);
   border: 1px solid var(--border-highlight);
   padding: 6px 14px 6px 7px;
   border-radius: 999px;
