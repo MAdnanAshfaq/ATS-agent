@@ -96,3 +96,7 @@ Empower_Retirement_LLC_Lead_Data_Engineer/
 .DS_Store
 Thumbs.db
 
+# Agent skills & config
+.agents/
+skills-lock.json
+

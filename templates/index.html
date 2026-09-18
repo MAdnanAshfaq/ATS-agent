@@ -18,7 +18,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   
   <!-- Custom Styles -->
-  <link rel="stylesheet" href="/static/style.css?v=12">
+  <link rel="stylesheet" href="/static/style.css?v=13">
 
   <script>
     function hidePreviewLoader() {
@@ -52,7 +52,7 @@
   <header class="app-header">
     <div class="header-container">
       <div class="brand-logo">
-        <div class="logo-icon brand-svg-icon" title="ATS Agent — Career Copilot">
+        <div class="logo-icon brand-svg-icon" title="ATS Agent · Resume Tailoring Engine">
           <svg width="26" height="26" viewBox="0 0 100 100" fill="none">
             <rect x="0" y="0" width="100" height="100" rx="22" fill="#14171F"/>
             <path d="M24,52 L32,52 L36,38 L42,64 L48,44 L52,52" stroke="#E8553D" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
@@ -61,7 +61,7 @@
         </div>
         <div class="brand-text">
           <span class="brand-name">ATS Agent</span>
-          <span class="brand-sub">Career Copilot by Adnan</span>
+          <span class="brand-sub">Resume Tailoring Engine</span>
         </div>
       </div>
 
@@ -352,45 +352,33 @@
         </form>
       </div>
 
-      <!-- System Architecture & Profile Status (Executive Overview) -->
-      <div class="workspace-features-grid" id="workspace-features-grid">
-        <div class="feature-card">
-          <div class="feature-card-header">
-            <div class="feature-icon-badge"><i class="fa-solid fa-user-check"></i></div>
-            <span class="feature-status-tag tag-ready">Profile Active</span>
+      <!-- System Architecture & Profile Readiness Bar -->
+      <div class="workspace-status-dock" id="workspace-features-grid">
+        <div class="status-dock-item">
+          <div class="dock-item-left">
+            <span class="dock-indicator dot-ready"></span>
+            <span class="dock-label">Master Profile:</span>
+            <span class="dock-val">Synced</span>
           </div>
-          <h3 class="feature-title">Master Resume Synced</h3>
-          <p class="feature-desc">Grounds every generated bullet point in your verified experience. Zero hallucinations, zero invented roles.</p>
-          <div class="feature-meta">
-            <span><i class="fa-regular fa-file-word"></i> Master_Resume.docx</span>
-            <button type="button" class="feature-link-btn" onclick="switchTab('resume')">Edit Profile →</button>
-          </div>
+          <button type="button" class="dock-action-link" onclick="switchTab('resume')">Edit</button>
         </div>
 
-        <div class="feature-card">
-          <div class="feature-card-header">
-            <div class="feature-icon-badge"><i class="fa-solid fa-brain"></i></div>
-            <span class="feature-status-tag tag-ready">Engine v2.0</span>
+        <div class="status-dock-item">
+          <div class="dock-item-left">
+            <span class="dock-indicator dot-ready"></span>
+            <span class="dock-label">Engine:</span>
+            <span class="dock-val">Gemini 2.5 Flash</span>
           </div>
-          <h3 class="feature-title">4-Agent Tailoring Pipeline</h3>
-          <p class="feature-desc">Researcher extracts requirements, Writer applies Rules 0–16, Auditor filters AI tone clichés, Editor finalizes format.</p>
-          <div class="feature-meta">
-            <span><i class="fa-solid fa-microchip"></i> Gemini 2.5 Flash Active</span>
-            <button type="button" class="feature-link-btn" onclick="switchTab('setup')">Settings →</button>
-          </div>
+          <button type="button" class="dock-action-link" onclick="switchTab('setup')">Config</button>
         </div>
 
-        <div class="feature-card">
-          <div class="feature-card-header">
-            <div class="feature-icon-badge"><i class="fa-solid fa-bullseye"></i></div>
-            <span class="feature-status-tag tag-ready">Dual Gate</span>
+        <div class="status-dock-item">
+          <div class="dock-item-left">
+            <span class="dock-indicator dot-ready"></span>
+            <span class="dock-label">Verification:</span>
+            <span class="dock-val">Human Voice 0–16 Active</span>
           </div>
-          <h3 class="feature-title">ATS & Recruiter Verification</h3>
-          <p class="feature-desc">Calculates semantic keyword coverage and validates burstiness and formatting before generating Word & PDF.</p>
-          <div class="feature-meta">
-            <span><i class="fa-solid fa-shield-check"></i> 100% Recruiter Clean</span>
-            <button type="button" class="feature-link-btn" onclick="switchTab('history')">View History →</button>
-          </div>
+          <button type="button" class="dock-action-link" onclick="switchTab('history')">History</button>
         </div>
       </div>
 
@@ -403,7 +391,7 @@
             <h2 class="matrix-main-title" id="matrix-match-title">Your Resume is a <span id="matrix-verdict-word" style="color:#ef4444;">Low Match</span> for This Job</h2>
             <div class="matrix-alert-pill" id="matrix-alert-pill">
               <i class="fa-solid fa-circle-info text-rose"></i>
-              <span id="matrix-alert-text">Resumes under 6.0 are likely to be filtered out by ATS — we'll help you fix it fast.</span>
+              <span id="matrix-alert-text">Resumes scoring under 6.0 risk ATS filtering. Recommended keyword updates are detailed below.</span>
             </div>
           </div>
 
@@ -609,7 +597,7 @@
           <div class="matrix-custom-bullets-header" onclick="toggleQACopilotDrawer()" style="background:rgba(6, 182, 212, 0.05);">
             <div style="display:flex; align-items:center; gap:10px; font-weight:700; color:#0f172a; font-size:14px;">
               <i class="fa-solid fa-circle-question" style="color:#06b6d4;"></i>
-              <span>🎯 Job Application Questions Copilot (Human-Voiced & JD-Synced)</span>
+              <span>Application Questions Engine (Human-Voiced &amp; JD-Synced)</span>
               <span class="matrix-tag-pill" style="background:#06b6d4; color:#fff; font-weight:700;">New</span>
             </div>
             <i class="fa-solid fa-chevron-down text-muted" id="qa-copilot-arrow" style="transition:transform 0.2s ease;"></i>
@@ -620,15 +608,15 @@
             </p>
             <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; align-items:center;">
               <span style="font-size:11.5px; font-weight:700; color:#64748b; margin-right:4px;">Presets:</span>
-              <button type="button" class="btn-micro" onclick="insertPresetQA('Sports are at the core of everything we do here. Tell us about your relationship with them — are you a fan, athlete, Underdog user, or just someone who appreciates a great game?')">🏆 Sports / Culture</button>
-              <button type="button" class="btn-micro" onclick="insertPresetQA('Why do you want to join our engineering team and what excites you about this role?')">💡 Why This Company?</button>
-              <button type="button" class="btn-micro" onclick="insertPresetQA('Describe a complex technical challenge or data pipeline outage you resolved.')">⚙️ Outage / Challenge</button>
-              <button type="button" class="btn-micro" onclick="insertPresetQA('How many years of experience do you have with Databricks, PySpark, and Cloud Data Warehouses?')">⏱️ Years of Experience</button>
+              <button type="button" class="btn-micro" onclick="insertPresetQA('Sports are at the core of everything we do here. Tell us about your relationship with them, whether you are a fan, athlete, Underdog user, or someone who appreciates a great game.')">Sports / Culture</button>
+              <button type="button" class="btn-micro" onclick="insertPresetQA('Why do you want to join our engineering team and what excites you about this role?')">Why This Company?</button>
+              <button type="button" class="btn-micro" onclick="insertPresetQA('Describe a complex technical challenge or data pipeline outage you resolved.')">Outage / Challenge</button>
+              <button type="button" class="btn-micro" onclick="insertPresetQA('How many years of experience do you have with Databricks, PySpark, and Cloud Data Warehouses?')">Years of Experience</button>
             </div>
             <textarea id="qa-copilot-input" class="matrix-custom-bullets-textarea" rows="3" placeholder="Paste 1 or more application questions here (one per line)..."></textarea>
             <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:10px;">
               <button type="button" class="btn btn-primary btn-sm" id="qa-copilot-generate-btn" onclick="generateApplicationAnswers()" style="border-radius:20px; font-weight:700; padding:8px 20px;">
-                <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Human-Voiced Answers
+                <i class="fa-solid fa-pen-nib"></i> Generate Answers
               </button>
             </div>
             <div id="qa-answers-container" class="hidden" style="margin-top:16px;"></div>
@@ -1135,7 +1123,7 @@
             </svg>
           </div>
           <div class="resume-scan-label" id="upload-progress-label" style="font-size: 15px; font-weight: 600; color: #f1f5f9; margin-top: 6px;">Reading your resume…</div>
-          <div style="font-size:13px; color:var(--text-muted);" id="upload-progress-sub">Parsing with Gemini AI — extracting skills & experience</div>
+          <div style="font-size:13px; color:var(--text-muted);" id="upload-progress-sub">Parsing with Gemini AI: extracting skills and experience</div>
         </div>
         <div style="background:rgba(255,255,255,0.08); border-radius:999px; overflow:hidden; height:8px; width:100%; max-width: 480px; margin: 0 auto;">
           <div id="resume-upload-bar" style="height:100%; width:0%; background:linear-gradient(90deg,#00d8ff,#2FA88F); border-radius:999px; transition:width 0.35s ease;"></div>
@@ -1144,20 +1132,20 @@
       </div>
 
       <!-- Human-Readable Formatted Visual Resume Card -->
-      <div class="glass-card visual-resume-card hidden" id="visual-resume-card">
+      <div class="visual-resume-card hidden" id="visual-resume-card">
         <!-- Rendered dynamically by static/app.js -->
       </div>
 
       <!-- Raw JSON Editor (Hidden by default) -->
-      <div class="glass-card editor-card hidden" id="json-editor-card">
+      <div class="editor-card hidden" id="json-editor-card">
         <textarea id="resume-json-editor" class="code-textarea" spellcheck="false"></textarea>
       </div>
     </section>
 
-    <!-- ── TAB 5: AI LAB — Multi-Signal Detector & Humanizer Studio ──────── -->
+    <!-- ── TAB 5: AI LAB · Multi-Signal Detector & Humanizer Studio ──────── -->
     <section class="tab-content" id="tab-ai-lab">
       <div class="hero-section" style="margin-bottom:28px;">
-        <h1 class="hero-title">AI <span class="gradient-text">Content Lab</span></h1>
+        <h1 class="hero-title">AI Content Verification Lab</h1>
         <p class="hero-subtitle">
           Multi-signal AI Detection & Humanizer Studio. Isolated testing environment.
         </p>
@@ -1179,7 +1167,7 @@
       <div id="ai-lab-detect-view">
         <div class="ai-lab-grid">
 
-          <!-- Left — Input & Config -->
+          <!-- Left: Input & Config -->
           <div class="glass-card ai-lab-input-card">
             <div class="section-header" style="margin-bottom:16px; display:flex; align-items:center; gap:12px;">
               <div class="feature-icon-badge"><i class="fa-solid fa-flask-vial"></i></div>
@@ -1210,10 +1198,10 @@
                 Detection Mode / Signal Focus
               </label>
               <select id="ai-lab-signal-mode" class="config-input" onchange="applySignalFilter()" style="cursor:pointer;">
-                <option value="combined">🔀 Combined Multi-Signal (Recommended: Hybrid)</option>
-                <option value="classifier">🎯 Classifier Only (RoBERTa / TMR / PirateXX)</option>
-                <option value="perplexity">📊 Perplexity Only (Word Predictability)</option>
-                <option value="burstiness">⚡ Burstiness Only (Sentence Cadence & Rhythm)</option>
+                <option value="combined">Combined Multi-Signal (Recommended: Hybrid)</option>
+                <option value="classifier">Classifier Only (RoBERTa / TMR / PirateXX)</option>
+                <option value="perplexity">Perplexity Only (Word Predictability)</option>
+                <option value="burstiness">Burstiness Only (Sentence Cadence &amp; Rhythm)</option>
               </select>
             </div>
 
@@ -1251,7 +1239,7 @@
             </button>
           </div>
 
-          <!-- Right — Results -->
+          <!-- Right: Results -->
           <div class="glass-card ai-lab-result-card" id="ai-lab-result-panel">
 
             <!-- Idle state -->
@@ -1357,7 +1345,7 @@
       <div id="ai-lab-humanize-view" class="hidden">
         <div class="ai-lab-grid">
 
-          <!-- Left — Input Text & Options -->
+          <!-- Left: Input Text & Options -->
           <div class="glass-card ai-lab-input-card">
             <div class="section-header" style="margin-bottom:16px; display:flex; align-items:center; gap:12px;">
               <div class="feature-icon-badge"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
@@ -1380,18 +1368,18 @@
                 Humanization Tone &amp; Style
               </label>
               <select id="humanize-style-select" class="config-input" style="cursor:pointer;">
-                <option value="professional">💼 Professional Workplace &amp; Resume (Direct &amp; Active)</option>
-                <option value="conversational">💬 Conversational &amp; Natural (Everyday Flow)</option>
-                <option value="academic">🎓 Academic &amp; Analytical (Precise Human Cadence)</option>
+                <option value="professional">Professional Workplace &amp; Resume (Direct &amp; Active)</option>
+                <option value="conversational">Conversational &amp; Natural (Everyday Flow)</option>
+                <option value="academic">Academic &amp; Analytical (Precise Human Cadence)</option>
               </select>
             </div>
 
             <button class="btn btn-primary" id="humanize-run-btn" onclick="runHumanizer()" style="width:100%; margin-top:20px; font-size:14.5px; padding:12px;">
-              <i class="fa-solid fa-wand-magic-sparkles"></i> Humanize Text Now
+              <i class="fa-solid fa-arrows-rotate"></i> Humanize Text Now
             </button>
           </div>
 
-          <!-- Right — Humanized Output -->
+          <!-- Right: Humanized Output -->
           <div class="glass-card ai-lab-result-card">
             <div class="section-header" style="margin-bottom:16px; display:flex; align-items:center; gap:12px;">
               <div class="feature-icon-badge"><i class="fa-solid fa-check-double"></i></div>
@@ -1438,7 +1426,7 @@
       </div>
       <div style="margin-top:20px; padding:14px 18px; border-radius:var(--r-md); background:var(--surface-inset); border:1px solid var(--border-base); font-size:12px; color:var(--t2); line-height:1.6;">
         <i class="fa-solid fa-shield-halved" style="color:var(--accent); margin-right:6px;"></i>
-        The model uses HuggingFace Inference API — your text is analyzed securely.
+        The model uses HuggingFace Inference API. Text is analyzed securely.
         <span style="display:block; margin-top:4px;"><strong>HF Key:</strong> Add <code>HF_API_KEY=hf_xxxx</code> to your <code>.env</code> file to enable local detector calls without manual entry.</span>
       </div>
     </section>
@@ -1447,7 +1435,7 @@
 
   <!-- Cover Letter Preview & Edit Modal -->
   <div id="cover-letter-modal" class="modal-overlay hidden">
-    <div class="modal-card glass-card">
+    <div class="modal-card">
       <div class="modal-header">
         <div class="flex-align-center gap-sm">
           <i class="fa-solid fa-envelope-open-text text-purple text-xl"></i>
@@ -1880,7 +1868,7 @@
 
   <!-- ── HOLLABUDDY LIVING INTERACTIVE COMPANION & DRAWER ──────────────────── -->
   <!-- Draggable, interactive Lottie companion with rocket thrust & reactions -->
-  <div id="hollabuddy-companion" class="hollabuddy-companion" title="HollaBuddy AI — Drag me anywhere or click to chat!">
+  <div id="hollabuddy-companion" class="hollabuddy-companion" title="HollaBuddy: Drag anywhere or click to chat">
     <div class="hb-character-stage idle-float" id="hb-stage">
       <!-- Lottie Animation Canvas -->
       <div id="hollabuddy-lottie-canvas" class="hb-lottie-canvas"></div>
@@ -1897,7 +1885,7 @@
       <div id="hotspot-body" class="hb-hotspot" title="Tickle HollaBuddy!"></div>
 
       <!-- Floating Speech Bubble -->
-      <div id="hb-speech-bubble" class="hb-speech-bubble">👋 Ready to prep!</div>
+      <div id="hb-speech-bubble" class="hb-speech-bubble">Ready to assist</div>
     </div>
 
     <!-- Status pill badge under companion -->
@@ -1918,7 +1906,7 @@
         <div>
           <div class="hollabuddy-header-title">
             <span>HollaBuddy</span>
-            <span class="hollabuddy-version-tag">Copilot</span>
+            <span class="hollabuddy-version-tag">Assistant</span>
           </div>
           <div class="hollabuddy-header-sub" id="hollabuddy-context-sub">
             <i class="fa-solid fa-bolt text-emerald"></i> Resume Connected · Instant Answers
@@ -1940,8 +1928,8 @@
 
     <!-- Active Job / Mode Banner -->
     <div class="hollabuddy-context-banner" id="hollabuddy-context-banner">
-      <span class="badge badge-cyan" id="hollabuddy-mode-badge"><i class="fa-solid fa-briefcase"></i> Standalone Career Copilot</span>
-      <span class="hollabuddy-banner-tip">Available anytime — no analyzer required!</span>
+      <span class="badge badge-cyan" id="hollabuddy-mode-badge"><i class="fa-solid fa-briefcase"></i> Career Assistant</span>
+      <span class="hollabuddy-banner-tip">Available anytime · no analyzer required</span>
     </div>
 
     <!-- API Key Health Bar (loaded on drawer open) -->
@@ -1958,19 +1946,19 @@
     <!-- Quick Suggestion Prompt Chips -->
     <div class="hollabuddy-chips-bar" id="hollabuddy-chips-bar">
       <button type="button" class="hollabuddy-chip" onclick="sendHollaBuddyPrompt('Draft a 30-second elevator pitch highlighting my key background')">
-        🎯 30s Elevator Pitch
+        30s Elevator Pitch
       </button>
       <button type="button" class="hollabuddy-chip" onclick="sendHollaBuddyPrompt('Why should we hire you? Give me a copy-ready, high-impact answer grounded in my real metrics.')">
-        💼 Why hire me?
+        Why hire me?
       </button>
       <button type="button" class="hollabuddy-chip" onclick="sendHollaBuddyPrompt('Help me answer this application question: What has been your most significant technical accomplishment?')">
-        📝 Technical Win
+        Technical Win
       </button>
       <button type="button" class="hollabuddy-chip" onclick="sendHollaBuddyPrompt('What are my top 3 strongest core competencies based on my master resume?')">
-        🔥 Top 3 Strengths
+        Top 3 Strengths
       </button>
       <button type="button" class="hollabuddy-chip" onclick="sendHollaBuddyPrompt('Give me a polite salary expectation answer when asked what my required rate is.')">
-        💵 Salary Script
+        Salary Script
       </button>
     </div>
 
@@ -1982,8 +1970,8 @@
           <i class="fa-solid fa-robot"></i>
         </div>
         <div class="hollabuddy-bubble">
-          <p>Hey there! I'm <strong>HollaBuddy</strong>, your personal career copilot and interview wingman! 🚀</p>
-          <p style="margin-top:6px;">I have your master resume in my memory. You can ask me <strong>anything</strong> at any time—interview questions, application answers, salary negotiation, or elevator pitches. What are we tackling today?</p>
+          <p>Hello. I'm <strong>HollaBuddy</strong>, your career assistant.</p>
+          <p style="margin-top:6px;">Your master resume is loaded. You can ask for interview question strategies, application answer drafting, salary discussion notes, or elevator pitches. How can I help?</p>
         </div>
       </div>
     </div>

@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ATS Agent — Sign In</title>
-  <meta name="description" content="AI-powered job application agent. Sign in to tailor your resume, match keywords, and apply smarter." />
+  <title>ATS Agent · Sign In</title>
+  <meta name="description" content="Automated resume tailoring and keyword audit system. Sign in to analyze job postings and match requirements." />
   
   <!-- Favicon -->
   <link rel="icon" type="image/svg+xml" href="/static/favicon-v2.svg" />
@@ -12,7 +12,7 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@600;700;800&family=Space+Grotesk:wght@500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -24,12 +24,12 @@
       --border2:    rgba(255,255,255,0.08);
       --text:       #F8FAFC;
       --muted:      #94A3B8;
-      --accent:     #3B82F6;
+      --accent:     #2563EB;
       --accent2:    #60A5FA;
-      --accent-glow:rgba(59,130,246,0.15);
+      --accent-glow:rgba(37,99,235,0.18);
       --success:    #10B981;
       --error:      #EF4444;
-      --grad:       #3B82F6;
+      --grad:       #2563EB;
     }
 
     html, body {
@@ -40,7 +40,7 @@
       overflow-x: hidden;
     }
 
-    /* Subtle Architectural Dark Background (No orbs, no AI glowing spectacle) */
+    /* Subtle Architectural Dark Background */
     body {
       background-color: #090B10;
       background-image: radial-gradient(circle at 50% 0%, #111624 0%, #090B10 70%);
@@ -50,8 +50,7 @@
     /* ── Resume Scan Overlay on Signup ── */
     .login-scan-overlay {
       position: fixed; inset: 0; z-index: 99999;
-      background: rgba(9, 11, 16, 0.94);
-      backdrop-filter: blur(8px);
+      background: rgba(9, 11, 16, 0.96);
       display: flex; align-items: center; justify-content: center;
       opacity: 0; visibility: hidden; pointer-events: none;
       transition: opacity 0.25s ease, visibility 0.25s ease;
@@ -97,7 +96,7 @@
       100% { transform: translateY(94px); opacity: 0; }
     }
     .scan-title {
-      font-family: 'Space Grotesk', 'Outfit', sans-serif;
+      font-family: 'Outfit', -apple-system, sans-serif;
       font-size: 17px; font-weight: 600; color: #f1f5f9;
     }
     .scan-sub {
@@ -209,7 +208,7 @@
     }
     .field input:focus {
       border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(108,99,255,0.18);
+      box-shadow: 0 0 0 3px var(--accent-glow);
     }
     .field input::placeholder { color: var(--muted); }
 
@@ -234,7 +233,7 @@
     }
     .file-field:hover, .file-field.drag-over {
       border-color: var(--accent);
-      background: rgba(108,99,255,0.06);
+      background: rgba(37,99,235,0.06);
     }
     .file-field input[type="file"] {
       position: absolute; inset: 0; opacity: 0; cursor: pointer;
