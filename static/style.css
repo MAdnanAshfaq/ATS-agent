@@ -4588,6 +4588,167 @@ input:checked + .slider:before { transform: translateX(16px); background-color: 
   letter-spacing: 0.2px;
 }
 
+/* ── FLOATING BACK TO TOP & QUICK NAV ───────────────────────────────────── */
+.nav-floating-tools {
+  position: fixed;
+  bottom: 24px;
+  left: 28px;
+  z-index: 9995;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.btn-back-to-top {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 1px solid var(--border-highlight);
+  color: var(--t1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  pointer-events: auto;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(14px) scale(0.9);
+  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              visibility 0.25s,
+              background-color 0.2s,
+              border-color 0.2s,
+              box-shadow 0.2s;
+  user-select: none;
+  padding: 0;
+}
+
+.btn-back-to-top.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+}
+
+.btn-back-to-top:hover {
+  transform: translateY(-3px) scale(1.08);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.btn-back-to-top:active {
+  transform: translateY(1px) scale(0.96);
+}
+
+.btn-back-to-top i {
+  font-size: 15px;
+  transition: transform 0.2s ease;
+  z-index: 2;
+}
+
+.btn-back-to-top:hover i {
+  transform: translateY(-2px);
+}
+
+/* Circular SVG Progress Ring */
+.btn-back-to-top .progress-ring {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+  pointer-events: none;
+}
+
+.btn-back-to-top .progress-ring-bg {
+  stroke: var(--border-base);
+  opacity: 0.35;
+}
+
+.btn-back-to-top .progress-ring-indicator {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  stroke-dasharray: 106.81;
+  stroke-dashoffset: 106.81;
+  transition: stroke-dashoffset 0.1s linear;
+}
+
+/* Tooltip */
+.btn-back-to-top-tooltip {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%) translateX(-6px);
+  background: var(--card-elevated);
+  border: 1px solid var(--border-highlight);
+  color: var(--t0);
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--r-sm);
+  box-shadow: var(--card-shadow);
+  pointer-events: none;
+  opacity: 0;
+  white-space: nowrap;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 10;
+}
+
+.btn-back-to-top:hover .btn-back-to-top-tooltip {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+/* Light Theme Adjustments */
+html[data-theme="light"] .btn-back-to-top {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: #CBD5E1;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+}
+html[data-theme="light"] .btn-back-to-top:hover {
+  border-color: #2563EB;
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.18);
+}
+html[data-theme="light"] .btn-back-to-top .progress-ring-bg {
+  stroke: #E2E8F0;
+  opacity: 0.8;
+}
+
+/* Scrolled Header Glassmorphism Polish */
+.app-header.scrolled {
+  background: rgba(9, 11, 16, 0.85);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-bottom-color: var(--border-highlight);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.45);
+}
+
+html[data-theme="light"] .app-header.scrolled {
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.08);
+  border-bottom-color: #CBD5E1;
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+  .nav-floating-tools {
+    bottom: 20px;
+    left: 16px;
+  }
+  .btn-back-to-top-tooltip {
+    display: none;
+  }
+}
+
 
 
 

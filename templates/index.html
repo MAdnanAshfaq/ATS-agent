@@ -21,7 +21,7 @@
   <script src="/static/theme.js"></script>
 
   <!-- Custom Styles -->
-  <link rel="stylesheet" href="/static/style.css?v=14">
+  <link rel="stylesheet" href="/static/style.css?v=15">
 
   <script>
     function hidePreviewLoader() {
@@ -1790,6 +1790,18 @@
     </div>
   </div>
 
+  <!-- ── FLOATING BACK TO TOP & QUICK NAVIGATION ────────────────────────── -->
+  <div id="nav-floating-tools" class="nav-floating-tools">
+    <button type="button" id="back-to-top-btn" class="btn-back-to-top" onclick="scrollToTop()" title="Back to Top (Press Home)" aria-label="Back to top">
+      <svg class="progress-ring" width="44" height="44" viewBox="0 0 44 44">
+        <circle class="progress-ring-bg" cx="22" cy="22" r="17" fill="none" stroke-width="2.5" />
+        <circle id="scroll-progress-circle" class="progress-ring-indicator" cx="22" cy="22" r="17" fill="none" stroke-width="2.5" />
+      </svg>
+      <i class="fa-solid fa-arrow-up"></i>
+      <span class="btn-back-to-top-tooltip">Back to Top</span>
+    </button>
+  </div>
+
   <!-- ── UNIVERSAL LIVE CONSOLE LAUNCHER & DRAWER ────────────────────────── -->
   <!-- Floating Launcher Button on Side/Bottom -->
   <div id="universal-console-launcher" class="universal-console-launcher" onclick="toggleUniversalConsole(undefined, event)" title="Open Live Render & Backend Terminal">
@@ -2067,6 +2079,6 @@
   <script type="module" src="/static/antigravity/MainParticlesComponent.js"></script>
 
   <!-- JavaScript Application Bundle -->
-  <script src="/static/app.js?v=14"></script>
+  <script src="/static/app.js?v=15"></script>
 </body>
 </html>

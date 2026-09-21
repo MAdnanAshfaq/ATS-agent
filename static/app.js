@@ -24,6 +24,9 @@ function escapeHtml(str) {
 
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
+  initHashSync();
+  initScrollNavigation();
+  initKeyboardNav();
   checkSystemHealth();
   loadSettings();
   loadHistory();
@@ -32,7 +35,7 @@ document.addEventListener("DOMContentLoaded", () => {
   checkSimplifyStatus();
 });
 
-/* ── Tab Navigation ──────────────────────────────────────────────────────── */
+/* ── Tab Navigation & Synced Routing ────────────────────────────────────── */
 function initTabs() {
   const tabs = document.querySelectorAll(".nav-tab");
   tabs.forEach(tab => {
@@ -43,7 +46,9 @@ function initTabs() {
   });
 }
 
-function switchTab(tabId) {
+function switchTab(tabId, updateHash = true) {
+  if (!tabId) return;
+
   document.querySelectorAll(".nav-tab").forEach(t => t.classList.remove("active"));
   document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
 
@@ -53,8 +58,111 @@ function switchTab(tabId) {
   if (targetTab) targetTab.classList.add("active");
   if (targetContent) targetContent.classList.add("active");
 
+  // Smoothly scroll to top so user lands cleanly on the new tab view
+  window.scrollTo({ top: 0, behavior: "smooth" });
+
+  // Synchronize URL Hash without page jump
+  if (updateHash) {
+    try {
+      history.replaceState(null, null, `#${tabId}`);
+    } catch (e) {}
+  }
+
   if (tabId === "history") loadHistory();
   if (tabId === "setup") checkSystemHealth();
+}
+
+/* ── Floating Back to Top & Scroll Progress Engine ──────────────────────── */
+function scrollToTop() {
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function initScrollNavigation() {
+  const backToTopBtn = document.getElementById("back-to-top-btn");
+  const progressCircle = document.getElementById("scroll-progress-circle");
+  const appHeader = document.querySelector(".app-header");
+  const circumference = 106.81; // 2 * pi * 17
+
+  function onScroll() {
+    const scrollY = window.scrollY || document.documentElement.scrollTop;
+    const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+
+    // Toggle Back to Top Button
+    if (backToTopBtn) {
+      if (scrollY > 260) {
+        backToTopBtn.classList.add("visible");
+      } else {
+        backToTopBtn.classList.remove("visible");
+      }
+
+      // Update circular SVG progress indicator
+      if (progressCircle && maxScroll > 0) {
+        const scrollPercent = Math.min(1, Math.max(0, scrollY / maxScroll));
+        const offset = circumference - (scrollPercent * circumference);
+        progressCircle.style.strokeDashoffset = offset.toFixed(2);
+      }
+    }
+
+    // Toggle Scrolled Header Glassmorphism Effect
+    if (appHeader) {
+      if (scrollY > 15) {
+        appHeader.classList.add("scrolled");
+      } else {
+        appHeader.classList.remove("scrolled");
+      }
+    }
+  }
+
+  window.addEventListener("scroll", onScroll, { passive: true });
+  onScroll();
+}
+
+function initHashSync() {
+  const validTabs = ["new-app", "history", "setup", "resume", "ai-lab"];
+  const initialHash = (window.location.hash || "").replace("#", "").trim();
+  if (validTabs.includes(initialHash)) {
+    switchTab(initialHash, false);
+  }
+
+  window.addEventListener("popstate", () => {
+    const hash = (window.location.hash || "").replace("#", "").trim();
+    if (validTabs.includes(hash)) {
+      switchTab(hash, false);
+    } else if (!hash) {
+      switchTab("new-app", false);
+    }
+  });
+}
+
+function initKeyboardNav() {
+  document.addEventListener("keydown", (e) => {
+    const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : "";
+    if (activeTag === "input" || activeTag === "textarea" || (document.activeElement && document.activeElement.isContentEditable)) {
+      return;
+    }
+
+    // Home key -> Back to Top
+    if (e.key === "Home") {
+      e.preventDefault();
+      scrollToTop();
+      return;
+    }
+
+    // Alt + 1..5 for instant tab switching
+    if (e.altKey && !e.ctrlKey && !e.metaKey) {
+      const tabMap = {
+        "1": "new-app",
+        "2": "history",
+        "3": "setup",
+        "4": "resume",
+        "5": "ai-lab"
+      };
+      if (tabMap[e.key]) {
+        e.preventDefault();
+        switchTab(tabMap[e.key]);
+      }
+    }
+  });
 }
 
 /* ── System Health Check ─────────────────────────────────────────────────── */
