@@ -77,6 +77,11 @@
   --r-lg: 12px;
   --r-xl: 16px;
   --r-pill: 9999px;
+  /* Additional Surface & Semantic Aliases */
+  --surface-card: var(--card);
+  --text-primary: var(--t0);
+  --text-secondary: var(--t1);
+  --text-muted: var(--t3);
 }
 
 /* ── LIGHT THEME TOKENS ─────────────────────────────────────────────────── */
@@ -92,6 +97,7 @@ html[data-theme="light"],
   --card-hover: #F1F5F9;
   --surface-inset: #F1F5F9;
   --surface-active: #E2E8F0;
+  --surface-card: #FFFFFF;
 
   /* Structural Borders */
   --border-base: #E2E8F0;
@@ -104,6 +110,9 @@ html[data-theme="light"],
   --t1: #1E293B;        /* Secondary: Dark slate */
   --t2: #475569;        /* Tertiary: Mid slate */
   --t3: #64748B;        /* Muted / Sub-labels */
+  --text-primary: #090D1A;
+  --text-secondary: #1E293B;
+  --text-muted: #64748B;
 
   /* Inner Highlights & Shadows */
   --inner-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.9);
@@ -211,6 +220,457 @@ html[data-theme="light"] .ats-splash-overlay {
 }
 html[data-theme="light"] .ats-splash-overlay .label {
   color: #475569;
+}
+
+/* Base Code Textarea */
+.code-textarea {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-base);
+  background: var(--surface-inset);
+  color: var(--t0);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 120ms ease;
+}
+.code-textarea:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+/* ── LIGHT MODE POLISH OVERRIDES (HOLLABUDDY, GAUGE, MATRIX, MODALS, AI LAB) ── */
+
+/* 1. HollaBuddy Assistant UI System */
+html[data-theme="light"] .hollabuddy-drawer {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+html[data-theme="light"] .hollabuddy-drawer-header {
+  background: #F8FAFC;
+  border-bottom: 1px solid #E2E8F0;
+}
+
+html[data-theme="light"] .hollabuddy-header-title {
+  color: #090D1A;
+}
+
+html[data-theme="light"] .hollabuddy-header-sub {
+  color: #64748B;
+}
+
+html[data-theme="light"] .hollabuddy-header-actions .btn-icon-subtle {
+  color: #475569;
+}
+
+html[data-theme="light"] .hollabuddy-header-actions .btn-icon-subtle:hover {
+  background: #E2E8F0;
+  color: #090D1A;
+}
+
+html[data-theme="light"] .hollabuddy-context-banner {
+  background: #F1F5F9;
+  border-bottom: 1px solid #E2E8F0;
+}
+
+html[data-theme="light"] .hollabuddy-banner-tip {
+  color: #64748B;
+}
+
+html[data-theme="light"] .hollabuddy-api-health-bar {
+  background: #F8FAFC;
+  border-bottom: 1px solid #E2E8F0;
+}
+
+html[data-theme="light"] .hb-health-label {
+  color: #475569;
+}
+
+html[data-theme="light"] .hb-key-pill {
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
+  color: #334155;
+}
+
+html[data-theme="light"] .hb-key-pill:hover {
+  background: #F1F5F9;
+}
+
+html[data-theme="light"] .hb-key-name {
+  color: #090D1A;
+}
+
+html[data-theme="light"] .hb-key-masked {
+  color: #64748B;
+}
+
+html[data-theme="light"] .hb-health-refresh {
+  color: #64748B;
+}
+
+html[data-theme="light"] .hb-health-refresh:hover {
+  color: #090D1A;
+  background: #E2E8F0;
+}
+
+html[data-theme="light"] .hollabuddy-chips-bar {
+  background: #F8FAFC;
+  border-bottom: 1px solid #E2E8F0;
+}
+
+html[data-theme="light"] .hollabuddy-chip {
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
+  color: #334155;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+html[data-theme="light"] .hollabuddy-chip:hover {
+  background: rgba(2, 132, 199, 0.08);
+  border-color: #0284C7;
+  color: #0369A1;
+}
+
+html[data-theme="light"] .hollabuddy-messages {
+  background: #FFFFFF;
+  scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+}
+
+/* Bot Message Bubble in Light Mode (Strict WCAG AAA contrast) */
+html[data-theme="light"] .hollabuddy-bubble-bot {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-left: 3.5px solid #0284C7;
+  color: #090D1A !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+html[data-theme="light"] .hollabuddy-bubble-bot p,
+html[data-theme="light"] .hollabuddy-bubble-content,
+html[data-theme="light"] .hollabuddy-bubble-content p,
+html[data-theme="light"] .hollabuddy-bubble-content span,
+html[data-theme="light"] .hollabuddy-bubble-content div {
+  color: #090D1A !important;
+}
+
+html[data-theme="light"] .hollabuddy-bubble-content strong {
+  color: #090D1A !important;
+}
+
+html[data-theme="light"] .hollabuddy-heading {
+  color: #0284C7 !important;
+}
+
+html[data-theme="light"] .hollabuddy-list,
+html[data-theme="light"] .hollabuddy-list li {
+  color: #090D1A !important;
+}
+
+html[data-theme="light"] .hollabuddy-quote {
+  background: rgba(2, 132, 199, 0.06) !important;
+  border-left: 3.5px solid #0284C7 !important;
+  color: #090D1A !important;
+}
+
+html[data-theme="light"] .hollabuddy-quote p {
+  color: #090D1A !important;
+}
+
+html[data-theme="light"] .hollabuddy-inline-code {
+  background: #E2E8F0;
+  color: #0369A1;
+}
+
+html[data-theme="light"] .hollabuddy-code-wrap {
+  background: #F8FAFC;
+  border: 1px solid #CBD5E1;
+}
+
+html[data-theme="light"] .hollabuddy-code-lang {
+  background: #E2E8F0;
+  color: #0284C7;
+  border-bottom: 1px solid #CBD5E1;
+}
+
+html[data-theme="light"] .hollabuddy-code {
+  color: #0F172A;
+}
+
+html[data-theme="light"] .hollabuddy-table-wrap {
+  border: 1px solid #E2E8F0;
+}
+
+html[data-theme="light"] .hollabuddy-table th {
+  background: #F1F5F9;
+  color: #0284C7;
+  border-bottom: 1px solid #CBD5E1;
+}
+
+html[data-theme="light"] .hollabuddy-table td {
+  color: #090D1A;
+  border-bottom: 1px solid #E2E8F0;
+}
+
+html[data-theme="light"] .hollabuddy-bubble-actions {
+  border-top: 1px solid #E2E8F0;
+}
+
+html[data-theme="light"] .hollabuddy-copy-btn {
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
+  color: #475569;
+}
+
+html[data-theme="light"] .hollabuddy-copy-btn:hover {
+  background: rgba(2, 132, 199, 0.08);
+  border-color: #0284C7;
+  color: #0284C7;
+}
+
+html[data-theme="light"] .hollabuddy-followups {
+  border-top: 1px dashed #CBD5E1;
+}
+
+html[data-theme="light"] .hollabuddy-followup-chip {
+  background: rgba(2, 132, 199, 0.08);
+  border: 1px solid rgba(2, 132, 199, 0.25);
+  color: #0369A1;
+}
+
+html[data-theme="light"] .hollabuddy-followup-chip:hover {
+  background: #0284C7;
+  color: #FFFFFF;
+}
+
+html[data-theme="light"] .hollabuddy-quota-banner {
+  background: rgba(245, 158, 11, 0.08) !important;
+  border-color: rgba(245, 158, 11, 0.3) !important;
+}
+
+html[data-theme="light"] .hollabuddy-quota-header {
+  color: #D97706;
+}
+
+html[data-theme="light"] .hb-quota-btn-primary {
+  background: #D97706;
+  border-color: #D97706;
+  color: #FFFFFF;
+}
+
+html[data-theme="light"] .hb-quota-btn-secondary {
+  background: #FFFFFF;
+  border-color: #CBD5E1;
+  color: #475569;
+}
+
+html[data-theme="light"] .hollabuddy-drawer-footer {
+  background: #F8FAFC;
+  border-top: 1px solid #E2E8F0;
+}
+
+html[data-theme="light"] .hollabuddy-input-meta {
+  color: #64748B;
+}
+
+html[data-theme="light"] .hollabuddy-input-wrap {
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+html[data-theme="light"] .hollabuddy-input-wrap:focus-within {
+  border-color: #2563EB;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  background: #FFFFFF;
+}
+
+html[data-theme="light"] .hollabuddy-textarea {
+  color: #090D1A;
+  scrollbar-color: rgba(37, 99, 235, 0.35) transparent;
+}
+
+html[data-theme="light"] .hollabuddy-textarea::placeholder {
+  color: #94A3B8;
+}
+
+html[data-theme="light"] .hollabuddy-action-btn {
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
+  color: #475569;
+}
+
+html[data-theme="light"] .hollabuddy-action-btn:hover {
+  background: #F1F5F9;
+  border-color: #94A3B8;
+  color: #090D1A;
+}
+
+html[data-theme="light"] .hollabuddy-typing {
+  color: #64748B;
+}
+
+/* 2. Arc Gauge Score & Match Matrix */
+html[data-theme="light"] .arc-gauge-score {
+  color: #090D1A;
+}
+
+html[data-theme="light"] .matrix-company-avatar {
+  background: #FFFFFF;
+  border-color: #CBD5E1;
+  color: var(--accent);
+}
+
+html[data-theme="light"] .matrix-hl {
+  background: rgba(37, 99, 235, 0.08);
+  color: #1D4ED8;
+}
+
+html[data-theme="light"] .matrix-count-badge {
+  background: rgba(37, 99, 235, 0.08);
+  border-color: rgba(37, 99, 235, 0.3);
+  color: #1D4ED8;
+}
+
+html[data-theme="light"] .chip-matched-thumb {
+  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #059669;
+}
+
+html[data-theme="light"] .matrix-custom-bullets-textarea {
+  background: #FFFFFF;
+  border-color: #CBD5E1;
+  color: #090D1A;
+}
+
+html[data-theme="light"] .matrix-tag-pill {
+  background: #F1F5F9;
+  border-color: #CBD5E1;
+  color: #475569;
+}
+
+/* 3. Master Resume Visual Editor */
+html[data-theme="light"] .vr-btn-add {
+  background: rgba(37, 99, 235, 0.08);
+  border-color: rgba(37, 99, 235, 0.3);
+  color: #1D4ED8;
+}
+
+html[data-theme="light"] .vr-item-card {
+  background: #F8FAFC;
+  border-color: #E2E8F0;
+}
+
+html[data-theme="light"] .vr-section {
+  background: #FFFFFF;
+  border-color: #E2E8F0;
+}
+
+html[data-theme="light"] .vr-input,
+html[data-theme="light"] .vr-textarea {
+  background: #FFFFFF;
+  border-color: #CBD5E1;
+  color: #090D1A;
+}
+
+/* 4. Live Scraper Console Toggle & Controls */
+html[data-theme="light"] .analyze-console-toggle-btn {
+  background: #F8FAFC;
+  border-color: #CBD5E1;
+  color: var(--t1);
+}
+
+html[data-theme="light"] .analyze-console-toggle-btn:hover {
+  background: #F1F5F9;
+  border-color: #94A3B8;
+  color: var(--t0);
+}
+
+html[data-theme="light"] .toggle-icon-wrap {
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563EB;
+}
+
+html[data-theme="light"] .toggle-arrow-circle {
+  background: #E2E8F0;
+  color: #475569;
+}
+
+html[data-theme="light"] .badge-idle {
+  background: #E2E8F0;
+  color: #475569;
+}
+
+/* 5. Buttons & Links in Light Mode */
+html[data-theme="light"] .btn-danger {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #DC2626;
+}
+
+html[data-theme="light"] .btn-danger:hover {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #B91C1C;
+}
+
+html[data-theme="light"] .btn-outline:hover {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.15);
+  color: var(--t0);
+}
+
+html[data-theme="light"] .btn-cyan:hover,
+html[data-theme="light"] .btn-purple-sm:hover {
+  border-color: rgba(0, 0, 0, 0.18);
+}
+
+html[data-theme="light"] .btn-link:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--t0);
+}
+
+/* 6. AI Lab & Code Textareas */
+html[data-theme="light"] .code-textarea {
+  background: #F8FAFC;
+  border-color: #CBD5E1;
+  color: #090D1A;
+}
+
+html[data-theme="light"] #ai-lab-signals-breakdown {
+  background: #F8FAFC !important;
+  border-color: #E2E8F0 !important;
+}
+
+html[data-theme="light"] #ai-lab-signals-breakdown > div > div {
+  background: #F1F5F9 !important;
+}
+
+html[data-theme="light"] #humanize-output-text {
+  background: #F8FAFC !important;
+  border-color: #CBD5E1 !important;
+  color: #090D1A !important;
+}
+
+/* 7. Modals & Universal Previews */
+html[data-theme="light"] .modal-backdrop {
+  background: rgba(15, 23, 42, 0.45) !important;
+}
+
+html[data-theme="light"] #resume-preview-modal .modal-header {
+  background: #F8FAFC !important;
+  border-bottom: 1px solid #E2E8F0 !important;
+}
+
+html[data-theme="light"] #resume-preview-modal .modal-body {
+  background: #E2E8F0 !important;
+}
+
+html[data-theme="light"] #resume-preview-frame {
+  background: #F1F5F9 !important;
 }
 
 /* ── RESET & BASE ───────────────────────────────────────────────────────── */
