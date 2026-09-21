@@ -2589,6 +2589,7 @@ def refine_resume_api():
     user_resume_path = get_user_resume_path()
     user_output_dir = get_user_output_dir()
     user_data_dir = current_user.data_dir if current_user.is_authenticated else BASE_DIR
+    user_username = current_user.username if (current_user and current_user.is_authenticated) else ""
 
     try:
         from agent import load_base_resume
