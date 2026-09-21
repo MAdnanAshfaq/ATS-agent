@@ -433,11 +433,12 @@ def fetch_notion_via_api(url: str) -> Optional[dict]:
     return None
 
 
-def fetch_json_ld_via_http(url: str) -> Optional[dict]:
+def fetch_jd_via_http(url: str) -> Optional[dict]:
     """
-    Fast, reliable HTTP fetch that extracts Schema.org/JobPosting JSON-LD.
-    Used by AshbyHQ, Lever, Greenhouse, and major ATS platforms.
-    Bypasses headless browser bot-detection entirely in 150ms.
+    Fast, lightweight HTTP fetch (150ms-2s) that attempts:
+    1. Schema.org/JobPosting JSON-LD extraction (AshbyHQ, Lever, Greenhouse, etc.).
+    2. Server-side rendered HTML body extraction for Greenhouse, Lever, Workable, etc.
+    Bypasses headless Playwright browser launch whenever the page HTML contains the complete job description.
     """
     try:
         import urllib.request
@@ -456,10 +457,15 @@ def fetch_json_ld_via_http(url: str) -> Optional[dict]:
                 "Accept-Language": "en-US,en;q=0.9",
             }
         )
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=8) as resp:
             html = resp.read().decode("utf-8", errors="ignore")
 
+        if not html or len(html) < 200:
+            return None
+
         soup = BeautifulSoup(html, "lxml")
+
+        # ── 1. Check Schema.org/JobPosting JSON-LD first ──
         for s in soup.find_all("script", type="application/ld+json"):
             raw = s.string or s.get_text()
             if not raw or "JobPosting" not in raw:
@@ -501,9 +507,68 @@ def fetch_json_ld_via_http(url: str) -> Optional[dict]:
                                 }
             except Exception:
                 continue
+
+        # ── 2. Direct HTML extraction for server-rendered job boards (Greenhouse, Lever, etc.) ──
+        for tag in soup.find_all(['script', 'style', 'nav', 'header', 'footer', 'noscript', 'iframe', 'svg']):
+            tag.decompose()
+
+        platform = detect_platform(check_url)
+        platform_sels = PLATFORM_SELECTORS.get(platform, {}).get("jd", []) if platform else []
+        combined_sels = platform_sels + [
+            "#content", ".content", "#app", "main", "article",
+            "[class*='job-description']", "[class*='posting-page']",
+            "[class*='descriptionText']", "[id*='content']", "body"
+        ]
+
+        best_jd_text = ""
+        for sel in combined_sels:
+            el = soup.select_one(sel)
+            if el:
+                candidate_txt = clean_text(el.get_text(separator='\n'))
+                if len(candidate_txt) > len(best_jd_text):
+                    best_jd_text = candidate_txt
+
+        if best_jd_text and len(best_jd_text) >= 500:
+            is_valid, _ = validate_jd_extraction(best_jd_text)
+            if is_valid:
+                # Extract role
+                extracted_role = ""
+                for sel in ["h1.app-title", "h1.job-title", "h1", "h2", "title"]:
+                    r_el = soup.select_one(sel)
+                    if r_el and len(r_el.get_text().strip()) > 3:
+                        cand_role = clean_role_title(r_el.get_text().strip())
+                        valid_r, _ = validate_role_title(cand_role)
+                        if valid_r and "job" not in cand_role.lower() and "opening" not in cand_role.lower() and len(cand_role) < 80:
+                            extracted_role = cand_role
+                            break
+                if not extracted_role:
+                    extracted_role = "Software Engineer"
+
+                # Extract company
+                extracted_company = ""
+                for sel in [".company-name", "[class*='company']", ".posting-category"]:
+                    co_el = soup.select_one(sel)
+                    if co_el and len(co_el.get_text().strip()) > 2:
+                        extracted_company = co_el.get_text().strip()
+                        break
+                if not extracted_company:
+                    extracted_company = extract_company_from_url(check_url)
+
+                folder_name = f"{slugify(extracted_company)}_{slugify(extracted_role)}"[:80]
+                return {
+                    "url": url,
+                    "company": extracted_company,
+                    "role": extracted_role,
+                    "jd_text": best_jd_text,
+                    "folder_name": folder_name,
+                }
     except Exception as e:
-        print(f"[Scraper] JSON-LD HTTP fetch note: {e}")
+        print(f"[Scraper] Fast HTTP fetch note: {e}")
     return None
+
+
+# Alias for backwards compatibility
+fetch_json_ld_via_http = fetch_jd_via_http
 
 
 async def solve_captcha_interactively(p, url: str) -> Optional[str]:
@@ -671,15 +736,15 @@ async def scrape_jd(url: str, force_refresh: bool = False) -> dict:
             save_cached_jd(scrape_url, notion_data)
             return notion_data
 
-    # Fast path for Schema.org/JobPosting JSON-LD (AshbyHQ, Lever, Greenhouse, etc.)
-    json_ld_data = fetch_json_ld_via_http(scrape_url)
-    if json_ld_data and len(json_ld_data.get("jd_text", "")) >= 500:
-        print(f"[Scraper] ⚡ Extracted verified JobPosting JSON-LD for {json_ld_data.get('role')} at {json_ld_data.get('company')} ({len(json_ld_data.get('jd_text'))} chars)")
-        save_cached_jd(scrape_url, json_ld_data)
-        save_cached_jd(url, json_ld_data)
-        return json_ld_data
+    # Fast path for Schema.org/JobPosting JSON-LD or direct server-rendered HTML (150ms - 2s)
+    fast_data = fetch_jd_via_http(scrape_url)
+    if fast_data and len(fast_data.get("jd_text", "")) >= 500:
+        print(f"[Scraper] ⚡ Fast HTTP extracted verified JD for {fast_data.get('role')} at {fast_data.get('company')} ({len(fast_data.get('jd_text'))} chars)")
+        save_cached_jd(scrape_url, fast_data)
+        save_cached_jd(url, fast_data)
+        return fast_data
 
-    print(f"[Scraper] Opening: {scrape_url}")
+    print(f"[Scraper] Fast HTTP did not yield complete JD — falling back to Playwright: {scrape_url}")
     platform = detect_platform(scrape_url)
     if platform:
         print(f"[Scraper] Detected platform: {platform}")
@@ -722,8 +787,14 @@ async def scrape_jd(url: str, force_refresh: bool = False) -> dict:
         except Exception as e:
             print(f"[Scraper] Page goto note: {e} — proceeding with rendered DOM")
 
-        # Allow SPA JavaScript / iframes (Greenhouse / Lever / Notion / React) time to hydrate
-        await asyncio.sleep(4)
+        # Allow SPA JavaScript / iframes (Greenhouse / Lever / Notion / React) time to hydrate dynamically
+        try:
+            await page.wait_for_selector(
+                "#content, .content, main, article, [class*='job'], [class*='description'], [class*='ashby'], [data-automation-id='jobPostingDescription']",
+                timeout=1800
+            )
+        except Exception:
+            await asyncio.sleep(0.8)
         
         # Get full page HTML from main frame and any embedded iframes (e.g. Greenhouse embeds)
         html_chunks = []

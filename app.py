@@ -2099,17 +2099,26 @@ def analyze_job():
         # Users sync Simplify seamlessly via the 1-Click Bookmarklet or Clipboard Paste in Tab 1.
         if not no_simplify and not is_cloud_render:
             try:
-                print(f"[Analyze] Running local desktop Simplify extension reader...")
-                s_data = loop.run_until_complete(
-                    asyncio.wait_for(read_simplify_score(url, company, role), timeout=8.0)
-                )
-                if s_data.get("success"):
+                from simplify_reader import get_cached_simplify_score
+                cached_s = get_cached_simplify_score(url)
+                if cached_s and cached_s.get("success"):
+                    s_data = cached_s
                     score = s_data.get("score") or 75
                     missing_keywords = s_data.get("missing_keywords", [])
                     matching_keywords = s_data.get("matching_keywords", [])
-                    print(f"[Analyze] Simplify extension score: {score}%")
+                    print(f"[Analyze] ⚡ Reusing cached Simplify score: {score}%")
+                else:
+                    print(f"[Analyze] Checking local desktop Simplify extension reader...")
+                    s_data = loop.run_until_complete(
+                        asyncio.wait_for(read_simplify_score(url, company, role), timeout=3.5)
+                    )
+                    if s_data.get("success"):
+                        score = s_data.get("score") or 75
+                        missing_keywords = s_data.get("missing_keywords", [])
+                        matching_keywords = s_data.get("matching_keywords", [])
+                        print(f"[Analyze] Simplify extension score: {score}%")
             except asyncio.TimeoutError:
-                print("[Analyze] Local Simplify reader timed out (8s limit) — falling back to Gemini LLM Matcher")
+                print("[Analyze] Local Simplify reader took >3.5s — proceeding with Gemini LLM Matcher immediately")
             except Exception as e:
                 print(f"[Analyze] Local Simplify read note: {e}")
         elif is_cloud_render:

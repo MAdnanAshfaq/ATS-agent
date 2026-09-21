@@ -38,13 +38,48 @@ def get_chrome_user_data_dir() -> Path:
 def find_simplify_installation() -> dict:
     """
     Search for Simplify extension:
-    1. Check for bundled extension inside project repository (universal for Render Linux & cloud).
-    2. Search local Chrome profiles (Default, Profile 1..N) in Chrome User Data (Windows / macOS).
+    1. Search local Chrome profiles (Default, Profile 1..N) in Chrome User Data (Windows / macOS) for user login session.
+    2. Fallback to bundled extension inside project repository (universal for Render Linux & cloud).
     Can be overridden by SIMPLIFY_PROFILE in .env.
     """
     load_dotenv()
 
-    # 1. First check for bundled extension in project root (universal for Render Linux & local cloud setups)
+    chrome_data = get_chrome_user_data_dir()
+    env_profile = os.getenv("SIMPLIFY_PROFILE", "").strip()
+
+    # 1. First search local Chrome profiles (preserves authentic login cookies and saved resumes)
+    if chrome_data.exists():
+        profiles_to_check = []
+        if env_profile:
+            profiles_to_check.append(chrome_data / env_profile)
+
+        for item in chrome_data.iterdir():
+            if item.is_dir() and (item.name == "Default" or item.name.startswith("Profile")):
+                if item not in profiles_to_check:
+                    profiles_to_check.append(item)
+
+        candidates = []
+        for prof_dir in profiles_to_check:
+            ext_dir = prof_dir / "Extensions" / SIMPLIFY_EXT_ID
+            if ext_dir.exists():
+                subdirs = [d for d in ext_dir.iterdir() if d.is_dir()]
+                if subdirs:
+                    latest = sorted(subdirs, key=lambda p: p.stat().st_mtime, reverse=True)[0]
+                    candidates.append({
+                        "profile_dir": str(prof_dir),
+                        "profile_name": prof_dir.name,
+                        "ext_path": str(latest).replace("\\", "/"),
+                        "mtime": latest.stat().st_mtime,
+                        "error": None
+                    })
+        if candidates:
+            # Pick profile with newest modified extension/cookies
+            candidates.sort(key=lambda x: x["mtime"], reverse=True)
+            chosen = candidates[0]
+            del chosen["mtime"]
+            return chosen
+
+    # 2. Fallback to bundled extension in project root (universal for Render Linux & cloud)
     bundled = BASE_DIR / "simplify_extension"
     if bundled.exists() and (bundled / "manifest.json").exists():
         return {
@@ -53,36 +88,6 @@ def find_simplify_installation() -> dict:
             "ext_path": str(bundled).replace("\\", "/"),
             "error": None
         }
-
-    chrome_data = get_chrome_user_data_dir()
-    env_profile = os.getenv("SIMPLIFY_PROFILE", "").strip()
-
-    if not chrome_data.exists():
-        return {"profile_dir": None, "profile_name": None, "ext_path": None, "error": f"Chrome User Data not found at {chrome_data}"}
-
-    # If specific profile requested in .env
-    profiles_to_check = []
-    if env_profile:
-        profiles_to_check.append(chrome_data / env_profile)
-
-    # Add all subdirectories that look like profiles
-    for item in chrome_data.iterdir():
-        if item.is_dir() and (item.name == "Default" or item.name.startswith("Profile")):
-            if item not in profiles_to_check:
-                profiles_to_check.append(item)
-
-    for prof_dir in profiles_to_check:
-        ext_dir = prof_dir / "Extensions" / SIMPLIFY_EXT_ID
-        if ext_dir.exists():
-            subdirs = [d for d in ext_dir.iterdir() if d.is_dir()]
-            if subdirs:
-                latest = sorted(subdirs, key=lambda p: p.stat().st_mtime, reverse=True)[0]
-                return {
-                    "profile_dir": str(prof_dir),
-                    "profile_name": prof_dir.name,
-                    "ext_path": str(latest).replace("\\", "/"),
-                    "error": None
-                }
 
     return {"profile_dir": None, "profile_name": None, "ext_path": None, "error": f"Simplify extension ({SIMPLIFY_EXT_ID}) not found in any Chrome profile in {chrome_data}"}
 
@@ -113,8 +118,8 @@ def _safe_copytree(src: Path, dst: Path):
 def _create_temp_profile(profile_dir: Optional[str] = None) -> str:
     """
     Create a clean temp Chrome profile directory for Playwright.
-    Copies Simplify's extension storage, IndexedDB, cookies (Network), and local storage
-    so Simplify's authenticated session and uploaded resume state are preserved.
+    Selectively copies Simplify's extension storage and cookies so the authenticated
+    session is preserved without copying gigabytes of unrelated browser data.
     """
     dst_root = Path(TEMP_PROFILE_DIR)
     dst_default = dst_root / "Default"
@@ -122,30 +127,46 @@ def _create_temp_profile(profile_dir: Optional[str] = None) -> str:
 
     if profile_dir and Path(profile_dir).exists():
         src = Path(profile_dir)
-        # Copy storage directories
-        dirs_to_copy = [
-            ("Local Extension Settings", f"Local Extension Settings/{SIMPLIFY_EXT_ID}"),
-            ("IndexedDB", "IndexedDB"),
-            ("Local Storage", "Local Storage"),
-            ("Session Storage", "Session Storage"),
-            ("Network", "Network"),
-        ]
+        cookies_dst = dst_default / "Network" / "Cookies"
+        # If cloned recently (< 30 mins) and cookies exist, reuse immediately to avoid disk lag
+        if cookies_dst.exists() and (time.time() - cookies_dst.stat().st_mtime) < 1800:
+            return str(dst_root)
 
-        for dir_name, subpath in dirs_to_copy:
-            s = src / dir_name
-            d = dst_default / dir_name
-            if s.exists():
-                try:
-                    if d.exists():
-                        shutil.rmtree(d, ignore_errors=True)
-                    _safe_copytree(s, d)
-                except Exception as e:
-                    print(f"  [Simplify] Warning copying {dir_name}: {e}")
+        # 1. Selective Simplify Extension Settings
+        ext_settings_src = src / "Local Extension Settings" / SIMPLIFY_EXT_ID
+        ext_settings_dst = dst_default / "Local Extension Settings" / SIMPLIFY_EXT_ID
+        if ext_settings_src.exists():
+            _safe_copytree(ext_settings_src, ext_settings_dst)
+
+        # 2. Network Cookies
+        net_src = src / "Network"
+        net_dst = dst_default / "Network"
+        if net_src.exists():
+            _safe_copytree(net_src, net_dst)
+
+        # 3. Local Storage leveldb
+        ls_src = src / "Local Storage"
+        ls_dst = dst_default / "Local Storage"
+        if ls_src.exists():
+            _safe_copytree(ls_src, ls_dst)
+
+        # 4. Selective IndexedDB (only Simplify-related databases)
+        idb_src = src / "IndexedDB"
+        idb_dst = dst_default / "IndexedDB"
+        if idb_src.exists():
+            idb_dst.mkdir(parents=True, exist_ok=True)
+            for item in idb_src.iterdir():
+                if "simplify" in item.name.lower() or SIMPLIFY_EXT_ID in item.name.lower():
+                    target = idb_dst / item.name
+                    if item.is_dir():
+                        _safe_copytree(item, target)
+                    else:
+                        shutil.copy2(item, target)
 
         size_kb = sum(f.stat().st_size for f in dst_default.rglob("*") if f.is_file()) // 1024
-        print(f"  [Simplify] Cloned profile state from {src.name} ({size_kb}KB total)")
+        print(f"  [Simplify] ⚡ Cloned lightweight profile state from {src.name} ({size_kb}KB total)")
 
-    # Copy Local State
+    # Copy Local State if present
     chrome_data = get_chrome_user_data_dir()
     local_state_src = chrome_data / "Local State"
     local_state_dst = dst_root / "Local State"
@@ -243,6 +264,18 @@ async def read_simplify_score(job_url: str, company: str = "", role: str = "", f
 
     ext_path = installation["ext_path"]
     profile_dir = installation["profile_dir"]
+
+    # If no local Chrome profile and no credentials in .env, don't spin up empty browser that will time out
+    if not profile_dir and not (email and password):
+        print("  [Simplify] Bundled extension is unauthenticated without credentials. Skipping browser launch (use 1-Click Bookmarklet or paste keywords).")
+        return {
+            "success": False,
+            "score": None,
+            "missing_keywords": [],
+            "matching_keywords": [],
+            "error": "Simplify extension unauthenticated. Use 1-Click Bookmarklet to sync instantly.",
+        }
+
     print(f"  [Simplify] Using profile '{installation.get('profile_name')}' ({ext_path})")
 
     temp_profile = _create_temp_profile(profile_dir)
@@ -299,51 +332,16 @@ async def read_simplify_score(job_url: str, company: str = "", role: str = "", f
             except Exception as nav_err:
                 print(f"  [Simplify] Navigation note: {nav_err}")
 
-            # Wait for Simplify extension to hydrate local storage token
-            await page.wait_for_timeout(4500)
-
-            # Check if shadow root explicitly asks for login
-            check_text = await page.evaluate("""() => {
-                const host = document.querySelector('div.simplify-jobs-shadow-root') || document.querySelector('#simplify-jobs-shadow-root');
-                return host && host.shadowRoot ? host.shadowRoot.textContent : '';
-            }""")
-
-            # Step 2: If explicitly unauthenticated, log in on simplify.jobs and return
-            if ("Log in" in check_text or "Log In" in check_text) and "Resume" not in check_text and email and password:
-                print(f"  [Simplify] Session unauthenticated. Logging into Simplify ({email})...")
-                try:
-                    await page.goto("https://simplify.jobs/auth/login", wait_until="domcontentloaded", timeout=15000)
-                    await page.wait_for_timeout(2000)
-                    email_input = await page.query_selector("#email, input[name='email']")
-                    if email_input:
-                        await page.fill("#email, input[name='email']", email)
-                        await page.fill("#password, input[name='password']", password)
-                        await page.click("button[type='submit']")
-                        print("  [Simplify] Credentials submitted, waiting for dashboard redirect...")
-                        await page.wait_for_timeout(4000)
-                except Exception as auth_err:
-                    print(f"  [Simplify] Auth step note: {auth_err}")
-
-                print(f"  [Simplify] Returning to target job URL: {target_url}")
-                try:
-                    await page.goto(target_url, wait_until="domcontentloaded", timeout=25000)
-                except Exception:
-                    pass
-                await page.wait_for_timeout(6000)
-
-            # Step 3: Wait for Simplify shadow root and expand 'Resume Score' drawer
-            print("  [Simplify] Waiting for Simplify shadow root and expanding 'Resume Score' drawer...")
-            
-            # Wait for shadow root attachment
+            # Step 2: Dynamic wait for Simplify extension shadow root (checks every 500ms up to 2.5s)
             shadow_ready = False
-            for _ in range(10):
+            for _ in range(5):
                 shadow_ready = await page.evaluate("""() => {
                     const host = document.querySelector('div.simplify-jobs-shadow-root') || document.querySelector('#simplify-jobs-shadow-root');
                     return !!(host && host.shadowRoot);
                 }""")
                 if shadow_ready:
                     break
-                await page.wait_for_timeout(1000)
+                await page.wait_for_timeout(500)
 
             if not shadow_ready:
                 return {
@@ -351,8 +349,36 @@ async def read_simplify_score(job_url: str, company: str = "", role: str = "", f
                     "score": None,
                     "missing_keywords": [],
                     "matching_keywords": [],
-                    "error": "Simplify extension shadow root was not found on the job page.",
+                    "error": "Simplify extension shadow root was not active on this job page.",
                 }
+
+            # Check if shadow root explicitly asks for login
+            check_text = await page.evaluate("""() => {
+                const host = document.querySelector('div.simplify-jobs-shadow-root') || document.querySelector('#simplify-jobs-shadow-root');
+                return host && host.shadowRoot ? host.shadowRoot.textContent : '';
+            }""")
+
+            if ("Log in" in check_text or "Log In" in check_text) and "Resume" not in check_text and email and password:
+                print(f"  [Simplify] Session unauthenticated. Logging into Simplify ({email})...")
+                try:
+                    await page.goto("https://simplify.jobs/auth/login", wait_until="domcontentloaded", timeout=12000)
+                    await page.wait_for_timeout(1500)
+                    email_input = await page.query_selector("#email, input[name='email']")
+                    if email_input:
+                        await page.fill("#email, input[name='email']", email)
+                        await page.fill("#password, input[name='password']", password)
+                        await page.click("button[type='submit']")
+                        print("  [Simplify] Credentials submitted, waiting for redirect...")
+                        await page.wait_for_timeout(3000)
+                except Exception as auth_err:
+                    print(f"  [Simplify] Auth step note: {auth_err}")
+
+                print(f"  [Simplify] Returning to target job URL: {target_url}")
+                try:
+                    await page.goto(target_url, wait_until="domcontentloaded", timeout=15000)
+                except Exception:
+                    pass
+                await page.wait_for_timeout(2000)
 
             # Step 3a: Click top 'Resume Score' tab button
             await page.evaluate("""() => {
