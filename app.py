@@ -2058,14 +2058,43 @@ def analyze_job():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
-            # Show the sanitized URL in logs so user can see what's being scraped
             sanitized_url = sanitize_jd_url(url.rstrip("/"))
-            print(f"[Analyze] Scraping JD from {sanitized_url}...")
+            print(f"[Analyze] Analyzing JD from {sanitized_url}...")
 
-            try:
-                jd_data = loop.run_until_complete(scrape_jd(url))
-            except RuntimeError as scrape_err:
-                err_str = str(scrape_err)
+            is_cloud_render = (os.environ.get("RENDER") == "true") or (sys.platform != "win32") or (os.environ.get("FLASK_ENV") == "production")
+
+            # Check Simplify cache first for instant 0ms retrieval
+            cached_s = None
+            if not no_simplify and not is_cloud_render:
+                from simplify_reader import get_cached_simplify_score
+                cached_s = get_cached_simplify_score(url)
+                if cached_s and cached_s.get("success"):
+                    print(f"[Analyze] ⚡ Reusing verified cached Simplify score: {cached_s.get('score')}%")
+
+            async def _run_analysis_pipeline():
+                scrape_coro = scrape_jd(url)
+                if cached_s and cached_s.get("success"):
+                    # Instant cache hit for Simplify: only need scraper
+                    jd_res = await scrape_coro
+                    return jd_res, cached_s
+                elif not no_simplify and not is_cloud_render:
+                    print(f"[Analyze] ⚡ Launching Scraper and Simplify Extension Reader in parallel (concurrent execution)...")
+                    from simplify_reader import read_simplify_score
+                    simplify_coro = asyncio.wait_for(
+                        read_simplify_score(url, custom_company, custom_role),
+                        timeout=8.0
+                    )
+                    # Parallel execution: both scrape and Simplify run concurrently, maximizing effectiveness and eliminating sequential lag
+                    results = await asyncio.gather(scrape_coro, simplify_coro, return_exceptions=True)
+                    return results[0], results[1]
+                else:
+                    jd_res = await scrape_coro
+                    return jd_res, None
+
+            scrape_result, simplify_result = loop.run_until_complete(_run_analysis_pipeline())
+
+            if isinstance(scrape_result, Exception):
+                err_str = str(scrape_result)
                 user_msg = (
                     "⚠️ Could not extract the job description from this URL.\n\n"
                     + err_str.split("\n")[0]
@@ -2073,7 +2102,7 @@ def analyze_job():
                     "1. Open the job in your browser and copy the direct URL\n"
                     "2. Or paste the full JD text directly into the URL input box and click Analyze"
                 )
-                print(f"[Analyze] Scrape validation failed: {scrape_err}")
+                print(f"[Analyze] Scrape validation failed: {scrape_result}")
                 return jsonify({
                     "success": False,
                     "error": user_msg,
@@ -2081,48 +2110,25 @@ def analyze_job():
                     "jd_length": 0,
                 }), 422
 
+            jd_data = scrape_result
             company = jd_data["company"]
             role = clean_role_title(jd_data["role"])
             jd_text = jd_data["jd_text"]
             jd_len  = len(jd_text)
             print(f"[Analyze] Scraped {jd_len} chars for {role} at {company}")
 
-        missing_keywords = []
-        matching_keywords = []
-        score = 0
-
-        s_data = {}
-        # Try Simplify extension reader ONLY if running locally on Windows with a desktop profile
-        is_cloud_render = (os.environ.get("RENDER") == "true") or (sys.platform != "win32") or (os.environ.get("FLASK_ENV") == "production")
-
-        # In cloud / Render environments, client-side browser extensions cannot run inside a headless server container.
-        # Users sync Simplify seamlessly via the 1-Click Bookmarklet or Clipboard Paste in Tab 1.
-        if not no_simplify and not is_cloud_render:
-            try:
-                from simplify_reader import get_cached_simplify_score
-                cached_s = get_cached_simplify_score(url)
-                if cached_s and cached_s.get("success"):
-                    s_data = cached_s
+            s_data = {}
+            if isinstance(simplify_result, dict):
+                s_data = simplify_result
+                if s_data.get("success"):
                     score = s_data.get("score") or 75
                     missing_keywords = s_data.get("missing_keywords", [])
                     matching_keywords = s_data.get("matching_keywords", [])
-                    print(f"[Analyze] ⚡ Reusing cached Simplify score: {score}%")
-                else:
-                    print(f"[Analyze] Checking local desktop Simplify extension reader...")
-                    s_data = loop.run_until_complete(
-                        asyncio.wait_for(read_simplify_score(url, company, role), timeout=3.5)
-                    )
-                    if s_data.get("success"):
-                        score = s_data.get("score") or 75
-                        missing_keywords = s_data.get("missing_keywords", [])
-                        matching_keywords = s_data.get("matching_keywords", [])
-                        print(f"[Analyze] Simplify extension score: {score}%")
-            except asyncio.TimeoutError:
-                print("[Analyze] Local Simplify reader took >3.5s — proceeding with Gemini LLM Matcher immediately")
-            except Exception as e:
-                print(f"[Analyze] Local Simplify read note: {e}")
-        elif is_cloud_render:
-            print("[Analyze] Cloud environment: Using high-speed Gemini ATS Matcher (Sync Simplify via 1-Click Bookmarklet or Clipboard).")
+                    print(f"[Analyze] Simplify extension score: {score}% ({len(missing_keywords)} missing, {len(matching_keywords)} matching)")
+            elif isinstance(simplify_result, asyncio.TimeoutError):
+                print("[Analyze] Simplify reader reached 8s timeout — using Gemini LLM Matcher")
+            elif isinstance(simplify_result, Exception):
+                print(f"[Analyze] Simplify read note: {simplify_result}")
 
         source = "simplify_extension"
         simplify_has_keywords = (len(missing_keywords) + len(matching_keywords)) >= 5

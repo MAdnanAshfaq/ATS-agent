@@ -644,8 +644,8 @@ def _evict_mem_cache():
         for k in sorted_keys[:len(sorted_keys)//2]:
             _MEM_CACHE.pop(k, None)
 
-def get_cached_jd(url: str, max_age_hours: float = 24.0) -> Optional[dict]:
-    """Retrieve verified cached JD data for a URL if available and fresh."""
+def get_cached_jd(url: str, max_age_hours: float = 168.0) -> Optional[dict]:
+    """Retrieve verified cached JD data for a URL if available and fresh (default 7 days)."""
     clean_url = sanitize_jd_url(url.rstrip("/"))
     now = time.time()
 

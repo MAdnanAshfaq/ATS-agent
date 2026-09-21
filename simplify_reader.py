@@ -38,48 +38,82 @@ def get_chrome_user_data_dir() -> Path:
 def find_simplify_installation() -> dict:
     """
     Search for Simplify extension:
-    1. Search local Chrome profiles (Default, Profile 1..N) in Chrome User Data (Windows / macOS) for user login session.
-    2. Fallback to bundled extension inside project repository (universal for Render Linux & cloud).
-    Can be overridden by SIMPLIFY_PROFILE in .env.
+    1. Check SIMPLIFY_PROFILE if explicitly set in .env or settings.
+    2. Check SIMPLIFY_EMAIL in Chrome's Local State to match user profile automatically (e.g. Profile 12).
+    3. Search all local Chrome profiles (Default, Profile 1..N) in Chrome User Data (Windows / macOS).
+    4. Fallback to bundled extension inside project repository (Render Linux & cloud).
     """
     load_dotenv()
 
     chrome_data = get_chrome_user_data_dir()
     env_profile = os.getenv("SIMPLIFY_PROFILE", "").strip()
+    env_email = os.getenv("SIMPLIFY_EMAIL", "").strip().lower()
 
-    # 1. First search local Chrome profiles (preserves authentic login cookies and saved resumes)
     if chrome_data.exists():
-        profiles_to_check = []
+        # 1. Explicit profile requested in .env
         if env_profile:
-            profiles_to_check.append(chrome_data / env_profile)
-
-        for item in chrome_data.iterdir():
-            if item.is_dir() and (item.name == "Default" or item.name.startswith("Profile")):
-                if item not in profiles_to_check:
-                    profiles_to_check.append(item)
-
-        candidates = []
-        for prof_dir in profiles_to_check:
+            prof_dir = chrome_data / env_profile
             ext_dir = prof_dir / "Extensions" / SIMPLIFY_EXT_ID
             if ext_dir.exists():
                 subdirs = [d for d in ext_dir.iterdir() if d.is_dir()]
                 if subdirs:
                     latest = sorted(subdirs, key=lambda p: p.stat().st_mtime, reverse=True)[0]
-                    candidates.append({
+                    return {
                         "profile_dir": str(prof_dir),
                         "profile_name": prof_dir.name,
                         "ext_path": str(latest).replace("\\", "/"),
-                        "mtime": latest.stat().st_mtime,
                         "error": None
-                    })
+                    }
+
+        # 2. Match profile by SIMPLIFY_EMAIL from Chrome's Local State info_cache
+        if env_email:
+            local_state_file = chrome_data / "Local State"
+            if local_state_file.exists():
+                try:
+                    with open(local_state_file, "r", encoding="utf-8") as f:
+                        ls = json.load(f)
+                    info_cache = ls.get("profile", {}).get("info_cache", {})
+                    for p_name, p_info in info_cache.items():
+                        user_name = (p_info.get("user_name") or "").strip().lower()
+                        if user_name == env_email:
+                            prof_dir = chrome_data / p_name
+                            ext_dir = prof_dir / "Extensions" / SIMPLIFY_EXT_ID
+                            if ext_dir.exists():
+                                subdirs = [d for d in ext_dir.iterdir() if d.is_dir()]
+                                if subdirs:
+                                    latest = sorted(subdirs, key=lambda p: p.stat().st_mtime, reverse=True)[0]
+                                    return {
+                                        "profile_dir": str(prof_dir),
+                                        "profile_name": p_name,
+                                        "ext_path": str(latest).replace("\\", "/"),
+                                        "error": None
+                                    }
+                except Exception as e:
+                    print(f"  [Simplify] Note checking Local State: {e}")
+
+        # 3. Search all profiles with Simplify extension, order by newest modified extension files
+        candidates = []
+        for item in chrome_data.iterdir():
+            if item.is_dir() and (item.name == "Default" or item.name.startswith("Profile")):
+                ext_dir = item / "Extensions" / SIMPLIFY_EXT_ID
+                if ext_dir.exists():
+                    subdirs = [d for d in ext_dir.iterdir() if d.is_dir()]
+                    if subdirs:
+                        latest = sorted(subdirs, key=lambda p: p.stat().st_mtime, reverse=True)[0]
+                        candidates.append({
+                            "profile_dir": str(item),
+                            "profile_name": item.name,
+                            "ext_path": str(latest).replace("\\", "/"),
+                            "mtime": latest.stat().st_mtime,
+                            "error": None
+                        })
         if candidates:
-            # Pick profile with newest modified extension/cookies
             candidates.sort(key=lambda x: x["mtime"], reverse=True)
             chosen = candidates[0]
             del chosen["mtime"]
             return chosen
 
-    # 2. Fallback to bundled extension in project root (universal for Render Linux & cloud)
+    # 4. Fallback to bundled extension in project root (universal for Render Linux & cloud)
     bundled = BASE_DIR / "simplify_extension"
     if bundled.exists() and (bundled / "manifest.json").exists():
         return {
@@ -164,7 +198,7 @@ def _create_temp_profile(profile_dir: Optional[str] = None) -> str:
                         shutil.copy2(item, target)
 
         size_kb = sum(f.stat().st_size for f in dst_default.rglob("*") if f.is_file()) // 1024
-        print(f"  [Simplify] ⚡ Cloned lightweight profile state from {src.name} ({size_kb}KB total)")
+        print(f"  [Simplify] [OK] Cloned lightweight profile state from {src.name} ({size_kb}KB total)")
 
     # Copy Local State if present
     chrome_data = get_chrome_user_data_dir()
@@ -185,8 +219,8 @@ import time
 SIMPLIFY_CACHE_FILE = BASE_DIR / "simplify_cache.json"
 _SIMPLIFY_MEM_CACHE = {}
 
-def get_cached_simplify_score(url: str, max_age_hours: float = 24.0) -> Optional[dict]:
-    """Retrieve verified cached Simplify ATS score if available."""
+def get_cached_simplify_score(url: str, max_age_hours: float = 168.0) -> Optional[dict]:
+    """Retrieve verified cached Simplify ATS score if available (default 7 days)."""
     clean_url = url.rstrip("/")
     now = time.time()
     if clean_url in _SIMPLIFY_MEM_CACHE:
@@ -332,9 +366,9 @@ async def read_simplify_score(job_url: str, company: str = "", role: str = "", f
             except Exception as nav_err:
                 print(f"  [Simplify] Navigation note: {nav_err}")
 
-            # Step 2: Dynamic wait for Simplify extension shadow root (checks every 500ms up to 2.5s)
+            # Step 2: Dynamic wait for Simplify extension shadow root (checks every 500ms up to 6.0s)
             shadow_ready = False
-            for _ in range(5):
+            for _ in range(12):
                 shadow_ready = await page.evaluate("""() => {
                     const host = document.querySelector('div.simplify-jobs-shadow-root') || document.querySelector('#simplify-jobs-shadow-root');
                     return !!(host && host.shadowRoot);
