@@ -2016,6 +2016,12 @@ def analyze_job():
 
         base_resume = load_base_resume(str(get_user_resume_path()))
 
+        # Initialize default analysis variables to guarantee scope safety
+        missing_keywords = []
+        matching_keywords = []
+        score = 0
+        s_data = {}
+
         if is_direct_text:
             jd_text = direct_jd_text if (direct_jd_text and len(direct_jd_text) >= 20) else url
             company = custom_company or "Target Company"

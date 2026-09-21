@@ -221,8 +221,8 @@ def clean_text(text: str) -> str:
 
 def clean_role_title(role: str, company: str = "") -> str:
     """Clean job role title by removing parenthetical suffixes, brackets, location tags, ATS noise words, etc."""
-    if not role:
-        return "Software Engineer"
+    if not role or not role.strip():
+        return ""
     
     # 1. Remove bracketed / parenthetical text e.g. (Databricks), [Remote], (AI/ML)
     role = re.sub(r'[\(\[\{].*?[\)\]\}]', '', role)
@@ -258,15 +258,15 @@ def clean_role_title(role: str, company: str = "") -> str:
     # 5b. Remove trailing corporate leveling/contractor classification codes (e.g. 'Con II', 'Con I', 'Cons II', 'IC4')
     role = re.sub(r'\s*[-–—|/,]?\s*\b(?:con|cons|consultant|tier|grade|band|ic)\s*(?:i{1,3}|iv|v|\d+)\b.*$', '', role, flags=re.IGNORECASE)
     
-    # 6. Strip leftover punctuation and spaces
-    role = re.sub(r'\s+', ' ', role).strip(' -–—|/,:;')
+    # 6. Strip leftover punctuation, brackets, quotes, braces, and spaces
+    role = re.sub(r'\s+', ' ', role).strip(' -–—|/,:;\'"{}()[]')
     
-    return role or "Software Engineer"
+    return role.strip()
 
 
 def validate_jd_extraction(text: str) -> tuple[bool, str]:
     """
-    Gate that catches bot-block/error pages masquerading as JD content.
+    Gate that catches bot-block/error pages or cookie notices masquerading as JD content.
     Returns (is_valid, reason).
     """
     stripped = text.strip()
@@ -275,6 +275,21 @@ def validate_jd_extraction(text: str) -> tuple[bool, str]:
             f"Extracted only {len(stripped)} characters — suspiciously short for a real JD. "
             "The site likely returned a bot-block or error page instead of the job description."
         )
+
+    text_lower = stripped.lower()
+
+    # Reject cookie consent banners masquerading as JD text
+    cookie_signatures = [
+        "necessary cookies help make a website usable",
+        "when you visit any website, it may store or retrieve information on your browser",
+        "strictly necessary cookies",
+        "we use cookies to personalise content",
+        "opt-out of certain cookies",
+        "cookie preference",
+        "manage consent preferences",
+    ]
+    if any(sig in text_lower for sig in cookie_signatures):
+        return False, "Extracted text matches a cookie consent policy banner rather than job description content."
 
     # Real bot-block error pages are short (< 2000 chars) and contain explicit blocking phrases
     if len(stripped) < 2000:
@@ -286,7 +301,6 @@ def validate_jd_extraction(text: str) -> tuple[bool, str]:
             "security check to continue", "human verification",
             "temporary unavailable", "502 bad gateway", "page not found", "404 not found"
         ]
-        text_lower = stripped.lower()
         for sig in ERROR_SIGNATURES:
             if sig in text_lower:
                 return False, f"Content matches a known error/bot-block pattern: '{sig}'"
@@ -295,18 +309,38 @@ def validate_jd_extraction(text: str) -> tuple[bool, str]:
 
 
 def validate_role_title(role: str) -> tuple[bool, str]:
-    """Check if the extracted role title looks like a real job title, not a CAPTCHA/error page."""
+    """Check if the extracted role title looks like a real job title, not a template or error page."""
+    if not role or len(role.strip()) < 3:
+        return False, "Role title is too short or empty."
+
+    role_lower = role.strip().lower()
+
+    # Reject code syntax, templates, Angular expressions, or unrendered variables
+    BAD_PATTERNS = [
+        "{{", "}}", "${", "replace(", "profiledetails", "errormessage", "welcometitle",
+        "null", "undefined", "function", "==", "!=", "?", "<", ">",
+        "already applied", "quick apply", "apply for this job", "apply now"
+    ]
+    for bad in BAD_PATTERNS:
+        if bad in role_lower:
+            return False, f"Role title contains template or code pattern: '{bad}'"
+
+    # Must contain real letters (genuine words)
+    if not re.search(r'[a-zA-Z]{3,}', role):
+        return False, "Role title contains no genuine words."
+
     BOT_ROLE_TITLES = {
         "human verification", "access denied", "just a moment",
         "403 forbidden", "error", "captcha", "attention required",
         "security check", "checking your browser", "please wait",
         "page not found", "404", "502", "loading", "redirecting",
         "verification required", "login", "sign in", "signin",
+        "cookie", "cookies", "privacy policy"
     }
-    role_lower = role.strip().lower()
     for bad in BOT_ROLE_TITLES:
         if bad in role_lower:
-            return False, f"Role title '{role}' looks like a bot-block page, not a real job title."
+            return False, f"Role title '{role}' looks like a bot-block or system page, not a real job title."
+
     return True, "OK"
 
 
@@ -512,47 +546,116 @@ def fetch_jd_via_http(url: str) -> Optional[dict]:
         for tag in soup.find_all(['script', 'style', 'nav', 'header', 'footer', 'noscript', 'iframe', 'svg']):
             tag.decompose()
 
+        # Decompose cookie banners, consent modals, and OneTrust overlays
+        for c in soup.find_all(attrs={'class': lambda val: val and any(w in str(val).lower() for w in ['cookie', 'consent', 'onetrust', 'optanon', 'banner', 'privacy-notice', 'policy'])}):
+            c.decompose()
+        for c in soup.find_all(attrs={'id': lambda val: val and any(w in str(val).lower() for w in ['cookie', 'consent', 'onetrust', 'optanon', 'policy'])}):
+            c.decompose()
+        for c in soup.find_all(style=lambda val: val and 'display:none' in str(val).replace(' ', '').lower()):
+            c.decompose()
+
         platform = detect_platform(check_url)
         platform_sels = PLATFORM_SELECTORS.get(platform, {}).get("jd", []) if platform else []
-        combined_sels = platform_sels + [
-            "#content", ".content", "#app", "main", "article",
-            "[class*='job-description']", "[class*='posting-page']",
-            "[class*='descriptionText']", "[id*='content']", "body"
+        dedicated_sels = platform_sels + [
+            "[class*='jobdescription']", "[class*='job-description']", "[class*='JobDetails']",
+            "[class*='descriptionText']", ".jobs-description__content", "[class*='job_description']",
+            "[class*='posting-page']", ".posting-page .section-wrapper", "#job-description"
         ]
 
         best_jd_text = ""
-        for sel in combined_sels:
-            el = soup.select_one(sel)
-            if el:
+        for sel in dedicated_sels:
+            for el in soup.select(sel):
                 candidate_txt = clean_text(el.get_text(separator='\n'))
-                if len(candidate_txt) > len(best_jd_text):
-                    best_jd_text = candidate_txt
+                if len(candidate_txt) >= 500:
+                    is_valid, _ = validate_jd_extraction(candidate_txt)
+                    if is_valid and len(candidate_txt) > len(best_jd_text):
+                        best_jd_text = candidate_txt
+            if best_jd_text:
+                break
+
+        if not best_jd_text:
+            generic_sels = ["main", "article", "#content", ".content", "#app", "body"]
+            for sel in generic_sels:
+                for el in soup.select(sel):
+                    candidate_txt = clean_text(el.get_text(separator='\n'))
+                    if len(candidate_txt) >= 500:
+                        is_valid, _ = validate_jd_extraction(candidate_txt)
+                        if is_valid and len(candidate_txt) > len(best_jd_text):
+                            best_jd_text = candidate_txt
+                if best_jd_text:
+                    break
 
         if best_jd_text and len(best_jd_text) >= 500:
             is_valid, _ = validate_jd_extraction(best_jd_text)
             if is_valid:
                 # Extract role
                 extracted_role = ""
-                for sel in ["h1.app-title", "h1.job-title", "h1", "h2", "title"]:
-                    r_el = soup.select_one(sel)
-                    if r_el and len(r_el.get_text().strip()) > 3:
-                        cand_role = clean_role_title(r_el.get_text().strip())
-                        valid_r, _ = validate_role_title(cand_role)
-                        if valid_r and "job" not in cand_role.lower() and "opening" not in cand_role.lower() and len(cand_role) < 80:
-                            extracted_role = cand_role
-                            break
-                if not extracted_role:
-                    extracted_role = "Software Engineer"
+                role_selectors = [
+                    "[class*='jobtitle']", "[class*='job-title']",
+                    "h1.app-title", "h1.job-title", "h1", "h2", "title"
+                ]
+                for sel in role_selectors:
+                    for r_el in soup.select(sel):
+                        cand_raw = r_el.get_text().strip()
+                        if cand_raw and len(cand_raw) > 3:
+                            cand_role = clean_role_title(cand_raw)
+                            valid_r, _ = validate_role_title(cand_role)
+                            if valid_r and "job" not in cand_role.lower() and "opening" not in cand_role.lower() and len(cand_role) < 80:
+                                extracted_role = cand_role
+                                break
+                    if extracted_role:
+                        break
 
                 # Extract company
                 extracted_company = ""
-                for sel in [".company-name", "[class*='company']", ".posting-category"]:
-                    co_el = soup.select_one(sel)
-                    if co_el and len(co_el.get_text().strip()) > 2:
-                        extracted_company = co_el.get_text().strip()
+                for sel in [".company-name", "[class*='company']", "[class*='employer']", ".posting-category"]:
+                    for co_el in soup.select(sel):
+                        cand_co = co_el.get_text().strip()
+                        if cand_co and 2 < len(cand_co) < 50:
+                            if cand_co.lower() not in ["company", "company name", "employer", "careers", "jobs", "sjobs", "brassring"]:
+                                extracted_company = cand_co
+                                break
+                    if extracted_company:
                         break
+
+                # Also inspect page <title> for 'Role | Company' or 'Role - Company'
+                page_title_el = soup.find("title")
+                page_title_txt = page_title_el.get_text().strip() if page_title_el else ""
+                if page_title_txt:
+                    for delimiter in [" | ", " - ", " – ", " — "]:
+                        if delimiter in page_title_txt:
+                            t_parts = [p.strip() for p in page_title_txt.split(delimiter) if p.strip()]
+                            if len(t_parts) >= 2:
+                                cand_p0 = clean_role_title(t_parts[0])
+                                cand_p1 = clean_role_title(t_parts[1])
+                                v0, _ = validate_role_title(cand_p0)
+                                v1, _ = validate_role_title(cand_p1)
+                                if not extracted_role:
+                                    if v0:
+                                        extracted_role = cand_p0
+                                    elif v1:
+                                        extracted_role = cand_p1
+                                if not extracted_company or extracted_company.lower() in ["sjobs", "brassring", "target company", "careers"]:
+                                    if v0 and len(t_parts[1]) < 50 and t_parts[1].lower() not in ["careers", "jobs", "job search", "sjobs", "brassring"]:
+                                        extracted_company = t_parts[1]
+                                    elif v1 and len(t_parts[0]) < 50 and t_parts[0].lower() not in ["careers", "jobs", "job search", "sjobs", "brassring"]:
+                                        extracted_company = t_parts[0]
+                                break
+
+                # Check meta tags for company
+                if not extracted_company or extracted_company.lower() in ["sjobs", "brassring", "target company"]:
+                    for meta_prop in ["og:site_name", "application-name", "author"]:
+                        m = soup.find("meta", attrs={"property": meta_prop}) or soup.find("meta", attrs={"name": meta_prop})
+                        if m and m.get("content"):
+                            cand_m = m["content"].strip()
+                            if len(cand_m) > 2 and cand_m.lower() not in ["brassring", "sjobs", "careers"]:
+                                extracted_company = cand_m
+                                break
+
                 if not extracted_company:
                     extracted_company = extract_company_from_url(check_url)
+                if not extracted_role:
+                    extracted_role = "Data Engineer"
 
                 folder_name = f"{slugify(extracted_company)}_{slugify(extracted_role)}"[:80]
                 return {
@@ -645,15 +748,28 @@ def _evict_mem_cache():
             _MEM_CACHE.pop(k, None)
 
 def get_cached_jd(url: str, max_age_hours: float = 168.0) -> Optional[dict]:
-    """Retrieve verified cached JD data for a URL if available and fresh (default 7 days)."""
+    """Retrieve verified cached JD data for a URL if available, fresh, and valid (default 7 days)."""
     clean_url = sanitize_jd_url(url.rstrip("/"))
     now = time.time()
+
+    def _is_cache_entry_valid(d: Optional[dict]) -> bool:
+        if not d or not isinstance(d, dict):
+            return False
+        txt = d.get("jd_text", "")
+        role = d.get("role", "")
+        is_v, _ = validate_jd_extraction(txt)
+        r_v, _ = validate_role_title(role)
+        return is_v and r_v
 
     # 1. Memory cache
     if clean_url in _MEM_CACHE:
         entry = _MEM_CACHE[clean_url]
         if now - entry.get("timestamp", 0) < max_age_hours * 3600:
-            return entry.get("data")
+            cached_data = entry.get("data")
+            if _is_cache_entry_valid(cached_data):
+                return cached_data
+            else:
+                _MEM_CACHE.pop(clean_url, None)
         else:
             _MEM_CACHE.pop(clean_url, None)  # expired — evict immediately
 
@@ -665,9 +781,16 @@ def get_cached_jd(url: str, max_age_hours: float = 168.0) -> Optional[dict]:
                 if clean_url in disk_data:
                     entry = disk_data[clean_url]
                     if now - entry.get("timestamp", 0) < max_age_hours * 3600:
-                        _MEM_CACHE[clean_url] = entry
-                        _evict_mem_cache()
-                        return entry.get("data")
+                        cached_data = entry.get("data")
+                        if _is_cache_entry_valid(cached_data):
+                            _MEM_CACHE[clean_url] = entry
+                            _evict_mem_cache()
+                            return cached_data
+                        else:
+                            # Bad or invalid cache entry — remove it
+                            disk_data.pop(clean_url, None)
+                            with open(CACHE_FILE, "w", encoding="utf-8") as wf:
+                                json.dump(disk_data, wf, indent=2, ensure_ascii=False)
         except Exception:
             pass
     return None
@@ -852,34 +975,64 @@ async def scrape_jd(url: str, force_refresh: bool = False) -> dict:
         c_soup = BeautifulSoup(chunk, 'lxml')
         for tag in c_soup.find_all(['script', 'style', 'nav', 'header', 'footer', 'noscript', 'iframe', 'svg']):
             tag.decompose()
+
+        # Decompose cookie banners, consent modals, and OneTrust overlays
+        for c in c_soup.find_all(attrs={'class': lambda val: val and any(w in str(val).lower() for w in ['cookie', 'consent', 'onetrust', 'optanon', 'banner', 'privacy-notice', 'policy'])}):
+            c.decompose()
+        for c in c_soup.find_all(attrs={'id': lambda val: val and any(w in str(val).lower() for w in ['cookie', 'consent', 'onetrust', 'optanon', 'policy'])}):
+            c.decompose()
+        for c in c_soup.find_all(style=lambda val: val and 'display:none' in str(val).replace(' ', '').lower()):
+            c.decompose()
         
-        # Check platform and generic selectors on this frame
+        # Check platform and dedicated selectors on this frame first
         frame_text = ""
         platform_sels = PLATFORM_SELECTORS.get(platform, {}).get("jd", []) if platform else []
-        combined_sels = platform_sels + ["#content", ".content", "#app", "main", "article", "[class*='job-description']", "[id*='content']", "body"]
-        for sel in combined_sels:
-            el = c_soup.select_one(sel)
-            if el:
+        dedicated_sels = platform_sels + [
+            "[class*='jobdescription']", "[class*='job-description']", "[class*='JobDetails']",
+            "[class*='descriptionText']", ".jobs-description__content", "[class*='job_description']",
+            "[class*='posting-page']", ".posting-page .section-wrapper", "#job-description"
+        ]
+        for sel in dedicated_sels:
+            for el in c_soup.select(sel):
                 candidate_txt = el.get_text(separator='\n').strip()
-                if len(candidate_txt) > len(frame_text):
+                if len(candidate_txt) >= 500 and len(candidate_txt) > len(frame_text):
                     frame_text = candidate_txt
+            if frame_text:
+                break
+
+        if not frame_text:
+            combined_sels = ["main", "article", "#content", ".content", "#app", "[id*='content']", "body"]
+            for sel in combined_sels:
+                for el in c_soup.select(sel):
+                    candidate_txt = el.get_text(separator='\n').strip()
+                    if len(candidate_txt) > len(frame_text):
+                        frame_text = candidate_txt
+                if frame_text:
+                    break
 
         if len(frame_text) > len(best_jd_text):
             best_jd_text = clean_text(frame_text)
             # Try to extract role title from this frame
-            for sel in ["h1.app-title", "h1.job-title", "h1", "h2", "title"]:
-                r_el = c_soup.select_one(sel)
-                if r_el and len(r_el.get_text().strip()) > 3:
-                    cand_role = clean_role_title(r_el.get_text().strip())
-                    is_valid, _ = validate_role_title(cand_role)
-                    if is_valid:
-                        best_role = cand_role
-                        break
+            for sel in ["[class*='jobtitle']", "[class*='job-title']", "h1.app-title", "h1.job-title", "h1", "h2", "title"]:
+                for r_el in c_soup.select(sel):
+                    cand_raw = r_el.get_text().strip()
+                    if cand_raw and len(cand_raw) > 3:
+                        cand_role = clean_role_title(cand_raw)
+                        is_valid, _ = validate_role_title(cand_role)
+                        if is_valid and "job" not in cand_role.lower() and "opening" not in cand_role.lower() and len(cand_role) < 80:
+                            best_role = cand_role
+                            break
+                if best_role:
+                    break
             # Try to extract company
-            for sel in [".company-name", "[class*='company']", ".posting-category"]:
-                co_el = c_soup.select_one(sel)
-                if co_el and len(co_el.get_text().strip()) > 2:
-                    best_company = co_el.get_text().strip()
+            for sel in [".company-name", "[class*='company']", "[class*='employer']", ".posting-category"]:
+                for co_el in c_soup.select(sel):
+                    cand_co = co_el.get_text().strip()
+                    if cand_co and 2 < len(cand_co) < 50:
+                        if cand_co.lower() not in ["company", "company name", "employer", "careers", "jobs", "sjobs", "brassring"]:
+                            best_company = cand_co
+                            break
+                if best_company:
                     break
 
     jd_text = best_jd_text
@@ -963,7 +1116,8 @@ async def scrape_jd(url: str, force_refresh: bool = False) -> dict:
     # ── Resolve true hiring company (avoid job board aggregator names) ──
     JOB_BOARD_NAMES = {
         "hiringcafe", "indeed", "ziprecruiter", "linkedin", "dice",
-        "glassdoor", "builtin", "handshake", "careerbuilder", "monster", "simplyhired", "jobvite", "target company", "unknown company"
+        "glassdoor", "builtin", "handshake", "careerbuilder", "monster", "simplyhired", "jobvite", "target company", "unknown company",
+        "sjobs", "brassring"
     }
 
     if not company or company.lower().replace(" ", "") in JOB_BOARD_NAMES or (role and company.lower() == role.lower()):
