@@ -320,7 +320,7 @@ def rewrite_resume(
         print("[Rewriter] No missing keywords or custom bullets — returning base resume unchanged")
         return base_resume
 
-    models = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash"]
+    models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
     still_missing = None
     last_valid_resume = None
 

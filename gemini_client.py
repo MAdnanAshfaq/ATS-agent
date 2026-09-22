@@ -33,74 +33,116 @@ except Exception:
 logging.getLogger("google_genai.models").setLevel(logging.ERROR)
 logging.getLogger("google_genai").setLevel(logging.ERROR)
 
+import threading
+
 logger = logging.getLogger("gemini_client")
 
-# Global pool state
+# Global pool state (fallback for single-user/local script runs)
 _ACTIVE_KEY_INDEX = 0
+
+# Production-level thread-local storage for isolated per-user/per-pipeline execution
+_THREAD_LOCAL = threading.local()
+
+
+def set_thread_gemini_keys(keys: List[str]):
+    """Assign specific Gemini keys to the current thread/pipeline execution."""
+    clean = [k.strip() for k in keys if k and isinstance(k, str) and k.strip()]
+    _THREAD_LOCAL.gemini_keys = clean
+    _THREAD_LOCAL.active_index = 0
+    if clean:
+        logger.info(f"[Gemini Pool] Set {len(clean)} thread-isolated keys for active user execution.")
+
+
+def clear_thread_gemini_keys():
+    """Clear thread-local keys upon request/pipeline completion."""
+    if hasattr(_THREAD_LOCAL, "gemini_keys"):
+        del _THREAD_LOCAL.gemini_keys
+    if hasattr(_THREAD_LOCAL, "active_index"):
+        del _THREAD_LOCAL.active_index
 
 
 def get_all_gemini_keys() -> List[str]:
-    """Extract all configured non-empty Gemini API keys from environment or DB."""
-    # Don't override dynamically set keys in os.environ
-    load_dotenv(override=False)
-    keys = []
+    """
+    Extract all configured Gemini API keys with production-grade priority:
+    1. Thread-isolated keys (explicitly set for this user's running pipeline)
+    2. Active authenticated user's settings from NeonDB / session (current_user.get_settings())
+    3. Server-level environment fallback (.env)
+    """
+    # 1. Thread-local keys (highest precedence, safe for concurrent background pipelines)
+    thread_keys = getattr(_THREAD_LOCAL, "gemini_keys", None)
+    if thread_keys:
+        return list(thread_keys)
 
-    # 1. Primary key (might be comma-separated)
+    # 2. Active logged-in user's settings from NeonDB (production multi-user mode)
+    try:
+        from flask_login import current_user
+        if current_user and current_user.is_authenticated:
+            s = current_user.get_settings()
+            user_keys = []
+            for k_name in ("GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3"):
+                val = (s.get(k_name) or "").strip()
+                if val:
+                    for part in val.split(","):
+                        clean_part = part.strip()
+                        if clean_part and clean_part not in user_keys:
+                            user_keys.append(clean_part)
+            if user_keys:
+                return user_keys
+    except Exception:
+        pass
+
+    # 3. Server fallback from environment / .env
+    load_dotenv(override=False)
+    env_keys = []
     primary = os.getenv("GEMINI_API_KEY", "").strip()
     if primary:
         for k in primary.split(","):
             clean_k = k.strip()
-            if clean_k and clean_k not in keys:
-                keys.append(clean_k)
+            if clean_k and clean_k not in env_keys:
+                env_keys.append(clean_k)
 
-    # 2. Numbered backup keys
     for env_name in ("GEMINI_API_KEY_2", "GEMINI_API_KEY_3", "GEMINI_BACKUP_KEY", "GEMINI_KEY_2"):
         val = os.getenv(env_name, "").strip()
-        if val and val not in keys:
-            keys.append(val)
+        if val and val not in env_keys:
+            env_keys.append(val)
 
-    # 3. Fallback to active logged-in user's settings from NeonDB
-    if not keys:
-        try:
-            from flask_login import current_user
-            if current_user and current_user.is_authenticated:
-                s = current_user.get_settings()
-                k1 = s.get("GEMINI_API_KEY", "").strip()
-                k2 = s.get("GEMINI_API_KEY_2", "").strip()
-                if k1 and k1 not in keys:
-                    keys.append(k1)
-                if k2 and k2 not in keys:
-                    keys.append(k2)
-        except Exception:
-            pass
-
-    return keys
+    return env_keys
 
 
 def get_active_key() -> str:
-    """Return the currently selected Gemini API key."""
+    """Return the currently selected Gemini API key for this user/thread."""
     keys = get_all_gemini_keys()
     if not keys:
         raise RuntimeError(
-            "No GEMINI_API_KEY found in .env. Please configure your API key in Settings."
+            "No Gemini API key found. Please enter your personal Gemini API key in the Setup tab."
         )
+
+    if hasattr(_THREAD_LOCAL, "active_index"):
+        _THREAD_LOCAL.active_index = _THREAD_LOCAL.active_index % len(keys)
+        return keys[_THREAD_LOCAL.active_index]
+
     global _ACTIVE_KEY_INDEX
     _ACTIVE_KEY_INDEX = _ACTIVE_KEY_INDEX % len(keys)
     return keys[_ACTIVE_KEY_INDEX]
 
 
 def rotate_key(reason: str = "quota") -> str:
-    """Rotate to the next available API key in the pool."""
-    global _ACTIVE_KEY_INDEX
+    """Rotate to the next available API key in the pool for this user/thread."""
     keys = get_all_gemini_keys()
     if not keys:
         raise RuntimeError("No Gemini API keys available to rotate.")
 
-    old_idx = _ACTIVE_KEY_INDEX % len(keys)
-    _ACTIVE_KEY_INDEX = (old_idx + 1) % len(keys)
-    new_idx = _ACTIVE_KEY_INDEX
-    new_key = keys[new_idx]
+    if hasattr(_THREAD_LOCAL, "active_index"):
+        old_idx = _THREAD_LOCAL.active_index % len(keys)
+        _THREAD_LOCAL.active_index = (old_idx + 1) % len(keys)
+        new_idx = _THREAD_LOCAL.active_index
+    else:
+        global _ACTIVE_KEY_INDEX
+        old_idx = _ACTIVE_KEY_INDEX % len(keys)
+        _ACTIVE_KEY_INDEX = (old_idx + 1) % len(keys)
+        new_idx = _ACTIVE_KEY_INDEX
 
+    new_key = keys[new_idx]
     masked_old = (keys[old_idx][:6] + "..." + keys[old_idx][-4:]) if len(keys[old_idx]) > 10 else f"Key #{old_idx+1}"
     masked_new = (new_key[:6] + "..." + new_key[-4:]) if len(new_key) > 10 else f"Key #{new_idx+1}"
 

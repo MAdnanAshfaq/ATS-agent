@@ -194,7 +194,7 @@ Return strictly a JSON array containing EXACTLY {len(questions)} items:
 
 Generate the human-voiced answers as a JSON array now."""
 
-    models = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash"]
+    models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
     raw_response = None
     for model_name in models:
         try:

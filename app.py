@@ -827,7 +827,7 @@ ORIGINAL TEXT:
 {text}"""
 
         def _call_humanizer(client):
-            for m in ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash"]:
+            for m in ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]:
                 try:
                     response = client.models.generate_content(
                         model=m,
@@ -2007,8 +2007,17 @@ def analyze_job():
         from scraper import scrape_jd, sanitize_jd_url, clean_role_title
         from simplify_reader import read_simplify_score
 
-        # Explicitly inject user settings into environment for current request
+        # Explicitly isolate and inject user settings for current request
         user_settings = get_user_settings()
+        from gemini_client import set_thread_gemini_keys
+        user_gemini_keys = []
+        for k in ("GEMINI_API_KEY", "GEMINI_API_KEY_2"):
+            val = (user_settings.get(k) or "").strip()
+            if val:
+                user_gemini_keys.append(val)
+        if user_gemini_keys:
+            set_thread_gemini_keys(user_gemini_keys)
+
         for k in ("GEMINI_API_KEY", "GEMINI_API_KEY_2", "SIMPLIFY_EMAIL", "SIMPLIFY_PASSWORD", "HF_API_KEY", "COLAB_DETECTOR_URL"):
             val = user_settings.get(k)
             if val:
@@ -2069,9 +2078,13 @@ def analyze_job():
 
             is_cloud_render = (os.environ.get("RENDER") == "true") or (sys.platform != "win32") or (os.environ.get("FLASK_ENV") == "production")
 
+            # Aggregator domains do not host Simplify ATS extension widgets (Simplify works on Greenhouse, Lever, Workday, Ashby, etc.)
+            AGGREGATOR_DOMAINS = ("hiringcafe", "indeed", "ziprecruiter", "linkedin", "glassdoor", "simplyhired", "builtin", "dice", "careerbuilder", "monster")
+            is_aggregator_url = any(agg in url.lower() for agg in AGGREGATOR_DOMAINS)
+
             # Check Simplify cache first for instant 0ms retrieval
             cached_s = None
-            if not no_simplify and not is_cloud_render:
+            if not no_simplify and not is_cloud_render and not is_aggregator_url:
                 from simplify_reader import get_cached_simplify_score
                 cached_s = get_cached_simplify_score(url)
                 if cached_s and cached_s.get("success"):
@@ -2083,7 +2096,7 @@ def analyze_job():
                     # Instant cache hit for Simplify: only need scraper
                     jd_res = await scrape_coro
                     return jd_res, cached_s
-                elif not no_simplify and not is_cloud_render:
+                elif not no_simplify and not is_cloud_render and not is_aggregator_url:
                     print(f"[Analyze] ⚡ Launching Scraper and Simplify Extension Reader in parallel (concurrent execution)...")
                     from simplify_reader import read_simplify_score
                     simplify_coro = asyncio.wait_for(
@@ -2094,6 +2107,8 @@ def analyze_job():
                     results = await asyncio.gather(scrape_coro, simplify_coro, return_exceptions=True)
                     return results[0], results[1]
                 else:
+                    if is_aggregator_url:
+                        print(f"[Analyze] ⚡ Aggregator URL detected ({url.split('//')[-1].split('/')[0]}) — skipping Simplify extension browser to avoid 8s timeout, using Gemini Matcher directly.")
                     jd_res = await scrape_coro
                     return jd_res, None
 
@@ -2391,6 +2406,16 @@ def generate_cover_letter_api():
         from agent import load_base_resume
         from scraper import scrape_jd_sync
         from cover_letter_generator import generate_cover_letter
+
+        user_settings = get_user_settings()
+        from gemini_client import set_thread_gemini_keys
+        user_gemini_keys = []
+        for k in ("GEMINI_API_KEY", "GEMINI_API_KEY_2"):
+            val = (user_settings.get(k) or "").strip()
+            if val:
+                user_gemini_keys.append(val)
+        if user_gemini_keys:
+            set_thread_gemini_keys(user_gemini_keys)
 
         base_resume = load_base_resume(str(user_resume_path))
 
@@ -2809,7 +2834,17 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
         except Exception as _restore_err:
             logging.warning(f"[Pipeline] Resume restore from DB failed: {_restore_err}")
 
-    # Inject user API keys into environment for this thread
+    # Configure thread-isolated Gemini keys for this user's execution
+    from gemini_client import set_thread_gemini_keys, clear_thread_gemini_keys
+    user_gemini_keys = []
+    for k in ("GEMINI_API_KEY", "GEMINI_API_KEY_2"):
+        val = (_settings.get(k) or "").strip()
+        if val:
+            user_gemini_keys.append(val)
+    if user_gemini_keys:
+        set_thread_gemini_keys(user_gemini_keys)
+
+    # Inject user settings into environment as fallback
     if _settings.get("GEMINI_API_KEY"):
         os.environ["GEMINI_API_KEY"] = _settings["GEMINI_API_KEY"]
     if _settings.get("GEMINI_API_KEY_2"):
@@ -3075,108 +3110,141 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                  },
                  status="success" if coverage_pct >= 90 else "warning")
 
-        # Step 6b: Real ATS rescore — Gemini re-evaluates the rewritten resume vs JD
-        # This replaces the hardcoded "score + 10" formula with a real measurement.
-        score_after_real = None
-        try:
-            send_log(6, "Score Analysis", "Re-scoring rewritten resume against JD (Gemini)...", status="working")
-            from llm_matcher import analyze_jd_and_resume_with_gemini
-            rescore_result = analyze_jd_and_resume_with_gemini(jd_text, cleaned_resume)
-            score_after_real = rescore_result.get("score")
-            if score_after_real is not None:
-                score_before_display = analyze_score_before if analyze_score_before is not None else simplify_score_before
-                delta = (score_after_real - score_before_display) if score_before_display is not None else None
-                delta_str = f" (+{delta}pts)" if delta is not None and delta > 0 else (f" ({delta}pts)" if delta is not None else "")
-                send_log(6, "Score Analysis",
-                         f"ATS Match Score: {score_before_display}% → {score_after_real}%{delta_str}",
-                         data={
-                             "score_before": score_before_display,
-                             "score_after": score_after_real,
-                             "delta": delta,
-                         },
-                         status="success")
-        except Exception as rescore_err:
-            print(f"[Pipeline] Rescore note: {rescore_err}")
-            send_log(6, "Score Analysis", f"Rescore skipped: {rescore_err}", status="warning")
+        # ══════════════════════════════════════════════════════════════════════════
+        # PARALLEL EXECUTION: Re-score + DOCX/PDF Build + Cover Letter
+        # These three independent operations run concurrently via ThreadPoolExecutor
+        # to eliminate ~20-30s of sequential Gemini API wait time.
+        # ══════════════════════════════════════════════════════════════════════════
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        # Step 7: Build Word Doc (patch original master DOCX if available, else build fresh)
-        send_log(7, "Word Document", "Generating Word document...", status="working")
+        # Prepare shared state needed by all parallel tasks
         role = clean_role_title(role, company)
         for sec in ("education", "certifications", "contact", "name", "projects"):
             if sec in base_resume and (sec not in cleaned_resume or not cleaned_resume[sec]):
                 cleaned_resume[sec] = base_resume[sec]
 
         orig_docx_path = BASE_DIR / "master_resume_original.docx"
-        # Check user-specific master docx first (if they uploaded an original template)
         user_data_dir = _resume_path.parent
         user_orig_docx = user_data_dir / "master_resume_original.docx"
         if user_orig_docx.exists():
             orig_docx_path = user_orig_docx
-
-        # If no custom output dir specified, use the user's output directory
         effective_output = custom_output or str(_output_dir)
 
-        if orig_docx_path.exists():
+        # ── Task A: Re-score rewritten resume against JD (Gemini API call) ──
+        def _task_rescore():
             try:
-                from docx_patcher import patch_docx_with_rewritten_resume
-                send_log(7, "Word Document", "Patching original master DOCX template to preserve authentic styling...", status="working")
-                doc_path = patch_docx_with_rewritten_resume(
-                    original_docx_path=str(orig_docx_path),
-                    rewritten_resume=cleaned_resume,
+                from llm_matcher import analyze_jd_and_resume_with_gemini
+                return analyze_jd_and_resume_with_gemini(jd_text, cleaned_resume)
+            except Exception as e:
+                print(f"[Pipeline] Rescore note: {e}")
+                return None
+
+        # ── Task B: Build DOCX + convert to PDF (local I/O, fast) ──
+        def _task_build_docs():
+            send_log(7, "Word Document", "Generating Word document...", status="working")
+            _doc_path = None
+            if orig_docx_path.exists():
+                try:
+                    from docx_patcher import patch_docx_with_rewritten_resume
+                    send_log(7, "Word Document", "Patching original master DOCX template to preserve authentic styling...", status="working")
+                    _doc_path = patch_docx_with_rewritten_resume(
+                        original_docx_path=str(orig_docx_path),
+                        rewritten_resume=cleaned_resume,
+                        company=company,
+                        role=role,
+                        output_dir=effective_output,
+                    )
+                    send_log(7, "Word Document", "Patched original master template with rewritten content!", status="success")
+                except Exception as patch_err:
+                    print(f"[Pipeline] DOCX patcher error: {patch_err}, falling back to build_resume_docx")
+                    _doc_path = build_resume_docx(
+                        resume=cleaned_resume, company=company, role=role, output_dir=effective_output,
+                    )
+            else:
+                _doc_path = build_resume_docx(
+                    resume=cleaned_resume, company=company, role=role, output_dir=effective_output,
+                )
+
+            # Save tailored resume JSON alongside .docx
+            try:
+                _target_folder = Path(_doc_path).parent
+                with open(_target_folder / "tailored_resume.json", "w", encoding="utf-8") as rf:
+                    json.dump(cleaned_resume, rf, indent=2, ensure_ascii=False)
+            except Exception as json_err:
+                print(f"[Pipeline] Note saving tailored_resume.json: {json_err}")
+
+            # Convert to PDF
+            _pdf_path = None
+            try:
+                from resume_builder import convert_to_pdf
+                _pdf_path = convert_to_pdf(_doc_path)
+                send_log(7, "PDF Builder", "Converted document to PDF successfully!", status="success")
+            except Exception as pdf_err:
+                print(f"[Pipeline] PDF conversion note: {pdf_err}")
+
+            return _doc_path, _pdf_path
+
+        # ── Task C: Generate Cover Letter (Gemini API call) ──
+        def _task_cover_letter():
+            try:
+                from cover_letter_generator import generate_cover_letter as _gen_cl
+                return _gen_cl(
+                    base_resume=base_resume,
+                    jd_text=jd_text,
                     company=company,
                     role=role,
+                    missing_keywords=missing_keywords,
                     output_dir=effective_output,
                 )
-                send_log(7, "Word Document", "Patched original master template with rewritten content!", status="success")
-            except Exception as patch_err:
-                print(f"[Pipeline] DOCX patcher error: {patch_err}, falling back to build_resume_docx")
-                doc_path = build_resume_docx(
-                    resume=cleaned_resume,
-                    company=company,
-                    role=role,
-                    output_dir=effective_output,
-                )
-        else:
-            doc_path = build_resume_docx(
-                resume=cleaned_resume,
-                company=company,
-                role=role,
-                output_dir=effective_output,
-            )
+            except Exception as cl_err:
+                print(f"[Pipeline] Cover letter note: {cl_err}")
+                return {}
 
-        # Save structured tailored resume JSON alongside .docx for instant refinement
-        try:
-            target_folder = Path(doc_path).parent
-            with open(target_folder / "tailored_resume.json", "w", encoding="utf-8") as rf:
-                json.dump(cleaned_resume, rf, indent=2, ensure_ascii=False)
-        except Exception as json_err:
-            print(f"[Pipeline] Note saving tailored_resume.json: {json_err}")
-
-        # Automatically convert to PDF for instant viewing/download
-        try:
-            from resume_builder import convert_to_pdf
-            pdf_path = convert_to_pdf(doc_path)
-            send_log(7, "PDF Builder", "Converted document to PDF successfully!", status="success")
-        except Exception as pdf_err:
-            print(f"[Pipeline] PDF conversion note: {pdf_err}")
-
-        # Automatically generate recruiter-targeting AI Cover Letter
+        # ── Launch all three tasks in parallel ──
+        send_log(6, "Score Analysis", "Re-scoring rewritten resume against JD (Gemini)...", status="working")
+        score_after_real = None
         cover_letter_text = ""
-        try:
-            from cover_letter_generator import generate_cover_letter
-            target_dir = Path(doc_path).parent
-            cl_res = generate_cover_letter(
-                base_resume=base_resume,
-                jd_text=jd_text,
-                company=company,
-                role=role,
-                missing_keywords=missing_keywords,
-                output_dir=str(target_dir),
-            )
-            cover_letter_text = cl_res.get("cover_letter_text", "")
-            send_log(7, "Cover Letter", "Generated high-impact AI Cover Letter!", status="success")
-        except Exception as cl_err:
-            print(f"[Pipeline] Cover letter note: {cl_err}")
+        doc_path = None
+
+        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="pipeline_parallel") as executor:
+            future_rescore = executor.submit(_task_rescore)
+            future_docs = executor.submit(_task_build_docs)
+            future_cl = executor.submit(_task_cover_letter)
+
+            # Gather results (each future blocks only until its own task completes)
+            # Docs task is fastest — gather it first so download is ready ASAP
+            try:
+                doc_path, pdf_path = future_docs.result(timeout=120)
+            except Exception as doc_err:
+                print(f"[Pipeline] Doc build error: {doc_err}")
+
+            try:
+                rescore_result = future_rescore.result(timeout=60)
+                if rescore_result:
+                    score_after_real = rescore_result.get("score")
+                    if score_after_real is not None:
+                        score_before_display = analyze_score_before if analyze_score_before is not None else simplify_score_before
+                        delta = (score_after_real - score_before_display) if score_before_display is not None else None
+                        delta_str = f" (+{delta}pts)" if delta is not None and delta > 0 else (f" ({delta}pts)" if delta is not None else "")
+                        send_log(6, "Score Analysis",
+                                 f"ATS Match Score: {score_before_display}% → {score_after_real}%{delta_str}",
+                                 data={"score_before": score_before_display, "score_after": score_after_real, "delta": delta},
+                                 status="success")
+                    else:
+                        send_log(6, "Score Analysis", "Rescore returned no score.", status="warning")
+                else:
+                    send_log(6, "Score Analysis", "Rescore skipped (error).", status="warning")
+            except Exception as rescore_err:
+                print(f"[Pipeline] Rescore note: {rescore_err}")
+                send_log(6, "Score Analysis", f"Rescore skipped: {rescore_err}", status="warning")
+
+            try:
+                cl_result = future_cl.result(timeout=90)
+                cover_letter_text = cl_result.get("cover_letter_text", "") if cl_result else ""
+                if cover_letter_text:
+                    send_log(7, "Cover Letter", "Generated high-impact AI Cover Letter!", status="success")
+            except Exception as cl_err:
+                print(f"[Pipeline] Cover letter note: {cl_err}")
 
         rel_path = os.path.relpath(doc_path, str(_output_dir)).replace("\\", "/")
 
@@ -3208,32 +3276,35 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
             output_dir=_output_dir
         )
 
-        # ── Also persist run log to NeonDB (survives Render deploys) ──────────────
+        # ── Persist run log to NeonDB in background (non-blocking) ──────────────
+        # Fire-and-forget so the `complete` SSE event isn't delayed by DB latency.
         if db_layer.is_db_available() and user_username:
-            try:
-                db_log = {
-                    "timestamp": datetime.now().isoformat(),
-                    "url": url,
-                    "company": company,
-                    "role": role,
-                    "score_before": score_before_val,
-                    "score_after": score_after_val,
-                    "score_delta": score_delta_val,
-                    "match_score_before": score_before_val,
-                    "match_score_after": score_after_val,
-                    "match_score_delta": score_delta_val,
-                    "missing_keywords": missing_keywords,
-                    "embedded_keywords": embedded_keywords,
-                    "still_missing_keywords": still_missing,
-                    "keyword_coverage_pct": coverage_pct,
-                    "cover_letter_text": cover_letter_text,
-                    "output_file": doc_path,
-                    "tailored_resume": cleaned_resume,
-                    "log_file_name": f"{run_id}.json",
-                }
-                db_layer.db_save_run_log(user_username, run_id, db_log)
-            except Exception as _db_log_err:
-                logging.warning(f"[Pipeline] DB log save failed: {_db_log_err}")
+            def _persist_to_db():
+                try:
+                    db_log = {
+                        "timestamp": datetime.now().isoformat(),
+                        "url": url,
+                        "company": company,
+                        "role": role,
+                        "score_before": score_before_val,
+                        "score_after": score_after_val,
+                        "score_delta": score_delta_val,
+                        "match_score_before": score_before_val,
+                        "match_score_after": score_after_val,
+                        "match_score_delta": score_delta_val,
+                        "missing_keywords": missing_keywords,
+                        "embedded_keywords": embedded_keywords,
+                        "still_missing_keywords": still_missing,
+                        "keyword_coverage_pct": coverage_pct,
+                        "cover_letter_text": cover_letter_text,
+                        "output_file": doc_path,
+                        "tailored_resume": cleaned_resume,
+                        "log_file_name": f"{run_id}.json",
+                    }
+                    db_layer.db_save_run_log(user_username, run_id, db_log)
+                except Exception as _db_log_err:
+                    logging.warning(f"[Pipeline] DB log save failed: {_db_log_err}")
+            threading.Thread(target=_persist_to_db, daemon=True, name=f"db_save_{run_id}").start()
 
         # Final complete message
         try:

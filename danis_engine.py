@@ -19,7 +19,7 @@ from typing import Any, Callable, Optional
 from google import genai
 from google.genai import types
 
-from gemini_client import get_gemini_client, is_quota_error
+from gemini_client import get_gemini_client, is_quota_error, rotate_key, get_all_gemini_keys
 from human_voice_audit import audit_resume_dict, load_ai_tells
 
 
@@ -67,10 +67,11 @@ JOB DESCRIPTION:
 
 Extract the atomic rubric now as valid JSON."""
 
-    models = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash"]
+    models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
     for model_name in models:
         try:
-            response = client.models.generate_content(
+            current_client = get_gemini_client()
+            response = current_client.models.generate_content(
                 model=model_name,
                 contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
                 config=types.GenerateContentConfig(temperature=0.2, top_p=0.85, max_output_tokens=4096),
@@ -79,6 +80,10 @@ Extract the atomic rubric now as valid JSON."""
             return data
         except Exception as e:
             print(f"[Dani's Engine - Researcher] {model_name} note: {e}")
+            if is_quota_error(e):
+                keys = get_all_gemini_keys()
+                if len(keys) > 1:
+                    rotate_key(reason=f"Researcher Quota Limit ({model_name})")
             time.sleep(1)
 
     return {
@@ -208,11 +213,12 @@ MASTER RESUME:
 
 Draft the optimized resume now as valid JSON."""
 
-    models = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash"]
+    models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
     last_err = None
     for model_name in models:
         try:
-            response = client.models.generate_content(
+            current_client = get_gemini_client()
+            response = current_client.models.generate_content(
                 model=model_name,
                 contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
                 config=types.GenerateContentConfig(temperature=0.3, top_p=0.88, max_output_tokens=8192),
@@ -221,6 +227,10 @@ Draft the optimized resume now as valid JSON."""
         except Exception as e:
             last_err = e
             print(f"[Dani's Engine - Writer] {model_name} note: {e}")
+            if is_quota_error(e):
+                keys = get_all_gemini_keys()
+                if len(keys) > 1:
+                    rotate_key(reason=f"Writer Quota Limit ({model_name})")
             time.sleep(1)
 
     raise RuntimeError(f"Writer failed across all models: {last_err}")
@@ -253,10 +263,11 @@ DRAFT RESUME TO EDIT:
 
 Return the corrected JSON now."""
 
-    models = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash"]
+    models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
     for model_name in models:
         try:
-            response = client.models.generate_content(
+            current_client = get_gemini_client()
+            response = current_client.models.generate_content(
                 model=model_name,
                 contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
                 config=types.GenerateContentConfig(temperature=0.2, top_p=0.85, max_output_tokens=8192),
@@ -264,6 +275,10 @@ Return the corrected JSON now."""
             return json.loads(_clean_json(response.text))
         except Exception as e:
             print(f"[Dani's Engine - Editor] {model_name} note: {e}")
+            if is_quota_error(e):
+                keys = get_all_gemini_keys()
+                if len(keys) > 1:
+                    rotate_key(reason=f"Editor Quota Limit ({model_name})")
             time.sleep(1)
 
     return draft_resume

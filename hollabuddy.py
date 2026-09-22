@@ -142,7 +142,7 @@ def chat_with_hollabuddy(
     chat_contents.append(types.Content(role="user", parts=[types.Part(text=user_text)]))
 
     # Fast, low-latency model fallback chain (avoids deprecated 404 models and thinking delays)
-    models = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-2.5-flash", "gemini-3.6-flash"]
+    models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
     last_err = None
     all_quota_exhausted = False
 
