@@ -952,42 +952,50 @@
       <div class="setup-cards-grid">
         
         <!-- API Credentials Card -->
-        <div class="glass-card setup-card">
-          <div class="card-header-icon">
+        <div class="glass-card setup-card" style="grid-column: span 1;">
+          <div class="card-header-icon" style="margin-bottom: 0.75rem;">
             <i class="fa-solid fa-key text-purple"></i>
             <div>
-              <h3>Gemini API Key</h3>
-              <p>Free API key from Google AI Studio (1,500 requests/day, $0 cost)</p>
+              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <h3 style="margin:0;">Gemini API Key Pool</h3>
+                <span class="badge badge-info" style="font-size:11px; padding:2px 8px;"><i class="fa-solid fa-shuffle"></i> Multi-Key Failover</span>
+              </div>
+              <p style="margin-top:2px;">Add keys from multiple Google accounts or projects to multiply your free quota</p>
             </div>
           </div>
+
+          <div style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 8px; padding: 0.65rem 0.85rem; margin-bottom: 1rem; font-size: 0.82rem; line-height: 1.45;">
+            <strong style="color: #818cf8;"><i class="fa-solid fa-circle-info"></i> How multi-key works:</strong>
+            Google provides 20 free requests/day <em>per project or account</em>. Add keys from different Google accounts (<a href="https://aistudio.google.com/" target="_blank" style="color: #38bdf8; text-decoration: underline;">aistudio.google.com</a>). The agent auto-rotates across them when one hits its daily limit.
+          </div>
+
           <form id="settings-form">
-            <div class="form-group">
-              <label for="gemini-key-input">Primary Gemini API Key</label>
-              <input type="password" id="gemini-key-input" class="form-input" placeholder="AIzaSy..." required>
-              <span class="input-help">Get your primary key at <a href="https://aistudio.google.com/" target="_blank">aistudio.google.com</a></span>
+            <!-- Dynamic Keys Container -->
+            <div id="gemini-keys-container" style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 0.75rem;">
+              <!-- Dynamically populated by app.js with Account Label, Key, Eye Show/Hide, and Remove -->
             </div>
 
-            <div class="form-group">
-              <label for="gemini-key-2-input" style="display:flex; align-items:center; justify-content:space-between;">
-                <span>Backup Gemini API Key</span>
-                <span class="badge badge-info" style="font-size:11px; padding:2px 8px;"><i class="fa-solid fa-rotate"></i> Auto-Failover</span>
-              </label>
-              <input type="password" id="gemini-key-2-input" class="form-input" placeholder="AIzaSy... (Secondary key for automatic quota failover)">
-              <span class="input-help">If your primary key hits a rate limit or 429 quota exhaustion, the agent rotates to this backup key instantly!</span>
-            </div>
+            <button type="button" id="add-gemini-key-btn" class="btn btn-secondary" style="width: 100%; justify-content: center; font-size: 0.82rem; padding: 6px 12px; margin-bottom: 1.25rem; border: 1px dashed rgba(255,255,255,0.25);">
+              <i class="fa-solid fa-plus"></i> Add Another Google Account / Key
+            </button>
 
-            <div class="form-group">
+            <div class="form-group" style="margin-top: 0.5rem;">
               <label for="simplify-email-input">Simplify Email (Optional)</label>
               <input type="email" id="simplify-email-input" class="form-input" placeholder="user@example.com">
             </div>
 
             <div class="form-group">
               <label for="simplify-pass-input">Simplify Password (Optional)</label>
-              <input type="password" id="simplify-pass-input" class="form-input" placeholder="••••••••">
+              <div style="position: relative; display: flex; align-items: center;">
+                <input type="password" id="simplify-pass-input" class="form-input" placeholder="••••••••" style="padding-right: 36px; width: 100%;">
+                <button type="button" class="btn-toggle-eye" data-target="simplify-pass-input" title="Show / Hide Password" style="position: absolute; right: 8px; background: none; border: none; color: #94a3b8; cursor: pointer; padding: 4px;">
+                  <i class="fa-solid fa-eye"></i>
+                </button>
+              </div>
             </div>
 
-            <button type="submit" class="btn btn-primary">
-              <i class="fa-solid fa-floppy-disk"></i> Save Settings
+            <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">
+              <i class="fa-solid fa-floppy-disk"></i> Save Settings & Activate Keys
             </button>
           </form>
         </div>

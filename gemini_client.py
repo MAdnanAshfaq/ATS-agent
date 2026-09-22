@@ -118,6 +118,18 @@ def get_all_gemini_keys() -> List[str]:
             if current_user and current_user.is_authenticated:
                 s = current_user.get_settings()
                 user_keys = []
+                # Support dynamic GEMINI_API_KEYS array of objects or strings
+                arr = s.get("GEMINI_API_KEYS") or []
+                if isinstance(arr, list):
+                    for item in arr:
+                        v = ""
+                        if isinstance(item, dict):
+                            v = (item.get("key") or "").strip()
+                        elif isinstance(item, str):
+                            v = item.strip()
+                        if v and v not in user_keys:
+                            user_keys.append(v)
+
                 for k_name in ("GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3"):
                     val = (s.get(k_name) or "").strip()
                     if val:

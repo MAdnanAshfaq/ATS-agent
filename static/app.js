@@ -932,21 +932,127 @@ async function openSpecificFolder(filePath) {
 
 /* ── Settings & Resume Editor ────────────────────────────────────────────── */
 async function loadSettings() {
+  function safeKeyAttr(str) {
+    return String(str || "").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function createKeyRowElement(kData, idx) {
+    const row = document.createElement("div");
+    row.className = "gemini-key-row glass-panel";
+    row.style.cssText = "background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 10px 12px; margin-bottom: 0.5rem; transition: all 0.2s;";
+
+    const labelVal = kData.label || (idx === 0 ? "Google Account 1 (Primary)" : idx === 1 ? "Google Account 2 (Backup)" : `Google Account ${idx + 1}`);
+    const keyVal = kData.key || "";
+
+    row.innerHTML = `
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+        <span class="key-index-badge" style="font-size: 0.78rem; font-weight: 600; color: #a5b4fc; display: flex; align-items: center; gap: 6px;">
+          <i class="fa-solid fa-key" style="font-size: 0.75rem;"></i> Key #${idx + 1}
+        </span>
+        <button type="button" class="btn-remove-key" style="background: none; border: none; color: #f87171; cursor: pointer; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px;" title="Remove this key slot">
+          <i class="fa-solid fa-trash-can"></i> Remove
+        </button>
+      </div>
+      <div style="display: grid; grid-template-columns: minmax(140px, 180px) 1fr; gap: 8px;">
+        <input type="text" class="form-input key-label-input" placeholder="Account nickname (e.g. Personal Gmail)" value="${safeKeyAttr(labelVal)}" style="font-size: 0.82rem; padding: 6px 10px; background: rgba(0,0,0,0.25);">
+        <div style="position: relative; display: flex; align-items: center;">
+          <input type="password" class="form-input key-val-input" placeholder="AIzaSy... paste Gemini API key" value="${safeKeyAttr(keyVal)}" style="font-size: 0.82rem; padding: 6px 36px 6px 10px; font-family: monospace; width: 100%; background: rgba(0,0,0,0.25);">
+          <button type="button" class="btn-toggle-key-eye" title="Show / Hide API Key" style="position: absolute; right: 6px; background: none; border: none; color: #94a3b8; cursor: pointer; padding: 4px; font-size: 0.85rem;">
+            <i class="fa-solid fa-eye"></i>
+          </button>
+        </div>
+      </div>
+    `;
+
+    // Toggle password eye button
+    const eyeBtn = row.querySelector(".btn-toggle-key-eye");
+    const keyInput = row.querySelector(".key-val-input");
+    eyeBtn.addEventListener("click", () => {
+      const isPass = keyInput.type === "password";
+      keyInput.type = isPass ? "text" : "password";
+      eyeBtn.innerHTML = isPass ? '<i class="fa-solid fa-eye-slash" style="color:#38bdf8;"></i>' : '<i class="fa-solid fa-eye"></i>';
+    });
+
+    // Remove row button
+    const removeBtn = row.querySelector(".btn-remove-key");
+    removeBtn.addEventListener("click", () => {
+      const container = document.getElementById("gemini-keys-container");
+      if (container.querySelectorAll(".gemini-key-row").length <= 1) {
+        keyInput.value = "";
+        row.querySelector(".key-label-input").value = "Google Account 1 (Primary)";
+        showToast("Cleared key. At least one key slot is kept active.", "info");
+        return;
+      }
+      row.remove();
+      // Re-index remaining rows
+      container.querySelectorAll(".gemini-key-row").forEach((r, i) => {
+        const badge = r.querySelector(".key-index-badge");
+        if (badge) badge.innerHTML = `<i class="fa-solid fa-key" style="font-size: 0.75rem;"></i> Key #${i + 1}`;
+      });
+    });
+
+    return row;
+  }
+
   try {
     const res = await fetch("/api/settings");
     const data = await res.json();
 
-    const geminiInput = document.getElementById("gemini-key-input");
-    const gemini2Input = document.getElementById("gemini-key-2-input");
+    const container = document.getElementById("gemini-keys-container");
+    if (container) {
+      container.innerHTML = "";
+      let keysList = data.GEMINI_API_KEYS || [];
+      if (!Array.isArray(keysList) || keysList.length === 0) {
+        keysList = [];
+        if (data.GEMINI_API_KEY) keysList.push({ key: data.GEMINI_API_KEY, label: "Google Account 1 (Primary)" });
+        if (data.GEMINI_API_KEY_2) keysList.push({ key: data.GEMINI_API_KEY_2, label: "Google Account 2 (Backup)" });
+      }
+      if (keysList.length === 0) {
+        keysList = [
+          { key: "", label: "Google Account 1 (Primary)" },
+          { key: "", label: "Google Account 2 (Backup)" }
+        ];
+      }
+      keysList.forEach((kData, idx) => {
+        container.appendChild(createKeyRowElement(kData, idx));
+      });
+    }
+
+    const addBtn = document.getElementById("add-gemini-key-btn");
+    if (addBtn && !addBtn.dataset.bound) {
+      addBtn.dataset.bound = "true";
+      addBtn.addEventListener("click", () => {
+        const c = document.getElementById("gemini-keys-container");
+        if (c) {
+          const count = c.querySelectorAll(".gemini-key-row").length;
+          c.appendChild(createKeyRowElement({ key: "", label: `Google Account ${count + 1}` }, count));
+        }
+      });
+    }
+
     const emailInput = document.getElementById("simplify-email-input");
     const passInput = document.getElementById("simplify-pass-input");
     const outDirInput = document.getElementById("custom-output-dir");
 
-    if (geminiInput) geminiInput.value = data.GEMINI_API_KEY || "";
-    if (gemini2Input) gemini2Input.value = data.GEMINI_API_KEY_2 || "";
     if (emailInput) emailInput.value = data.SIMPLIFY_EMAIL || "";
     if (passInput) passInput.value = data.SIMPLIFY_PASSWORD || "";
     if (outDirInput) outDirInput.value = data.OUTPUT_DIR || "";
+
+    // Toggle eye for simplify password
+    document.querySelectorAll(".btn-toggle-eye").forEach(btn => {
+      if (!btn.dataset.bound) {
+        btn.dataset.bound = "true";
+        btn.addEventListener("click", () => {
+          const targetId = btn.dataset.target;
+          const targetInp = document.getElementById(targetId);
+          if (targetInp) {
+            const isPass = targetInp.type === "password";
+            targetInp.type = isPass ? "text" : "password";
+            btn.innerHTML = isPass ? '<i class="fa-solid fa-eye-slash" style="color:#38bdf8;"></i>' : '<i class="fa-solid fa-eye"></i>';
+          }
+        });
+      }
+    });
   } catch (err) {
     console.error("Failed to load settings", err);
   }
@@ -956,8 +1062,18 @@ async function loadSettings() {
     form.dataset.bound = "true";
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const key = document.getElementById("gemini-key-input")?.value.trim() || "";
-      const key2 = document.getElementById("gemini-key-2-input")?.value.trim() || "";
+
+      // Collect all dynamic Gemini API keys
+      const keyRows = document.querySelectorAll("#gemini-keys-container .gemini-key-row");
+      const geminiKeysList = [];
+      keyRows.forEach(r => {
+        const k = r.querySelector(".key-val-input")?.value.trim() || "";
+        const l = r.querySelector(".key-label-input")?.value.trim() || "";
+        if (k) {
+          geminiKeysList.push({ key: k, label: l });
+        }
+      });
+
       const email = document.getElementById("simplify-email-input")?.value.trim() || "";
       const pass = document.getElementById("simplify-pass-input")?.value.trim() || "";
 
@@ -966,15 +1082,16 @@ async function loadSettings() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            GEMINI_API_KEY: key,
-            GEMINI_API_KEY_2: key2,
+            GEMINI_API_KEYS: geminiKeysList,
+            GEMINI_API_KEY: geminiKeysList[0]?.key || "",
+            GEMINI_API_KEY_2: geminiKeysList[1]?.key || "",
             SIMPLIFY_EMAIL: email,
             SIMPLIFY_PASSWORD: pass,
           }),
         });
         const data = await res.json();
         if (data.success) {
-          showToast("Settings saved successfully! Multi-key failover active.", "success");
+          showToast(`Settings saved! ${geminiKeysList.length} Gemini API keys active in pool with auto-failover.`, "success");
           checkSystemHealth();
         } else {
           showToast("Failed to save settings", "error");
@@ -3654,8 +3771,7 @@ async function checkHollaBuddyApiHealth() {
       const isActive = i === data.active_index;
       const col  = statusColor[k.status]  || "#64748b";
       const ico  = statusIcon[k.status]   || "fa-circle";
-      const tip  = statusTip[k.status]    || k.label;
-      const name = k.env === "GEMINI_API_KEY" ? "Key 1" : "Key 2";
+      const name = k.name || (k.env === "GEMINI_API_KEY" ? "Key 1" : k.env === "GEMINI_API_KEY_2" ? "Key 2" : `Key ${i+1}`);
       const activeBadge = isActive ? `<span class="hb-active-badge">ACTIVE</span>` : "";
       return `
         <span class="hb-key-pill" style="--key-col:${col}" title="${tip}">

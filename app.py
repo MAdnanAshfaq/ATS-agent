@@ -887,8 +887,9 @@ def health():
     user_resume_path = get_user_resume_path()
     user_output_dir = get_user_output_dir()
 
-    has_gemini_key = bool(env_vars.get("GEMINI_API_KEY") or env_vars.get("GEMINI_API_KEY_2"))
-    has_gemini_backup = bool(env_vars.get("GEMINI_API_KEY_2"))
+    user_keys_list = env_vars.get("GEMINI_API_KEYS") or []
+    has_gemini_key = bool(env_vars.get("GEMINI_API_KEY") or env_vars.get("GEMINI_API_KEY_2") or (isinstance(user_keys_list, list) and len(user_keys_list) > 0))
+    has_gemini_backup = bool(env_vars.get("GEMINI_API_KEY_2") or (isinstance(user_keys_list, list) and len(user_keys_list) > 1))
     # Check resume presence from DB or file
     has_base_resume = current_user.has_resume() if current_user.is_authenticated else user_resume_path.exists()
     has_simplify_email = bool(env_vars.get("SIMPLIFY_EMAIL"))
@@ -954,12 +955,24 @@ def gemini_key_health():
     if cached and (time.time() - cached.get("ts", 0)) < 60:
         return jsonify(cached["data"])
 
-    # Collect configured keys in order
+    # Collect configured keys in order (from dynamic list or legacy slots)
     raw_keys = []
-    for ek in ("GEMINI_API_KEY", "GEMINI_API_KEY_2"):
-        val = (user_settings.get(ek) or "").strip()
-        if val:
-            raw_keys.append((ek, val))
+    user_keys_arr = user_settings.get("GEMINI_API_KEYS") or []
+    if isinstance(user_keys_arr, list) and user_keys_arr:
+        for idx, item in enumerate(user_keys_arr):
+            if isinstance(item, dict):
+                k = (item.get("key") or "").strip()
+                lbl = (item.get("label") or "").strip() or f"Key {idx + 1}"
+                if k:
+                    raw_keys.append((lbl, k))
+            elif isinstance(item, str) and item.strip():
+                raw_keys.append((f"Key {idx + 1}", item.strip()))
+
+    if not raw_keys:
+        for i, ek in enumerate(("GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3")):
+            val = (user_settings.get(ek) or "").strip()
+            if val:
+                raw_keys.append((f"Key {i + 1}", val))
 
     if not raw_keys:
         return jsonify({
@@ -1029,6 +1042,7 @@ def gemini_key_health():
         status, label = _ping_key(key)
         key_results.append({
             "env":    env_name,
+            "name":   env_name,
             "masked": masked,
             "status": status,
             "label":  label,
@@ -1065,19 +1079,42 @@ def gemini_key_health():
 def settings():
     if request.method == "POST":
         data = request.json or {}
+        raw_keys_list = data.get("GEMINI_API_KEYS") or []
+        cleaned_keys = []
+        if isinstance(raw_keys_list, list):
+            for item in raw_keys_list:
+                if isinstance(item, dict):
+                    k = (item.get("key") or "").strip()
+                    lbl = (item.get("label") or "").strip()
+                    if k:
+                        cleaned_keys.append({"key": k, "label": lbl})
+                elif isinstance(item, str) and item.strip():
+                    cleaned_keys.append({"key": item.strip(), "label": ""})
+
+        primary_k = cleaned_keys[0]["key"] if cleaned_keys else (data.get("GEMINI_API_KEY") or "").strip()
+        secondary_k = cleaned_keys[1]["key"] if len(cleaned_keys) > 1 else (data.get("GEMINI_API_KEY_2") or "").strip()
+
         updates = {
-            "GEMINI_API_KEY": data.get("GEMINI_API_KEY"),
-            "GEMINI_API_KEY_2": data.get("GEMINI_API_KEY_2"),
+            "GEMINI_API_KEYS": cleaned_keys,
+            "GEMINI_API_KEY": primary_k,
+            "GEMINI_API_KEY_2": secondary_k,
             "SIMPLIFY_EMAIL": data.get("SIMPLIFY_EMAIL"),
             "SIMPLIFY_PASSWORD": data.get("SIMPLIFY_PASSWORD"),
             "HF_API_KEY": data.get("HF_API_KEY"),
             "COLAB_DETECTOR_URL": data.get("COLAB_DETECTOR_URL"),
         }
         current_user.save_settings({k: v for k, v in updates.items() if v is not None})
-        return jsonify({"success": True, "message": "Settings saved successfully"})
+        return jsonify({"success": True, "message": f"Saved {len(cleaned_keys)} Gemini API keys successfully"})
 
     env_vars = get_user_settings()
-    # Mask API key for security
+    stored_keys = env_vars.get("GEMINI_API_KEYS") or []
+    if not stored_keys:
+        stored_keys = []
+        for ek, dlbl in [("GEMINI_API_KEY", "Key 1 (Primary)"), ("GEMINI_API_KEY_2", "Key 2 (Backup)")]:
+            val = (env_vars.get(ek) or "").strip()
+            if val:
+                stored_keys.append({"key": val, "label": dlbl})
+
     raw_key = env_vars.get("GEMINI_API_KEY", "")
     masked_key = (raw_key[:6] + "..." + raw_key[-4:]) if len(raw_key) > 10 else raw_key
 
@@ -1085,6 +1122,7 @@ def settings():
     masked_key_2 = (raw_key_2[:6] + "..." + raw_key_2[-4:]) if len(raw_key_2) > 10 else raw_key_2
 
     return jsonify({
+        "GEMINI_API_KEYS": stored_keys,
         "GEMINI_API_KEY": raw_key,
         "GEMINI_API_KEY_MASKED": masked_key,
         "GEMINI_API_KEY_2": raw_key_2,
@@ -2847,9 +2885,21 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
     # Configure thread-isolated Gemini keys for this user's execution
     from gemini_client import set_thread_gemini_keys, clear_thread_gemini_keys
     user_gemini_keys = []
-    for k in ("GEMINI_API_KEY", "GEMINI_API_KEY_2"):
+    keys_arr = _settings.get("GEMINI_API_KEYS") or []
+    if isinstance(keys_arr, list):
+        for item in keys_arr:
+            if isinstance(item, dict):
+                v = (item.get("key") or "").strip()
+            elif isinstance(item, str):
+                v = item.strip()
+            else:
+                v = ""
+            if v and v not in user_gemini_keys:
+                user_gemini_keys.append(v)
+
+    for k in ("GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3"):
         val = (_settings.get(k) or "").strip()
-        if val:
+        if val and val not in user_gemini_keys:
             user_gemini_keys.append(val)
     if user_gemini_keys:
         set_thread_gemini_keys(user_gemini_keys)
