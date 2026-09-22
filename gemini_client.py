@@ -214,8 +214,13 @@ def get_gemini_client(force_rotate: bool = False) -> genai.Client:
 
 
 def is_quota_error(exc: Exception) -> bool:
-    """Check if an exception is due to rate limits or quota exhaustion."""
+    """Check if an exception is due to 429 rate limits or quota exhaustion."""
     err_msg = str(exc).upper()
+    # Explicitly exclude permission denied or invalid key errors
+    if "API_KEY_INVALID" in err_msg or "INVALID_ARGUMENT" in err_msg:
+        return False
+    if "PERMISSION_DENIED" in err_msg or "403" in err_msg:
+        return False
     quota_signals = (
         "RESOURCE_EXHAUSTED",
         "429",
@@ -223,8 +228,6 @@ def is_quota_error(exc: Exception) -> bool:
         "RATE_LIMIT",
         "EXHAUSTED",
         "TOO MANY REQUESTS",
-        "API_KEY_INVALID",
-        "PERMISSION_DENIED",
     )
     return any(sig in err_msg for sig in quota_signals)
 

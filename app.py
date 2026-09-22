@@ -1009,15 +1009,17 @@ def gemini_key_health():
             except Exception as e:
                 err_up = str(e).upper()
 
-                # Real quota / rate limit
-                if is_quota_error(e):
-                    return "quota_exhausted", "Quota / Rate Limit Exhausted"
-
                 # Invalid or wrong key
                 if "API_KEY_INVALID" in err_up or "INVALID_ARGUMENT" in err_up:
                     return "invalid", "Invalid API Key"
-                if "403" in err_up or "PERMISSION_DENIED" in err_up:
-                    return "invalid", "Permission Denied"
+
+                # Permission denied / API not enabled in Google Cloud project
+                if "403" in err_up or "PERMISSION_DENIED" in err_up or "NOT BEEN USED" in err_up:
+                    return "invalid", "API Not Enabled (Enable Generative Language API)"
+
+                # Real quota / rate limit (429 RESOURCE_EXHAUSTED)
+                if is_quota_error(e):
+                    return "quota_exhausted", "Quota / Rate Limit Exhausted"
 
                 # 503 / transient: Gemini servers busy — NOT a key problem.
                 # Retry once; if it still fails, flag as transient (amber).
