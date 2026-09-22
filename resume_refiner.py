@@ -143,7 +143,7 @@ INSTRUCTIONS:
 """
 
     def _call_gemini(client: genai.Client):
-        models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
+        models = ["gemini-3-flash-preview", "gemini-3.6-flash", "gemini-3.5-flash"]
         last_err = None
         for m in models:
             try:

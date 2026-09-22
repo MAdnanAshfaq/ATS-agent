@@ -45,7 +45,7 @@ RESUME TEXT:
 {raw_text}
 """
 
-    models = ["gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-3.5-flash", "gemini-2.5-flash-lite"]
+    models = ["gemini-3-flash-preview", "gemini-3.6-flash", "gemini-3.5-flash"]
     for model_name in models:
         try:
             response = client.models.generate_content(

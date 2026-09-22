@@ -67,7 +67,7 @@ JOB DESCRIPTION:
 
 Extract the atomic rubric now as valid JSON."""
 
-    models = ["gemini-3-flash-preview", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
+    models = ["gemini-3-flash-preview", "gemini-3.6-flash", "gemini-3.5-flash"]
     for model_name in models:
         try:
             current_client = get_gemini_client()
@@ -103,7 +103,7 @@ def run_writer_phase(
     role: str,
     custom_bullets: str,
     client: genai.Client,
-    model_name: str = "gemini-2.5-flash",
+    model_name: str = "gemini-3-flash-preview",
     keyword_contexts: Optional[dict[str, str]] = None,
 ) -> dict[str, Any]:
     """
@@ -213,25 +213,30 @@ MASTER RESUME:
 
 Draft the optimized resume now as valid JSON."""
 
-    models = ["gemini-3-flash-preview", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
+    models = ["gemini-3-flash-preview", "gemini-3.6-flash", "gemini-3.5-flash"]
     last_err = None
-    for model_name in models:
-        try:
-            current_client = get_gemini_client()
-            response = current_client.models.generate_content(
-                model=model_name,
-                contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
-                config=types.GenerateContentConfig(temperature=0.3, top_p=0.88, max_output_tokens=8192),
-            )
-            return json.loads(_clean_json(response.text))
-        except Exception as e:
-            last_err = e
-            print(f"[Dani's Engine - Writer] {model_name} note: {e}")
-            if is_quota_error(e):
-                keys = get_all_gemini_keys()
-                if len(keys) > 1:
-                    rotate_key(reason=f"Writer Quota Limit ({model_name})")
-            time.sleep(1)
+    for attempt in range(1, 4):
+        for model_name in models:
+            try:
+                current_client = get_gemini_client()
+                response = current_client.models.generate_content(
+                    model=model_name,
+                    contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
+                    config=types.GenerateContentConfig(temperature=0.3, top_p=0.88, max_output_tokens=8192),
+                )
+                return json.loads(_clean_json(response.text))
+            except Exception as e:
+                last_err = e
+                print(f"[Dani's Engine - Writer] {model_name} note: {e}")
+                if is_quota_error(e):
+                    keys = get_all_gemini_keys()
+                    if len(keys) > 1:
+                        rotate_key(reason=f"Writer Quota Limit ({model_name})")
+                time.sleep(1)
+
+        if attempt < 3 and is_quota_error(last_err):
+            print(f"[Dani's Engine - Writer] Momentary rate limit hit. Waiting 6s for RPM window to reset (attempt {attempt}/3)...")
+            time.sleep(6)
 
     raise RuntimeError(f"Writer failed across all models: {last_err}")
 
@@ -263,7 +268,7 @@ DRAFT RESUME TO EDIT:
 
 Return the corrected JSON now."""
 
-    models = ["gemini-3-flash-preview", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
+    models = ["gemini-3-flash-preview", "gemini-3.6-flash", "gemini-3.5-flash"]
     for model_name in models:
         try:
             current_client = get_gemini_client()
