@@ -228,15 +228,29 @@ Draft the optimized resume now as valid JSON."""
             except Exception as e:
                 last_err = e
                 print(f"[Dani's Engine - Writer] {model_name} note: {e}")
+
+                from gemini_client import is_key_invalid_error, mark_key_dead, get_active_key, extract_retry_delay
+                if is_key_invalid_error(e):
+                    mark_key_dead(get_active_key(), reason="API key invalid")
+                    if get_all_gemini_keys():
+                        rotate_key(reason="Purged invalid key")
+                    continue
+
                 if is_quota_error(e):
+                    delay = extract_retry_delay(e)
                     keys = get_all_gemini_keys()
                     if len(keys) > 1:
                         rotate_key(reason=f"Writer Quota Limit ({model_name})")
-                time.sleep(1)
+                    else:
+                        print(f"[Dani's Engine - Writer] RPM rate limit reached. Pausing {delay:.1f}s for window reset...")
+                        time.sleep(delay)
+                else:
+                    time.sleep(1)
 
         if attempt < 3 and is_quota_error(last_err):
-            print(f"[Dani's Engine - Writer] Momentary rate limit hit. Waiting 6s for RPM window to reset (attempt {attempt}/3)...")
-            time.sleep(6)
+            delay = extract_retry_delay(last_err)
+            print(f"[Dani's Engine - Writer] Momentary rate limit hit. Waiting {delay:.1f}s for RPM window to reset (attempt {attempt}/3)...")
+            time.sleep(delay)
 
     raise RuntimeError(f"Writer failed across all models: {last_err}")
 

@@ -15,6 +15,7 @@ import os
 import sys
 import time
 import logging
+import re
 from typing import List, Callable, Any
 from dotenv import load_dotenv
 from google import genai
@@ -43,10 +44,47 @@ _ACTIVE_KEY_INDEX = 0
 # Production-level thread-local storage for isolated per-user/per-pipeline execution
 _THREAD_LOCAL = threading.local()
 
+# Global set of permanently revoked / invalid API keys (ONLY true API_KEY_INVALID errors)
+_DEAD_KEYS = set()
+
+
+def is_key_invalid_error(e: Exception) -> bool:
+    """Return True ONLY if the error indicates a truly malformed/deleted/invalid API key."""
+    err_str = str(e).upper()
+    return "API_KEY_INVALID" in err_str or "API KEY NOT VALID" in err_str or "CONSUMER_INVALID" in err_str
+
+
+def extract_retry_delay(err: Exception) -> float:
+    """Extract Google's requested backoff delay in seconds (default 10s)."""
+    msg = str(err)
+    m = re.search(r"retry in\s+([\d\.]+)\s*s", msg, re.IGNORECASE)
+    if m:
+        try:
+            return min(float(m.group(1)) + 1.5, 45.0)
+        except Exception:
+            pass
+    m2 = re.search(r"retryDelay['\"]?:\s*['\"]?(\d+)s?", msg, re.IGNORECASE)
+    if m2:
+        try:
+            return min(float(m2.group(1)) + 1.5, 45.0)
+        except Exception:
+            pass
+    return 10.0
+
+
+def mark_key_dead(key: str, reason: str = "invalid"):
+    """Mark an API key as permanently invalid so it is purged from all future rotations."""
+    if key and isinstance(key, str):
+        clean = key.strip()
+        _DEAD_KEYS.add(clean)
+        masked = (clean[:6] + "..." + clean[-4:]) if len(clean) > 10 else "key"
+        logger.error(f"[Gemini Pool] Permanently disabling invalid key {masked} ({reason})")
+        print(f"\n[Gemini Pool] [DEAD KEY PURGED] Key {masked} removed from pool: {reason}")
+
 
 def set_thread_gemini_keys(keys: List[str]):
     """Assign specific Gemini keys to the current thread/pipeline execution."""
-    clean = [k.strip() for k in keys if k and isinstance(k, str) and k.strip()]
+    clean = [k.strip() for k in keys if k and isinstance(k, str) and k.strip() and k.strip() not in _DEAD_KEYS]
     _THREAD_LOCAL.gemini_keys = clean
     _THREAD_LOCAL.active_index = 0
     if clean:
@@ -68,45 +106,50 @@ def get_all_gemini_keys() -> List[str]:
     2. Active authenticated user's settings from NeonDB / session (current_user.get_settings())
     3. Server-level environment fallback (.env)
     """
+    raw_keys = []
     # 1. Thread-local keys (highest precedence, safe for concurrent background pipelines)
     thread_keys = getattr(_THREAD_LOCAL, "gemini_keys", None)
     if thread_keys:
-        return list(thread_keys)
+        raw_keys = list(thread_keys)
+    else:
+        # 2. Active logged-in user's settings from NeonDB (production multi-user mode)
+        try:
+            from flask_login import current_user
+            if current_user and current_user.is_authenticated:
+                s = current_user.get_settings()
+                user_keys = []
+                for k_name in ("GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3"):
+                    val = (s.get(k_name) or "").strip()
+                    if val:
+                        for part in val.split(","):
+                            clean_part = part.strip()
+                            if clean_part and clean_part not in user_keys:
+                                user_keys.append(clean_part)
+                if user_keys:
+                    raw_keys = user_keys
+        except Exception:
+            pass
 
-    # 2. Active logged-in user's settings from NeonDB (production multi-user mode)
-    try:
-        from flask_login import current_user
-        if current_user and current_user.is_authenticated:
-            s = current_user.get_settings()
-            user_keys = []
-            for k_name in ("GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3"):
-                val = (s.get(k_name) or "").strip()
-                if val:
-                    for part in val.split(","):
-                        clean_part = part.strip()
-                        if clean_part and clean_part not in user_keys:
-                            user_keys.append(clean_part)
-            if user_keys:
-                return user_keys
-    except Exception:
-        pass
+        # 3. Server fallback from environment / .env
+        if not raw_keys:
+            load_dotenv(override=False)
+            env_keys = []
+            primary = os.getenv("GEMINI_API_KEY", "").strip()
+            if primary:
+                for k in primary.split(","):
+                    clean_k = k.strip()
+                    if clean_k and clean_k not in env_keys:
+                        env_keys.append(clean_k)
 
-    # 3. Server fallback from environment / .env
-    load_dotenv(override=False)
-    env_keys = []
-    primary = os.getenv("GEMINI_API_KEY", "").strip()
-    if primary:
-        for k in primary.split(","):
-            clean_k = k.strip()
-            if clean_k and clean_k not in env_keys:
-                env_keys.append(clean_k)
+            for env_name in ("GEMINI_API_KEY_2", "GEMINI_API_KEY_3", "GEMINI_BACKUP_KEY", "GEMINI_KEY_2"):
+                val = os.getenv(env_name, "").strip()
+                if val and val not in env_keys:
+                    env_keys.append(val)
 
-    for env_name in ("GEMINI_API_KEY_2", "GEMINI_API_KEY_3", "GEMINI_BACKUP_KEY", "GEMINI_KEY_2"):
-        val = os.getenv(env_name, "").strip()
-        if val and val not in env_keys:
-            env_keys.append(val)
+            raw_keys = env_keys
 
-    return env_keys
+    # Filter out any keys that have thrown 403 PERMISSION_DENIED or API_KEY_INVALID
+    return [k for k in raw_keys if k not in _DEAD_KEYS]
 
 
 def get_active_key() -> str:
