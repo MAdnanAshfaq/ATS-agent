@@ -1104,6 +1104,9 @@ def settings():
             "COLAB_DETECTOR_URL": data.get("COLAB_DETECTOR_URL"),
         }
         current_user.save_settings({k: v for k, v in updates.items() if v is not None})
+        # Immediately invalidate 60-second health cache so UI reflects newly added keys instantly
+        cache_key = f"_gemini_health_{getattr(current_user, 'username', 'anon')}"
+        setattr(app, cache_key, None)
         return jsonify({"success": True, "message": f"Saved {len(cleaned_keys)} Gemini API keys successfully"})
 
     env_vars = get_user_settings()

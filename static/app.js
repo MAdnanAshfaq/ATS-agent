@@ -1093,6 +1093,9 @@ async function loadSettings() {
         if (data.success) {
           showToast(`Settings saved! ${geminiKeysList.length} Gemini API keys active in pool with auto-failover.`, "success");
           checkSystemHealth();
+          if (typeof checkHollaBuddyApiHealth === "function") {
+            checkHollaBuddyApiHealth();
+          }
         } else {
           showToast("Failed to save settings", "error");
         }

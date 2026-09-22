@@ -133,6 +133,7 @@ CREATE TABLE IF NOT EXISTS user_settings (
     username            VARCHAR(50) PRIMARY KEY REFERENCES users(username) ON DELETE CASCADE,
     gemini_api_key      TEXT DEFAULT '',
     gemini_api_key_2    TEXT DEFAULT '',
+    gemini_api_keys     TEXT DEFAULT '[]',
     simplify_email      TEXT DEFAULT '',
     simplify_password   TEXT DEFAULT '',
     hf_api_key          TEXT DEFAULT '',
@@ -176,6 +177,8 @@ def init_schema():
     try:
         with conn.cursor() as cur:
             cur.execute(SCHEMA_SQL)
+            # Ensure gemini_api_keys column exists in existing tables
+            cur.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS gemini_api_keys TEXT DEFAULT '[]';")
         conn.commit()
         logger.info("[DB] Schema initialized (tables verified)")
         return True
@@ -337,6 +340,7 @@ def db_get_settings(username: str) -> dict:
     """Return user settings dict (API keys etc), with auto-retry on transient SSL drop."""
     defaults = {
         "GEMINI_API_KEY": "", "GEMINI_API_KEY_2": "",
+        "GEMINI_API_KEYS": [],
         "SIMPLIFY_EMAIL": "", "SIMPLIFY_PASSWORD": "",
         "HF_API_KEY": "", "COLAB_DETECTOR_URL": "",
     }
@@ -347,19 +351,40 @@ def db_get_settings(username: str) -> dict:
         is_bad = False
         try:
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT gemini_api_key, gemini_api_key_2, simplify_email, simplify_password, hf_api_key, colab_url FROM user_settings WHERE username = %s",
-                    (username,)
-                )
-                row = cur.fetchone()
-                if row:
-                    defaults["GEMINI_API_KEY"] = row[0] or ""
-                    defaults["GEMINI_API_KEY_2"] = row[1] or ""
-                    defaults["SIMPLIFY_EMAIL"] = row[2] or ""
-                    defaults["SIMPLIFY_PASSWORD"] = row[3] or ""
-                    defaults["HF_API_KEY"] = row[4] or ""
-                    defaults["COLAB_DETECTOR_URL"] = row[5] or ""
-                return defaults
+                try:
+                    cur.execute(
+                        "SELECT gemini_api_key, gemini_api_key_2, simplify_email, simplify_password, hf_api_key, colab_url, gemini_api_keys FROM user_settings WHERE username = %s",
+                        (username,)
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        defaults["GEMINI_API_KEY"] = row[0] or ""
+                        defaults["GEMINI_API_KEY_2"] = row[1] or ""
+                        defaults["SIMPLIFY_EMAIL"] = row[2] or ""
+                        defaults["SIMPLIFY_PASSWORD"] = row[3] or ""
+                        defaults["HF_API_KEY"] = row[4] or ""
+                        defaults["COLAB_DETECTOR_URL"] = row[5] or ""
+                        if len(row) > 6 and row[6]:
+                            try:
+                                defaults["GEMINI_API_KEYS"] = json.loads(row[6])
+                            except Exception:
+                                defaults["GEMINI_API_KEYS"] = []
+                    return defaults
+                except Exception:
+                    conn.rollback()
+                    cur.execute(
+                        "SELECT gemini_api_key, gemini_api_key_2, simplify_email, simplify_password, hf_api_key, colab_url FROM user_settings WHERE username = %s",
+                        (username,)
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        defaults["GEMINI_API_KEY"] = row[0] or ""
+                        defaults["GEMINI_API_KEY_2"] = row[1] or ""
+                        defaults["SIMPLIFY_EMAIL"] = row[2] or ""
+                        defaults["SIMPLIFY_PASSWORD"] = row[3] or ""
+                        defaults["HF_API_KEY"] = row[4] or ""
+                        defaults["COLAB_DETECTOR_URL"] = row[5] or ""
+                    return defaults
         except Exception as e:
             is_bad = True
             logger.warning(f"[DB] get_settings attempt {attempt + 1} error: {e}")
@@ -378,14 +403,22 @@ def db_save_settings(username: str, settings: dict) -> bool:
         return False
     is_bad = False
     try:
+        keys_json = json.dumps(settings.get("GEMINI_API_KEYS", []))
         with conn.cursor() as cur:
+            # Guarantee column exists
+            try:
+                cur.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS gemini_api_keys TEXT DEFAULT '[]';")
+            except Exception:
+                conn.rollback()
+
             cur.execute(
                 """
-                INSERT INTO user_settings (username, gemini_api_key, gemini_api_key_2, simplify_email, simplify_password, hf_api_key, colab_url, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO user_settings (username, gemini_api_key, gemini_api_key_2, gemini_api_keys, simplify_email, simplify_password, hf_api_key, colab_url, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (username) DO UPDATE SET
                     gemini_api_key   = EXCLUDED.gemini_api_key,
                     gemini_api_key_2 = EXCLUDED.gemini_api_key_2,
+                    gemini_api_keys  = EXCLUDED.gemini_api_keys,
                     simplify_email   = EXCLUDED.simplify_email,
                     simplify_password= EXCLUDED.simplify_password,
                     hf_api_key       = EXCLUDED.hf_api_key,
@@ -396,6 +429,7 @@ def db_save_settings(username: str, settings: dict) -> bool:
                     username,
                     settings.get("GEMINI_API_KEY", ""),
                     settings.get("GEMINI_API_KEY_2", ""),
+                    keys_json,
                     settings.get("SIMPLIFY_EMAIL", ""),
                     settings.get("SIMPLIFY_PASSWORD", ""),
                     settings.get("HF_API_KEY", ""),
