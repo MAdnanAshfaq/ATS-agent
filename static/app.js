@@ -3732,7 +3732,14 @@ async function checkHollaBuddyApiHealth() {
   if (icon) { icon.className = "fa-solid fa-spinner fa-spin"; }
 
   try {
-    const res  = await fetch("/api/gemini/health");
+    const res = await fetch("/api/gemini/health");
+    if (!res.ok || res.redirected) {
+      if (res.status === 401 || res.status === 403 || res.redirected) {
+        keysEl.innerHTML = `<span class="hb-health-none" style="font-size:0.75rem;"><i class="fa-solid fa-lock" style="opacity:.6"></i> Please log in</span>`;
+        return;
+      }
+      throw new Error(`HTTP ${res.status}`);
+    }
     const data = await res.json();
 
     const statusColor = {
@@ -3771,6 +3778,7 @@ async function checkHollaBuddyApiHealth() {
       const isActive = i === data.active_index;
       const col  = statusColor[k.status]  || "#64748b";
       const ico  = statusIcon[k.status]   || "fa-circle";
+      const tip  = statusTip[k.status]    || k.label || "";
       const name = k.name || (k.env === "GEMINI_API_KEY" ? "Key 1" : k.env === "GEMINI_API_KEY_2" ? "Key 2" : `Key ${i+1}`);
       const activeBadge = isActive ? `<span class="hb-active-badge">ACTIVE</span>` : "";
       return `
