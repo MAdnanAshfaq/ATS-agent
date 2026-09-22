@@ -323,7 +323,7 @@ Return ONLY a valid JSON object matching this schema:
 }}"""
 
         def _call_gemini(client):
-            models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
+            models = ["gemini-3-flash-preview", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
             resp = None
             last_err = None
             for m in models:

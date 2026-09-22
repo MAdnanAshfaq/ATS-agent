@@ -67,7 +67,7 @@ JOB DESCRIPTION:
 
 Extract the atomic rubric now as valid JSON."""
 
-    models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
+    models = ["gemini-3-flash-preview", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
     for model_name in models:
         try:
             current_client = get_gemini_client()
@@ -213,7 +213,7 @@ MASTER RESUME:
 
 Draft the optimized resume now as valid JSON."""
 
-    models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
+    models = ["gemini-3-flash-preview", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
     last_err = None
     for model_name in models:
         try:
@@ -263,7 +263,7 @@ DRAFT RESUME TO EDIT:
 
 Return the corrected JSON now."""
 
-    models = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
+    models = ["gemini-3-flash-preview", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
     for model_name in models:
         try:
             current_client = get_gemini_client()

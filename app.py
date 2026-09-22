@@ -827,7 +827,7 @@ ORIGINAL TEXT:
 {text}"""
 
         def _call_humanizer(client):
-            for m in ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]:
+            for m in ["gemini-3-flash-preview", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]:
                 try:
                     response = client.models.generate_content(
                         model=m,
@@ -977,12 +977,22 @@ def gemini_key_health():
         for attempt in range(2):
             try:
                 test_client = genai.Client(api_key=key)
-                test_client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=[gtypes.Content(role="user", parts=[gtypes.Part(text="Reply: ok")])],
-                    config=gtypes.GenerateContentConfig(max_output_tokens=5, temperature=0),
-                )
-                return "ok", "Active & Working"
+                last_ping_err = None
+                for pm in ("gemini-3-flash-preview", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"):
+                    try:
+                        test_client.models.generate_content(
+                            model=pm,
+                            contents=[gtypes.Content(role="user", parts=[gtypes.Part(text="Reply: ok")])],
+                            config=gtypes.GenerateContentConfig(max_output_tokens=5, temperature=0),
+                        )
+                        return "ok", "Active & Working"
+                    except Exception as pe:
+                        last_ping_err = pe
+                        if is_quota_error(pe):
+                            continue
+                        break
+                if last_ping_err:
+                    raise last_ping_err
             except Exception as e:
                 err_up = str(e).upper()
 
