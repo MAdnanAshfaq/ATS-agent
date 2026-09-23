@@ -83,11 +83,11 @@ Extract the atomic rubric now as valid JSON."""
         except Exception as e:
             record_model_failure(model_name, e)
             print(f"[Dani's Engine - Researcher] {model_name} note: {e}")
-            if is_quota_error(e):
+            if is_quota_error(e) or "503" in str(e) or "UNAVAILABLE" in str(e).upper():
                 keys = get_all_gemini_keys()
                 if len(keys) > 1:
-                    rotate_key(reason=f"Researcher Quota Limit ({model_name})")
-            time.sleep(0.5)
+                    rotate_key(reason=f"Researcher Failover ({model_name})")
+            time.sleep(0.3)
 
     return {
         "role_title": role,
@@ -247,28 +247,28 @@ Draft the optimized resume now as valid JSON."""
                         rotate_key(reason="Purged invalid key")
                     continue
 
-                if is_quota_error(e):
-                    delay = extract_retry_delay(e)
-                    keys = get_all_gemini_keys()
+                keys = get_all_gemini_keys()
+                if is_quota_error(e) or "503" in err_str or "UNAVAILABLE" in err_str:
                     if len(keys) > 1:
-                        rotate_key(reason=f"Writer Quota Limit ({model_name})")
+                        rotate_key(reason=f"Writer Failover on {model_name}")
+                        print(f"[Dani's Engine - Writer] 503 / Quota on {model_name} -> Rotated key to backup key!")
                     else:
-                        print(f"[Dani's Engine - Writer] RPM rate limit reached. Pausing {delay:.1f}s for window reset...")
-                        time.sleep(delay)
-                elif "503" in err_str or "UNAVAILABLE" in err_str:
-                    print(f"[Dani's Engine - Writer] {model_name} experiencing high demand (503). Trying next model in cascade...")
-                    time.sleep(0.3)
+                        delay = extract_retry_delay(e)
+                        time.sleep(delay if is_quota_error(e) else 1.0)
                 else:
-                    time.sleep(1)
+                    time.sleep(0.5)
 
         if attempt < 3:
+            keys = get_all_gemini_keys()
+            if len(keys) > 1:
+                rotate_key(reason=f"Attempt {attempt} completed — rotating to fresh key for attempt {attempt+1}")
             if is_quota_error(last_err):
                 delay = extract_retry_delay(last_err)
                 print(f"[Dani's Engine - Writer] Rate limit hit. Waiting {delay:.1f}s (attempt {attempt}/3)...")
                 time.sleep(delay)
             elif "503" in str(last_err).upper() or "UNAVAILABLE" in str(last_err).upper():
-                print(f"[Dani's Engine - Writer] High demand spike across models. Pausing 2s before retry (attempt {attempt}/3)...")
-                time.sleep(2.0)
+                print(f"[Dani's Engine - Writer] Server busy across models. Pausing 1.5s before retry (attempt {attempt}/3)...")
+                time.sleep(1.5)
 
     raise RuntimeError(f"Writer failed across all models: {last_err}")
 
@@ -315,11 +315,11 @@ Return the corrected JSON now."""
         except Exception as e:
             record_model_failure(model_name, e)
             print(f"[Dani's Engine - Editor] {model_name} note: {e}")
-            if is_quota_error(e):
+            if is_quota_error(e) or "503" in str(e) or "UNAVAILABLE" in str(e).upper():
                 keys = get_all_gemini_keys()
                 if len(keys) > 1:
-                    rotate_key(reason=f"Editor Quota Limit ({model_name})")
-            time.sleep(0.5)
+                    rotate_key(reason=f"Editor Failover ({model_name})")
+            time.sleep(0.3)
 
     return draft_resume
 

@@ -535,19 +535,19 @@ def rewrite_resume(
             record_model_failure(model, e)
             err_str = str(e)
             print(f"[Rewriter] Attempt {attempt}/{max_retries} with {model} — Error: {err_str}")
-            if "503" in err_str or "UNAVAILABLE" in err_str.upper():
-                print(f"[Rewriter] Model {model} is experiencing high demand (503). Auto-switching away from it.")
-            if is_quota_error(e):
-                keys = get_all_gemini_keys()
+            keys = get_all_gemini_keys()
+            if is_quota_error(e) or "503" in err_str or "UNAVAILABLE" in err_str.upper():
                 if len(keys) > 1:
-                    rotate_key(reason="Rewriter Quota Limit")
+                    rotate_key(reason=f"Rewriter Failover ({model})")
                     client = _get_gemini_client()
-                    time.sleep(1)
+                    print(f"[Rewriter] 503 / Quota on {model} -> Rotated key to backup key!")
+                    time.sleep(0.5)
                 else:
-                    print("[Rewriter] Rate limit hit on single key — waiting 10s before retry...")
-                    time.sleep(10)
+                    delay = extract_retry_delay(e) if is_quota_error(e) else 5.0
+                    print(f"[Rewriter] Single key hit limit/503 — waiting {delay:.0f}s before retry...")
+                    time.sleep(delay)
             elif attempt < max_retries:
-                time.sleep(2)
+                time.sleep(1)
             continue
 
     # All retries exhausted — do a final manual injection pass

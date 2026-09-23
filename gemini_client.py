@@ -102,12 +102,12 @@ def record_model_failure(model_name: str, error: Exception):
     now = time.time()
     with _MODEL_LOCK:
         if "503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str:
-            _MODEL_COOLDOWNS[model_name] = now + 300.0  # 5 minutes cooldown
-            print(f"[Model Cooldown] ⚠️ '{model_name}' spiked (503 High Demand). Auto-switching away from it for 5m.")
+            _MODEL_COOLDOWNS[model_name] = now + 45.0  # 45s momentary cooldown
+            print(f"[Model Cooldown] ⚠️ '{model_name}' spiked (503 High Demand). Deprioritizing for 45s.")
         elif "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
             delay = extract_retry_delay(error)
-            _MODEL_COOLDOWNS[model_name] = now + max(delay, 60.0)
-            print(f"[Model Cooldown] ⚠️ '{model_name}' rate limited. Deprioritizing for {max(delay, 60.0):.0f}s.")
+            _MODEL_COOLDOWNS[model_name] = now + max(delay, 45.0)
+            print(f"[Model Cooldown] ⚠️ '{model_name}' rate limited. Deprioritizing for {max(delay, 45.0):.0f}s.")
 
 
 def record_model_success(model_name: str):
@@ -309,21 +309,16 @@ def execute_with_failover(fn: Callable[[genai.Client], Any], max_rotations: int 
             return fn(client)
         except Exception as e:
             last_exception = e
-            if is_quota_error(e):
+            if is_quota_error(e) or "503" in str(e) or "UNAVAILABLE" in str(e).upper():
                 if len(keys) > 1:
-                    rotate_key(reason=f"Quota Limit ({type(e).__name__})")
-                    time.sleep(1)
+                    rotate_key(reason=f"Failover ({type(e).__name__} / 503 Spike)")
+                    time.sleep(0.5)
                     continue
                 else:
-                    print(f"[Gemini Pool] [WARN] Single API key hit rate limit: {e}. Waiting 8s...")
-                    time.sleep(8)
+                    print(f"[Gemini Pool] [WARN] Single API key busy/quota: {e}. Waiting 6s...")
+                    time.sleep(6)
                     continue
             else:
-                # Other non-quota errors (e.g. transient 503 network error)
-                if "503" in str(e) or "UNAVAILABLE" in str(e).upper():
-                    print(f"[Gemini Pool] Server busy (503). Waiting 4s...")
-                    time.sleep(4)
-                    continue
                 raise e
 
     raise last_exception or RuntimeError("Gemini operations failed after all key failovers.")
