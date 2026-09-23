@@ -82,6 +82,64 @@ def mark_key_dead(key: str, reason: str = "invalid"):
         print(f"\n[Gemini Pool] [DEAD KEY PURGED] Key {masked} removed from pool: {reason}")
 
 
+# ── Dynamic Model Health & Cooldown Tracking ─────────────────────────────────
+_MODEL_COOLDOWNS = {}
+_MODEL_LOCK = threading.Lock()
+
+DEFAULT_MODELS_CASCADE = [
+    "gemini-2.5-flash",
+    "gemini-3-flash-preview",
+    "gemini-3.5-flash",
+    "gemini-2.5-pro",
+]
+
+
+def record_model_failure(model_name: str, error: Exception):
+    """Mark a model as temporarily spiked/cooling down (e.g. 5 minutes on 503, or rate-limited)."""
+    if not model_name:
+        return
+    err_str = str(error).upper()
+    now = time.time()
+    with _MODEL_LOCK:
+        if "503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str:
+            _MODEL_COOLDOWNS[model_name] = now + 300.0  # 5 minutes cooldown
+            print(f"[Model Cooldown] ⚠️ '{model_name}' spiked (503 High Demand). Auto-switching away from it for 5m.")
+        elif "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+            delay = extract_retry_delay(error)
+            _MODEL_COOLDOWNS[model_name] = now + max(delay, 60.0)
+            print(f"[Model Cooldown] ⚠️ '{model_name}' rate limited. Deprioritizing for {max(delay, 60.0):.0f}s.")
+
+
+def record_model_success(model_name: str):
+    """Clear cooldown on model success so it returns to healthy priority."""
+    if not model_name:
+        return
+    with _MODEL_LOCK:
+        _MODEL_COOLDOWNS.pop(model_name, None)
+
+
+def get_candidate_models(base_models: List[str] = None) -> List[str]:
+    """
+    Return candidate models with currently spiked/cooling models pushed to the end.
+    Healthy models always run first so subsequent calls don't waste time on overloaded models.
+    """
+    if not base_models:
+        base_models = list(DEFAULT_MODELS_CASCADE)
+    now = time.time()
+    with _MODEL_LOCK:
+        healthy = []
+        cooling = []
+        for m in base_models:
+            cd = _MODEL_COOLDOWNS.get(m, 0)
+            if now < cd:
+                cooling.append(m)
+            else:
+                healthy.append(m)
+        if not healthy:
+            return list(base_models)
+        return healthy + cooling
+
+
 def set_thread_gemini_keys(keys: List[str]):
     """Assign specific Gemini keys to the current thread/pipeline execution."""
     clean = [k.strip() for k in keys if k and isinstance(k, str) and k.strip() and k.strip() not in _DEAD_KEYS]

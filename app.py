@@ -990,18 +990,20 @@ def gemini_key_health():
         for attempt in range(2):
             try:
                 test_client = genai.Client(api_key=key)
-                last_ping_err = None
-                for pm in ("gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.5-flash"):
+                from gemini_client import get_candidate_models, record_model_failure, record_model_success
+                for pm in get_candidate_models(["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.5-flash", "gemini-2.5-pro"]):
                     try:
                         test_client.models.generate_content(
                             model=pm,
                             contents=[gtypes.Content(role="user", parts=[gtypes.Part(text="Reply: ok")])],
                             config=gtypes.GenerateContentConfig(max_output_tokens=5, temperature=0),
                         )
+                        record_model_success(pm)
                         return "ok", "Active & Working"
                     except Exception as pe:
+                        record_model_failure(pm, pe)
                         last_ping_err = pe
-                        if is_quota_error(pe):
+                        if is_quota_error(pe) or "503" in str(pe) or "UNAVAILABLE" in str(pe).upper():
                             continue
                         break
                 if last_ping_err:

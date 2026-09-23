@@ -67,7 +67,8 @@ JOB DESCRIPTION:
 
 Extract the atomic rubric now as valid JSON."""
 
-    models = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.5-flash", "gemini-2.5-pro"]
+    from gemini_client import get_candidate_models, record_model_failure, record_model_success
+    models = get_candidate_models()
     for model_name in models:
         try:
             current_client = get_gemini_client()
@@ -76,9 +77,11 @@ Extract the atomic rubric now as valid JSON."""
                 contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
                 config=types.GenerateContentConfig(temperature=0.2, top_p=0.85, max_output_tokens=4096),
             )
+            record_model_success(model_name)
             data = json.loads(_clean_json(response.text))
             return data
         except Exception as e:
+            record_model_failure(model_name, e)
             print(f"[Dani's Engine - Researcher] {model_name} note: {e}")
             if is_quota_error(e):
                 keys = get_all_gemini_keys()
@@ -213,9 +216,14 @@ MASTER RESUME:
 
 Draft the optimized resume now as valid JSON."""
 
-    models = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.5-flash", "gemini-2.5-pro"]
+    from gemini_client import (
+        is_key_invalid_error, mark_key_dead, get_active_key,
+        extract_retry_delay, get_candidate_models, record_model_failure, record_model_success
+    )
+
     last_err = None
     for attempt in range(1, 4):
+        models = get_candidate_models()
         for model_name in models:
             try:
                 current_client = get_gemini_client()
@@ -224,9 +232,11 @@ Draft the optimized resume now as valid JSON."""
                     contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
                     config=types.GenerateContentConfig(temperature=0.3, top_p=0.88, max_output_tokens=8192),
                 )
+                record_model_success(model_name)
                 return json.loads(_clean_json(response.text))
             except Exception as e:
                 last_err = e
+                record_model_failure(model_name, e)
                 err_str = str(e).upper()
                 print(f"[Dani's Engine - Writer] {model_name} note: {e}")
 
@@ -290,7 +300,8 @@ DRAFT RESUME TO EDIT:
 
 Return the corrected JSON now."""
 
-    models = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.5-flash", "gemini-2.5-pro"]
+    from gemini_client import get_candidate_models, record_model_failure, record_model_success
+    models = get_candidate_models()
     for model_name in models:
         try:
             current_client = get_gemini_client()
@@ -299,8 +310,10 @@ Return the corrected JSON now."""
                 contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
                 config=types.GenerateContentConfig(temperature=0.2, top_p=0.85, max_output_tokens=8192),
             )
+            record_model_success(model_name)
             return json.loads(_clean_json(response.text))
         except Exception as e:
+            record_model_failure(model_name, e)
             print(f"[Dani's Engine - Editor] {model_name} note: {e}")
             if is_quota_error(e):
                 keys = get_all_gemini_keys()

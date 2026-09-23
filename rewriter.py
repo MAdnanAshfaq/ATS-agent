@@ -320,12 +320,13 @@ def rewrite_resume(
         print("[Rewriter] No missing keywords or custom bullets — returning base resume unchanged")
         return base_resume
 
-    models = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.5-flash", "gemini-2.5-pro"]
+    from gemini_client import get_candidate_models, record_model_failure, record_model_success
     still_missing = None
     last_valid_resume = None
 
     for attempt in range(1, max_retries + 1):
-        model = models[(attempt - 1) % len(models)]
+        candidate_models = get_candidate_models()
+        model = candidate_models[(attempt - 1) % len(candidate_models)]
         system_prompt, user_prompt = _build_prompt(
             base_resume=base_resume,
             jd_text=jd_text,
@@ -360,6 +361,7 @@ def rewrite_resume(
             raw_text = response.text
             cleaned = _clean_json_response(raw_text)
             data = json.loads(cleaned)
+            record_model_success(model)
 
             if not _validate_resume_structure(data):
                 raise ValueError(f"Missing required keys. Got: {list(data.keys())}")
@@ -530,8 +532,11 @@ def rewrite_resume(
             continue
 
         except Exception as e:
+            record_model_failure(model, e)
             err_str = str(e)
-            print(f"[Rewriter] Attempt {attempt}/{max_retries} — Error: {err_str}")
+            print(f"[Rewriter] Attempt {attempt}/{max_retries} with {model} — Error: {err_str}")
+            if "503" in err_str or "UNAVAILABLE" in err_str.upper():
+                print(f"[Rewriter] Model {model} is experiencing high demand (503). Auto-switching away from it.")
             if is_quota_error(e):
                 keys = get_all_gemini_keys()
                 if len(keys) > 1:
