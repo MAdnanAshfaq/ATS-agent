@@ -87,10 +87,9 @@ _MODEL_COOLDOWNS = {}
 _MODEL_LOCK = threading.Lock()
 
 DEFAULT_MODELS_CASCADE = [
+    "gemini-3.6-flash",
     "gemini-2.5-flash",
     "gemini-3-flash-preview",
-    "gemini-3.5-flash",
-    "gemini-2.5-pro",
 ]
 
 

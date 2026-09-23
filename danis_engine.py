@@ -222,8 +222,12 @@ Draft the optimized resume now as valid JSON."""
     )
 
     last_err = None
-    for attempt in range(1, 4):
+    keys = get_all_gemini_keys()
+    max_attempts = max(4, len(keys) * 2)
+
+    for attempt in range(1, max_attempts + 1):
         models = get_candidate_models()
+        key_switched = False
         for model_name in models:
             try:
                 current_client = get_gemini_client()
@@ -251,24 +255,24 @@ Draft the optimized resume now as valid JSON."""
                 if is_quota_error(e) or "503" in err_str or "UNAVAILABLE" in err_str:
                     if len(keys) > 1:
                         rotate_key(reason=f"Writer Failover on {model_name}")
-                        print(f"[Dani's Engine - Writer] 503 / Quota on {model_name} -> Rotated key to backup key!")
+                        print(f"[Dani's Engine - Writer] 503 / Quota on {model_name} -> Rotated to backup key!")
+                        key_switched = True
+                        break
                     else:
                         delay = extract_retry_delay(e)
                         time.sleep(delay if is_quota_error(e) else 1.0)
                 else:
-                    time.sleep(0.5)
+                    time.sleep(0.3)
 
-        if attempt < 3:
+        if key_switched:
+            time.sleep(0.2)
+            continue
+
+        if attempt < max_attempts:
             keys = get_all_gemini_keys()
             if len(keys) > 1:
                 rotate_key(reason=f"Attempt {attempt} completed — rotating to fresh key for attempt {attempt+1}")
-            if is_quota_error(last_err):
-                delay = extract_retry_delay(last_err)
-                print(f"[Dani's Engine - Writer] Rate limit hit. Waiting {delay:.1f}s (attempt {attempt}/3)...")
-                time.sleep(delay)
-            elif "503" in str(last_err).upper() or "UNAVAILABLE" in str(last_err).upper():
-                print(f"[Dani's Engine - Writer] Server busy across models. Pausing 1.5s before retry (attempt {attempt}/3)...")
-                time.sleep(1.5)
+            time.sleep(1.0)
 
     raise RuntimeError(f"Writer failed across all models: {last_err}")
 
