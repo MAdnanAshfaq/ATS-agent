@@ -826,24 +826,34 @@ CRITICAL RULES FOR HUMANIZING:
 ORIGINAL TEXT:
 {text}"""
 
+        from gemini_client import (
+            get_candidate_models, get_standard_genai_config, extract_clean_text,
+            record_model_failure, record_model_success
+        )
+
         def _call_humanizer(client):
-            for m in ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-3-flash-preview"]:
+            models = get_candidate_models()
+            last_err = None
+            for m in models:
                 try:
                     response = client.models.generate_content(
                         model=m,
                         contents=humanize_prompt,
-                        config=types.GenerateContentConfig(temperature=0.75),
+                        config=get_standard_genai_config(model_name=m, max_output_tokens=2048, temperature=0.7),
                     )
-                    if response and response.text:
-                        res_text = response.text.strip()
+                    res_text = extract_clean_text(response)
+                    if res_text:
                         if res_text.startswith(('"', "“")) and res_text.endswith(('"', "”")):
                             res_text = res_text[1:-1].strip()
+                        record_model_success(m)
                         return res_text
                 except Exception as model_err:
+                    record_model_failure(m, model_err)
                     print(f"[Humanizer] {m} note: {model_err}")
-                    if "429" in str(model_err) or "RESOURCE_EXHAUSTED" in str(model_err):
-                        raise model_err
+                    last_err = model_err
                     continue
+            if last_err:
+                raise last_err
             return ""
 
         humanized_result = execute_with_failover(_call_humanizer)
@@ -990,13 +1000,13 @@ def gemini_key_health():
         for attempt in range(2):
             try:
                 test_client = genai.Client(api_key=key)
-                from gemini_client import get_candidate_models, record_model_failure, record_model_success
-                for pm in get_candidate_models(["gemini-3.6-flash", "gemini-2.5-flash", "gemini-3-flash-preview"]):
+                from gemini_client import get_candidate_models, get_standard_genai_config, record_model_failure, record_model_success
+                for pm in get_candidate_models():
                     try:
                         test_client.models.generate_content(
                             model=pm,
                             contents=[gtypes.Content(role="user", parts=[gtypes.Part(text="Reply: ok")])],
-                            config=gtypes.GenerateContentConfig(max_output_tokens=5, temperature=0),
+                            config=get_standard_genai_config(model_name=pm, max_output_tokens=10, temperature=0),
                         )
                         record_model_success(pm)
                         return "ok", "Active & Working"

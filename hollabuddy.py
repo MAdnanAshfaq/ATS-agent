@@ -141,39 +141,28 @@ def chat_with_hollabuddy(
     user_text = message.strip()
     chat_contents.append(types.Content(role="user", parts=[types.Part(text=user_text)]))
 
-    # Fast, low-latency model fallback chain (avoids deprecated 404 models and thinking delays)
-    models = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.5-flash", "gemini-2.5-pro"]
+    from gemini_client import get_candidate_models, extract_clean_text, get_standard_genai_config
+    models = get_candidate_models()
     last_err = None
     all_quota_exhausted = False
 
     for model_name in models:
         def _call(client, _model=model_name, _contents=chat_contents, _sys=system_content):
-            config_params = {
-                "system_instruction": _sys,
-                "temperature": 0.55,
-                "top_p": 0.92,
-                "max_output_tokens": 4096,
-                "automatic_function_calling": types.AutomaticFunctionCallingConfig(disable=True),
-            }
-            # Set thinking_budget=0 on thinking-enabled models to avoid multi-second pauses
-            if "2.5" in _model:
-                try:
-                    config_params["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
-                except Exception:
-                    pass
-
-            config = types.GenerateContentConfig(**config_params)
+            cfg = get_standard_genai_config(model_name=_model, max_output_tokens=4096, temperature=0.55, top_p=0.92)
+            cfg.system_instruction = _sys
+            cfg.automatic_function_calling = types.AutomaticFunctionCallingConfig(disable=True)
             return client.models.generate_content(
                 model=_model,
                 contents=_contents,
-                config=config,
+                config=cfg,
             )
 
         try:
             response = execute_with_failover(_call)
+            clean_reply = extract_clean_text(response)
             reply_text = (
-                response.text.strip()
-                if response.text
+                clean_reply
+                if clean_reply
                 else "I'm right here! How can I help you with your resume or job search?"
             )
 

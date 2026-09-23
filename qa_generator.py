@@ -194,20 +194,26 @@ Return strictly a JSON array containing EXACTLY {len(questions)} items:
 
 Generate the human-voiced answers as a JSON array now."""
 
-    models = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.5-flash", "gemini-2.5-pro"]
+    from gemini_client import get_candidate_models, extract_clean_text, get_standard_genai_config, record_model_failure, record_model_success
+    models = get_candidate_models()
     raw_response = None
     for model_name in models:
         try:
+            cfg = get_standard_genai_config(model_name=model_name, max_output_tokens=4096, temperature=0.3, top_p=0.88)
             response = client.models.generate_content(
                 model=model_name,
                 contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
-                config=types.GenerateContentConfig(temperature=0.3, top_p=0.88, max_output_tokens=4096),
+                config=cfg,
             )
-            raw_response = response.text
-            break
+            clean_res = extract_clean_text(response)
+            if clean_res:
+                record_model_success(model_name)
+                raw_response = clean_res
+                break
         except Exception as e:
+            record_model_failure(model_name, e)
             print(f"[Q&A Copilot] {model_name} error: {e}")
-            time.sleep(1)
+            time.sleep(0.5)
 
     if not raw_response:
         return []

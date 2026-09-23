@@ -343,6 +343,13 @@ def rewrite_resume(
         print(f"[Rewriter] Target: {len(missing_keywords)} keywords to inject")
 
         try:
+            from gemini_client import get_standard_genai_config, extract_clean_text
+            cfg = get_standard_genai_config(
+                model_name=model,
+                max_output_tokens=8192,
+                temperature=0.35 if attempt == 1 else 0.25,
+                top_p=0.9,
+            )
             response = client.models.generate_content(
                 model=model,
                 contents=[
@@ -351,14 +358,10 @@ def rewrite_resume(
                         parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)],
                     )
                 ],
-                config=types.GenerateContentConfig(
-                    temperature=0.35 if attempt == 1 else 0.25,
-                    top_p=0.9,
-                    max_output_tokens=8192,
-                ),
+                config=cfg,
             )
 
-            raw_text = response.text
+            raw_text = extract_clean_text(response)
             cleaned = _clean_json_response(raw_text)
             data = json.loads(cleaned)
             record_model_success(model)

@@ -143,23 +143,26 @@ INSTRUCTIONS:
 """
 
     def _call_gemini(client: genai.Client):
-        models = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.5-flash", "gemini-2.5-pro"]
+        from gemini_client import get_candidate_models, extract_clean_text, get_standard_genai_config, record_model_failure, record_model_success
+        models = get_candidate_models()
         last_err = None
         for m in models:
             try:
+                cfg = get_standard_genai_config(model_name=m, max_output_tokens=8192, temperature=0.2)
+                cfg.system_instruction = REFINEMENT_SYSTEM_PROMPT
+                if "gemma" not in m:
+                    cfg.response_mime_type = "application/json"
                 response = client.models.generate_content(
                     model=m,
                     contents=user_prompt,
-                    config=types.GenerateContentConfig(
-                        system_instruction=REFINEMENT_SYSTEM_PROMPT,
-                        response_mime_type="application/json",
-                        temperature=0.2,
-                        max_output_tokens=8192,
-                    ),
+                    config=cfg,
                 )
-                if response and response.text:
-                    return response.text
+                clean_text = extract_clean_text(response)
+                if clean_text:
+                    record_model_success(m)
+                    return clean_text
             except Exception as e:
+                record_model_failure(m, e)
                 print(f"[ResumeRefiner] Model {m} note: {e}")
                 last_err = e
                 continue

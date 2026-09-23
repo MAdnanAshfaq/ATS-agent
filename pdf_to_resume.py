@@ -45,27 +45,32 @@ RESUME TEXT:
 {raw_text}
 """
 
-    models = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.5-flash", "gemini-2.5-pro"]
+    from gemini_client import get_candidate_models, extract_clean_text, get_standard_genai_config, record_model_failure, record_model_success
+    models = get_candidate_models()
     for model_name in models:
         try:
+            cfg = get_standard_genai_config(model_name=model_name, max_output_tokens=8192, temperature=0.1)
             response = client.models.generate_content(
                 model=model_name,
                 contents=prompt,
-                config={"temperature": 0.1, "max_output_tokens": 8192},
+                config=cfg,
             )
-            if not response or not response.text:
+            raw_text = extract_clean_text(response)
+            if not raw_text:
                 continue
-            text = response.text.strip()
+            text = raw_text.strip()
             # Strip markdown fences if present
             text = re.sub(r'^```(?:json)?\s*', '', text)
             text = re.sub(r'\s*```$', '', text)
             parsed = json.loads(text)
+            record_model_success(model_name)
             print(f"[PDF Parser] ✅ Gemini parsed resume with model {model_name}")
             return parsed
         except json.JSONDecodeError as e:
             print(f"[PDF Parser] JSON parse error from {model_name}: {e}")
             continue
         except Exception as e:
+            record_model_failure(model_name, e)
             err = str(e)
             if "429" in err or "quota" in err.lower() or "rate" in err.lower():
                 print(f"[PDF Parser] Rate limit on {model_name}, trying next...")

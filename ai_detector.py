@@ -126,12 +126,14 @@ RESUME TO CLEAN:
 Check EVERY word against the rules. Rewrite any sentence matching an AI pattern.
 Return the full cleaned resume as valid JSON."""
 
-    models = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.5-flash", "gemini-2.5-pro"]
+    from gemini_client import get_candidate_models, extract_clean_text, get_standard_genai_config, record_model_failure, record_model_success
+    models = get_candidate_models()
     print(f"[Detector] Pass {pass_number}: Sending to Gemini...")
 
     for attempt in range(1, max_retries + 1):
         model_name = models[(attempt - 1) % len(models)]
         try:
+            cfg = get_standard_genai_config(model_name=model_name, max_output_tokens=8192, temperature=0.3, top_p=0.85)
             response = client.models.generate_content(
                 model=model_name,
                 contents=[
@@ -140,16 +142,13 @@ Return the full cleaned resume as valid JSON."""
                         parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)]
                     )
                 ],
-                config=types.GenerateContentConfig(
-                    temperature=0.3,
-                    top_p=0.85,
-                    max_output_tokens=8192,
-                ),
+                config=cfg,
             )
             
-            raw_text = response.text
+            raw_text = extract_clean_text(response)
             cleaned_text = _clean_json_response(raw_text)
             cleaned = json.loads(cleaned_text)
+            record_model_success(model_name)
             
             # Merge with original input resume to guarantee non-rewritten sections (education, certs, contact, etc.) are 100% preserved
             merged = dict(resume)
