@@ -323,7 +323,7 @@ Return ONLY a valid JSON object matching this schema:
 }}"""
 
         def _call_gemini(client):
-            models = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.5-flash", "gemini-2.5-pro"]
+            models = ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-flash-latest", "gemini-2.5-flash"]
             resp = None
             last_err = None
             for m in models:
@@ -334,6 +334,7 @@ Return ONLY a valid JSON object matching this schema:
                         config=types.GenerateContentConfig(
                             temperature=0.1,
                             response_mime_type="application/json",
+                            thinking_config=types.ThinkingConfig(thinking_budget=0),
                         ),
                     )
                     if resp and resp.text:
@@ -350,6 +351,10 @@ Return ONLY a valid JSON object matching this schema:
                     resp = client.models.generate_content(
                         model=m,
                         contents=prompt,
+                        config=types.GenerateContentConfig(
+                            temperature=0.1,
+                            thinking_config=types.ThinkingConfig(thinking_budget=0),
+                        ),
                     )
                     if resp and resp.text:
                         print(f"[LLM Matcher] [OK] Extracted ATS matrix with {m} (Plain text mode)")

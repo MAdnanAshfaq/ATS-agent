@@ -87,10 +87,54 @@ _MODEL_COOLDOWNS = {}
 _MODEL_LOCK = threading.Lock()
 
 DEFAULT_MODELS_CASCADE = [
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemma-4-26b-a4b-it",
+    "gemini-3.7-flash",
+    "gemma-4-31b-it",
+    "gemini-flash-latest",
     "gemini-3.6-flash",
     "gemini-2.5-flash",
-    "gemini-3-flash-preview",
 ]
+
+
+def extract_clean_text(response) -> str:
+    """Extract model output text cleanly, stripping reasoning/thought tokens."""
+    if not response:
+        return ""
+    if hasattr(response, "text") and response.text:
+        return response.text
+    if hasattr(response, "candidates") and response.candidates:
+        c = response.candidates[0]
+        if hasattr(c, "content") and hasattr(c.content, "parts"):
+            text_parts = [
+                p.text for p in c.content.parts
+                if hasattr(p, "text") and p.text and not getattr(p, "thought", False)
+            ]
+            if text_parts:
+                return "".join(text_parts).strip()
+    return ""
+
+
+def get_standard_genai_config(
+    model_name: str = "",
+    max_output_tokens: int = 4096,
+    temperature: float = 0.3,
+    top_p: float = 0.88,
+) -> types.GenerateContentConfig:
+    """Generate standardized config. Disables thinking traces on models that support thinking to prevent 503 timeouts."""
+    if "gemma" in model_name or "lite" in model_name:
+        return types.GenerateContentConfig(
+            temperature=temperature,
+            top_p=top_p,
+            max_output_tokens=max_output_tokens,
+        )
+    return types.GenerateContentConfig(
+        temperature=temperature,
+        top_p=top_p,
+        max_output_tokens=max_output_tokens,
+        thinking_config=types.ThinkingConfig(thinking_budget=0),
+    )
 
 
 def record_model_failure(model_name: str, error: Exception):
@@ -100,7 +144,11 @@ def record_model_failure(model_name: str, error: Exception):
     err_str = str(error).upper()
     now = time.time()
     with _MODEL_LOCK:
-        if "503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str:
+        if "404" in err_str or "NOT_FOUND" in err_str:
+            # Model not supported on this account - cool down for 24 hours
+            _MODEL_COOLDOWNS[model_name] = now + 86400.0
+            print(f"[Model Cooldown] ⚠️ '{model_name}' not available on this API key (404 Not Found). Skipping.")
+        elif "503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str:
             _MODEL_COOLDOWNS[model_name] = now + 45.0  # 45s momentary cooldown
             print(f"[Model Cooldown] ⚠️ '{model_name}' spiked (503 High Demand). Deprioritizing for 45s.")
         elif "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:

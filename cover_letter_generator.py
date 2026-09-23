@@ -94,7 +94,7 @@ STRICT BANNED PHRASES:
 Return ONLY the clean cover letter text (including date and recipient header). Do not wrap in markdown fences."""
 
     def _call_gemini(client):
-        for model in ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash"]:
+        for model in ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-flash-latest", "gemini-2.5-flash"]:
             try:
                 response = client.models.generate_content(
                     model=model,
@@ -107,6 +107,7 @@ Return ONLY the clean cover letter text (including date and recipient header). D
                     config=types.GenerateContentConfig(
                         temperature=0.4,
                         max_output_tokens=1500,
+                        thinking_config=types.ThinkingConfig(thinking_budget=0),
                     ),
                 )
                 if response.text and len(response.text.strip()) > 100:

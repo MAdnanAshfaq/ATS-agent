@@ -19,7 +19,10 @@ from typing import Any, Callable, Optional
 from google import genai
 from google.genai import types
 
-from gemini_client import get_gemini_client, is_quota_error, rotate_key, get_all_gemini_keys
+from gemini_client import (
+    get_gemini_client, is_quota_error, rotate_key, get_all_gemini_keys,
+    get_standard_genai_config, get_candidate_models, record_model_failure, record_model_success
+)
 from human_voice_audit import audit_resume_dict, load_ai_tells
 
 
@@ -33,68 +36,120 @@ def _clean_json(text: str) -> str:
     return text.strip()
 
 
+def deterministic_voice_cleanup(draft_resume: dict) -> dict:
+    """Fast, local regex cleanup of AI clichés, banned buzzwords, and formulaic phrases (0 API calls)."""
+    if not isinstance(draft_resume, dict):
+        return draft_resume
+
+    cliche_replacements = {
+        r'\b[Ss]pearheaded\b': 'Led',
+        r'\b[Ll]everaged\b': 'Used',
+        r'\b[Uu]tilized\b': 'Used',
+        r'\b[Ff]acilitated\b': 'Managed',
+        r'\b[Ee]nsured\b': 'Maintained',
+        r'\b[Dd]emonstrated\b': 'Showed',
+        r'\b[Cc]ollaborated with\b': 'Worked with',
+        r'\b[Cc]ollaborated\b': 'Partnered',
+        r'\b[Ss]treamlined\b': 'Simplified',
+        r'\b[Cc]hampioned\b': 'Drove',
+        r'\b[Ff]ostered\b': 'Supported',
+        r'\b[Hh]arnessed\b': 'Applied',
+        r'\b[Nn]avigated\b': 'Handled',
+        r'\b[Oo]rchestrated\b': 'Built',
+        r'\b[Pp]ioneered\b': 'Introduced',
+        r'\b[Rr]evolutionized\b': 'Overhauled',
+        r'\b[Aa]rchitected\b': 'Designed',
+        r'\b[Ee]mpowered\b': 'Enabled',
+        r'\b[Ee]levated\b': 'Improved',
+        r'\b[Uu]nlocked\b': 'Achieved',
+        r'\b[Rr]obust\b': 'reliable',
+        r'\b[Ss]eamless\b': 'smooth',
+        r'\b[Ss]eamlessly\b': 'smoothly',
+        r'\b[Tt]apestry\b': 'mix',
+        r'\b[Pp]ivotal\b': 'key',
+        r'\b[Tt]estament\b': 'proof',
+        r'\b[Tt]ransformative\b': 'major',
+        r'\b[Gg]roundbreaking\b': 'new',
+        r'\b[Cc]utting-edge\b': 'modern',
+        r'\b[Ss]ynergy\b': 'cooperation',
+        r'\b[Dd]ynamic\b': 'active',
+        r'\b[Ff]urthermore,?\s*': '',
+        r'\b[Mm]oreover,?\s*': '',
+    }
+
+    try:
+        cleaned = json.loads(json.dumps(draft_resume))
+    except Exception:
+        cleaned = dict(draft_resume)
+
+    def _clean_str(text: str) -> str:
+        if not isinstance(text, str):
+            return text
+        res = text
+        for pat, rep in cliche_replacements.items():
+            res = re.sub(pat, rep, res)
+        return res
+
+    if "summary" in cleaned and isinstance(cleaned["summary"], str):
+        s = cleaned["summary"]
+        for opener in [
+            r'^[Rr]esults-driven\s+\w+\s+with\b',
+            r'^[Rr]esults-oriented\s+\w+\s+with\b',
+            r'^[Dd]ynamic and experienced\s+\w+\s+with\b',
+            r'^[Ss]easoned professional\s+with\b',
+            r'^[Pp]assionate and dedicated\s+\w+\s+with\b',
+            r'^[Pp]roven track record\s+in\b',
+        ]:
+            s = re.sub(opener, 'Engineer with', s)
+        cleaned["summary"] = _clean_str(s)
+
+    if "experience" in cleaned and isinstance(cleaned["experience"], list):
+        for exp in cleaned["experience"]:
+            if isinstance(exp, dict) and "bullets" in exp:
+                exp["bullets"] = [_clean_str(b) for b in exp.get("bullets", []) if isinstance(b, str)]
+
+    return cleaned
+
+
 def run_researcher_phase(
     jd_text: str,
     company: str,
     role: str,
-    client: genai.Client,
+    client: Optional[genai.Client] = None,
+    missing_keywords: Optional[list[str]] = None,
+    keyword_contexts: Optional[dict[str, str]] = None,
 ) -> dict[str, Any]:
     """
     Role 1: Researcher.
-    Converts raw JD into an ordered, evidence-anchored requirement rubric.
+    Converts raw JD and keyword contexts into an atomic requirement rubric locally (0 API calls).
+    Preserves 100% of user API calls and RPM limits for the Writer phase.
     """
-    system_prompt = """You are the specialized Researcher in the multi-agent resume optimization team.
-Your task is to analyze the provided Job Description and convert it into an ordered, atomic requirement rubric.
+    hard_reqs = []
+    soft_reqs = []
+    if keyword_contexts:
+        for kw, ctx in keyword_contexts.items():
+            if ctx and len(ctx.strip()) > 8:
+                hard_reqs.append(ctx.strip())
+            else:
+                hard_reqs.append(f"Demonstrated experience with {kw}")
+    elif missing_keywords:
+        hard_reqs = [f"Hands-on experience with {kw}" for kw in missing_keywords[:10]]
 
-Distinguish between:
-1. "hard_requirements": Mandatory tools, years of experience, core cloud/database tech, critical degrees/certifications.
-2. "soft_requirements": Leadership, cross-functional collaboration, agile practices, domain knowledge.
-3. "key_buzzwords_and_acronyms": Technical acronyms and tool names that ATS parsers look for.
-
-Return strictly a JSON object:
-{
-  "role_title": "string",
-  "company_name": "string",
-  "hard_requirements": ["req1", "req2", ...],
-  "soft_requirements": ["req1", "req2", ...],
-  "key_buzzwords_and_acronyms": ["skill1", "skill2", ...]
-}"""
-
-    user_prompt = f"""TARGET ROLE: {role} at {company}
-
-JOB DESCRIPTION:
-{jd_text[:4000]}
-
-Extract the atomic rubric now as valid JSON."""
-
-    from gemini_client import get_candidate_models, record_model_failure, record_model_success
-    models = get_candidate_models()
-    for model_name in models:
-        try:
-            current_client = get_gemini_client()
-            response = current_client.models.generate_content(
-                model=model_name,
-                contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
-                config=types.GenerateContentConfig(temperature=0.2, top_p=0.85, max_output_tokens=4096),
-            )
-            record_model_success(model_name)
-            data = json.loads(_clean_json(response.text))
-            return data
-        except Exception as e:
-            record_model_failure(model_name, e)
-            print(f"[Dani's Engine - Researcher] {model_name} note: {e}")
-            if is_quota_error(e) or "503" in str(e) or "UNAVAILABLE" in str(e).upper():
-                keys = get_all_gemini_keys()
-                if len(keys) > 1:
-                    rotate_key(reason=f"Researcher Failover ({model_name})")
-            time.sleep(0.3)
+    if jd_text:
+        for line in jd_text.splitlines():
+            l_strip = line.strip().lstrip("-*• ")
+            if any(w in l_strip.lower() for w in ["collaborat", "lead", "communicat", "agile", "cross-functional", "mentor"]):
+                if 15 < len(l_strip) < 160 and l_strip not in soft_reqs:
+                    soft_reqs.append(l_strip)
+                    if len(soft_reqs) >= 4:
+                        break
 
     return {
         "role_title": role,
         "company_name": company,
-        "hard_requirements": [],
-        "soft_requirements": [],
-        "key_buzzwords_and_acronyms": []
+        "hard_requirements": hard_reqs[:10],
+        "soft_requirements": soft_reqs[:5],
+        "key_buzzwords_and_acronyms": missing_keywords or []
     }
 
 
@@ -212,13 +267,14 @@ Keywords & Tech: {json.dumps(missing_keywords)}
 {custom_section}
 
 MASTER RESUME:
-{json.dumps(base_resume, indent=2, ensure_ascii=False)}
+{json.dumps(base_resume, ensure_ascii=False, separators=(',', ':'))}
 
 Draft the optimized resume now as valid JSON."""
 
     from gemini_client import (
         is_key_invalid_error, mark_key_dead, get_active_key,
-        extract_retry_delay, get_candidate_models, record_model_failure, record_model_success
+        extract_retry_delay, get_candidate_models, record_model_failure, record_model_success,
+        extract_clean_text
     )
 
     last_err = None
@@ -227,52 +283,45 @@ Draft the optimized resume now as valid JSON."""
 
     for attempt in range(1, max_attempts + 1):
         models = get_candidate_models()
-        key_switched = False
         for model_name in models:
             try:
                 current_client = get_gemini_client()
                 response = current_client.models.generate_content(
                     model=model_name,
                     contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
-                    config=types.GenerateContentConfig(temperature=0.3, top_p=0.88, max_output_tokens=8192),
+                    config=get_standard_genai_config(model_name=model_name, max_output_tokens=4096, temperature=0.3),
                 )
+                raw_text = extract_clean_text(response)
+                if not raw_text:
+                    raise ValueError(f"Model {model_name} returned empty text or only thought tokens")
                 record_model_success(model_name)
-                return json.loads(_clean_json(response.text))
+                parsed = json.loads(_clean_json(raw_text))
+                return deterministic_voice_cleanup(parsed)
             except Exception as e:
                 last_err = e
                 record_model_failure(model_name, e)
                 err_str = str(e).upper()
                 print(f"[Dani's Engine - Writer] {model_name} note: {e}")
 
-                from gemini_client import is_key_invalid_error, mark_key_dead, get_active_key, extract_retry_delay
                 if is_key_invalid_error(e):
                     mark_key_dead(get_active_key(), reason="API key invalid")
                     if get_all_gemini_keys():
                         rotate_key(reason="Purged invalid key")
+                    break
+
+                if "404" in err_str or "NOT_FOUND" in err_str:
                     continue
 
-                keys = get_all_gemini_keys()
-                if is_quota_error(e) or "503" in err_str or "UNAVAILABLE" in err_str:
-                    if len(keys) > 1:
-                        rotate_key(reason=f"Writer Failover on {model_name}")
-                        print(f"[Dani's Engine - Writer] 503 / Quota on {model_name} -> Rotated to backup key!")
-                        key_switched = True
-                        break
-                    else:
-                        delay = extract_retry_delay(e)
-                        time.sleep(delay if is_quota_error(e) else 1.0)
-                else:
-                    time.sleep(0.3)
+                time.sleep(0.5)
 
-        if key_switched:
-            time.sleep(0.2)
-            continue
-
-        if attempt < max_attempts:
-            keys = get_all_gemini_keys()
-            if len(keys) > 1:
-                rotate_key(reason=f"Attempt {attempt} completed — rotating to fresh key for attempt {attempt+1}")
+        # If all models on the current active key failed, rotate to the backup key
+        keys = get_all_gemini_keys()
+        if len(keys) > 1:
+            rotate_key(reason=f"Attempt {attempt} models exhausted — rotating to backup key")
             time.sleep(1.0)
+        else:
+            delay = extract_retry_delay(last_err) if last_err else 5.0
+            time.sleep(min(delay, 8.0))
 
     raise RuntimeError(f"Writer failed across all models: {last_err}")
 
@@ -284,8 +333,15 @@ def run_editor_phase(
 ) -> dict[str, Any]:
     """
     Role 4: Editor.
-    Fixes only explicit audit findings (replaces cliché openers, shortens summary, eliminates banned words).
+    Fixes audit findings. First applies deterministic regex replacements (0 API calls).
+    Only calls LLM if unresolvable findings remain.
     """
+    cleaned_draft = deterministic_voice_cleanup(draft_resume)
+    re_audit = audit_resume_dict(cleaned_draft)
+    if re_audit.get("passed") or not re_audit.get("findings"):
+        print(f"[Dani's Engine - Editor] Deterministic regex cleanup resolved all audit findings! (0 API calls burned)")
+        return cleaned_draft
+
     system_prompt = """You are the Editor in Dani's Multi-Agent Resume Team.
 The Auditor has flagged specific human-voice / AI-tell findings in the draft resume.
 Your task is to fix ONLY the flagged lines while preserving all facts, numbers, tools, and experiences.
@@ -297,14 +353,14 @@ Shorten overlong sentences to under 24 words.
 Return the fully corrected resume as valid JSON."""
 
     user_prompt = f"""AUDITOR FINDINGS TO FIX:
-{json.dumps(audit_findings, indent=2)}
+{json.dumps(re_audit.get('findings', audit_findings), indent=2)}
 
 DRAFT RESUME TO EDIT:
-{json.dumps(draft_resume, indent=2, ensure_ascii=False)}
+{json.dumps(cleaned_draft, ensure_ascii=False, separators=(',', ':'))}
 
 Return the corrected JSON now."""
 
-    from gemini_client import get_candidate_models, record_model_failure, record_model_success
+    from gemini_client import get_candidate_models, record_model_failure, record_model_success, extract_clean_text
     models = get_candidate_models()
     for model_name in models:
         try:
@@ -312,10 +368,13 @@ Return the corrected JSON now."""
             response = current_client.models.generate_content(
                 model=model_name,
                 contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
-                config=types.GenerateContentConfig(temperature=0.2, top_p=0.85, max_output_tokens=8192),
+                config=get_standard_genai_config(model_name=model_name, max_output_tokens=4096, temperature=0.2),
             )
+            raw_text = extract_clean_text(response)
+            if not raw_text:
+                continue
             record_model_success(model_name)
-            return json.loads(_clean_json(response.text))
+            return json.loads(_clean_json(raw_text))
         except Exception as e:
             record_model_failure(model_name, e)
             print(f"[Dani's Engine - Editor] {model_name} note: {e}")
@@ -325,7 +384,7 @@ Return the corrected JSON now."""
                     rotate_key(reason=f"Editor Failover ({model_name})")
             time.sleep(0.3)
 
-    return draft_resume
+    return cleaned_draft
 
 
 def execute_danis_engine_pipeline(
@@ -354,9 +413,12 @@ def execute_danis_engine_pipeline(
 
     client = get_gemini_client()
 
-    # Step 1: Researcher Phase
+    # Step 1: Researcher Phase (Deterministic & local - preserves 100% quota for Writer)
     log(4, "Dani's Researcher", "Extracting atomic hard & soft requirements from JD...", status="working")
-    research_rubric = run_researcher_phase(jd_text, company, role, client)
+    research_rubric = run_researcher_phase(
+        jd_text, company, role, client,
+        missing_keywords=missing_keywords, keyword_contexts=keyword_contexts
+    )
     log(4, "Dani's Researcher", f"Extracted {len(research_rubric.get('hard_requirements', []))} hard requirements.", status="success")
 
     # Step 2: Writer Phase (Rules 0-16)
