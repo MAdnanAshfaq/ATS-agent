@@ -827,7 +827,7 @@ ORIGINAL TEXT:
 {text}"""
 
         def _call_humanizer(client):
-            for m in ["gemini-3-flash-preview", "gemini-3.6-flash", "gemini-3.5-flash"]:
+            for m in ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.5-flash", "gemini-2.5-pro"]:
                 try:
                     response = client.models.generate_content(
                         model=m,
@@ -991,7 +991,7 @@ def gemini_key_health():
             try:
                 test_client = genai.Client(api_key=key)
                 last_ping_err = None
-                for pm in ("gemini-3-flash-preview", "gemini-3.6-flash", "gemini-3.5-flash"):
+                for pm in ("gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.5-flash"):
                     try:
                         test_client.models.generate_content(
                             model=pm,

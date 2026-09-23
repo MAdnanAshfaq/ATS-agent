@@ -67,7 +67,7 @@ JOB DESCRIPTION:
 
 Extract the atomic rubric now as valid JSON."""
 
-    models = ["gemini-3-flash-preview", "gemini-3.6-flash", "gemini-3.5-flash"]
+    models = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.5-flash", "gemini-2.5-pro"]
     for model_name in models:
         try:
             current_client = get_gemini_client()
@@ -84,7 +84,7 @@ Extract the atomic rubric now as valid JSON."""
                 keys = get_all_gemini_keys()
                 if len(keys) > 1:
                     rotate_key(reason=f"Researcher Quota Limit ({model_name})")
-            time.sleep(1)
+            time.sleep(0.5)
 
     return {
         "role_title": role,
@@ -103,7 +103,7 @@ def run_writer_phase(
     role: str,
     custom_bullets: str,
     client: genai.Client,
-    model_name: str = "gemini-3-flash-preview",
+    model_name: str = "gemini-2.5-flash",
     keyword_contexts: Optional[dict[str, str]] = None,
 ) -> dict[str, Any]:
     """
@@ -213,7 +213,7 @@ MASTER RESUME:
 
 Draft the optimized resume now as valid JSON."""
 
-    models = ["gemini-3-flash-preview", "gemini-3.6-flash", "gemini-3.5-flash"]
+    models = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.5-flash", "gemini-2.5-pro"]
     last_err = None
     for attempt in range(1, 4):
         for model_name in models:
@@ -227,6 +227,7 @@ Draft the optimized resume now as valid JSON."""
                 return json.loads(_clean_json(response.text))
             except Exception as e:
                 last_err = e
+                err_str = str(e).upper()
                 print(f"[Dani's Engine - Writer] {model_name} note: {e}")
 
                 from gemini_client import is_key_invalid_error, mark_key_dead, get_active_key, extract_retry_delay
@@ -244,13 +245,20 @@ Draft the optimized resume now as valid JSON."""
                     else:
                         print(f"[Dani's Engine - Writer] RPM rate limit reached. Pausing {delay:.1f}s for window reset...")
                         time.sleep(delay)
+                elif "503" in err_str or "UNAVAILABLE" in err_str:
+                    print(f"[Dani's Engine - Writer] {model_name} experiencing high demand (503). Trying next model in cascade...")
+                    time.sleep(0.3)
                 else:
                     time.sleep(1)
 
-        if attempt < 3 and is_quota_error(last_err):
-            delay = extract_retry_delay(last_err)
-            print(f"[Dani's Engine - Writer] Momentary rate limit hit. Waiting {delay:.1f}s for RPM window to reset (attempt {attempt}/3)...")
-            time.sleep(delay)
+        if attempt < 3:
+            if is_quota_error(last_err):
+                delay = extract_retry_delay(last_err)
+                print(f"[Dani's Engine - Writer] Rate limit hit. Waiting {delay:.1f}s (attempt {attempt}/3)...")
+                time.sleep(delay)
+            elif "503" in str(last_err).upper() or "UNAVAILABLE" in str(last_err).upper():
+                print(f"[Dani's Engine - Writer] High demand spike across models. Pausing 2s before retry (attempt {attempt}/3)...")
+                time.sleep(2.0)
 
     raise RuntimeError(f"Writer failed across all models: {last_err}")
 
@@ -282,7 +290,7 @@ DRAFT RESUME TO EDIT:
 
 Return the corrected JSON now."""
 
-    models = ["gemini-3-flash-preview", "gemini-3.6-flash", "gemini-3.5-flash"]
+    models = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.5-flash", "gemini-2.5-pro"]
     for model_name in models:
         try:
             current_client = get_gemini_client()
@@ -298,7 +306,7 @@ Return the corrected JSON now."""
                 keys = get_all_gemini_keys()
                 if len(keys) > 1:
                     rotate_key(reason=f"Editor Quota Limit ({model_name})")
-            time.sleep(1)
+            time.sleep(0.5)
 
     return draft_resume
 
