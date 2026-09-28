@@ -3675,12 +3675,16 @@ function previewMasterResume() {
   openPreviewModal("master_resume", "Master Resume Profile", "Authentic Candidate Base Profile");
 }
 
-// Close preview modal on ESC
+// Close preview or password modal on ESC
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     const pModal = document.getElementById("resume-preview-modal");
     if (pModal && pModal.style.display === "flex") {
       closePreviewModal();
+    }
+    const pwModal = document.getElementById("change-password-modal");
+    if (pwModal && pwModal.style.display === "flex") {
+      closePasswordModal();
     }
   }
 });
@@ -5152,6 +5156,165 @@ if (document.readyState === "loading") {
 } else {
   initAtsSplash();
 }
+
+/* ── Change Password Modal Handlers ─────────────────────────────────────── */
+function openPasswordModal() {
+  const modal = document.getElementById("change-password-modal");
+  if (!modal) return;
+  const currInput = document.getElementById("curr-pass-input");
+  const newInput = document.getElementById("new-pass-input");
+  const confirmInput = document.getElementById("confirm-pass-input");
+  const errBox = document.getElementById("change-pass-error");
+  const succBox = document.getElementById("change-pass-success");
+
+  if (currInput) currInput.value = "";
+  if (newInput) newInput.value = "";
+  if (confirmInput) confirmInput.value = "";
+  if (errBox) errBox.style.display = "none";
+  if (succBox) succBox.style.display = "none";
+
+  modal.style.display = "flex";
+  setTimeout(() => {
+    if (currInput) currInput.focus();
+  }, 100);
+}
+
+function closePasswordModal() {
+  const modal = document.getElementById("change-password-modal");
+  if (modal) modal.style.display = "none";
+}
+
+function togglePasswordVisibility(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  const icon = btn.querySelector("i");
+  if (input.type === "password") {
+    input.type = "text";
+    if (icon) {
+      icon.className = "fa-regular fa-eye-slash";
+    }
+  } else {
+    input.type = "password";
+    if (icon) {
+      icon.className = "fa-regular fa-eye";
+    }
+  }
+}
+
+async function submitChangePassword() {
+  const currInput = document.getElementById("curr-pass-input");
+  const newInput = document.getElementById("new-pass-input");
+  const confirmInput = document.getElementById("confirm-pass-input");
+  const errBox = document.getElementById("change-pass-error");
+  const errText = document.getElementById("change-pass-error-text");
+  const succBox = document.getElementById("change-pass-success");
+  const submitBtn = document.getElementById("change-pass-submit-btn");
+  const submitIcon = document.getElementById("change-pass-submit-icon");
+  const submitText = document.getElementById("change-pass-submit-text");
+
+  const currentPassword = currInput ? currInput.value : "";
+  const newPassword = newInput ? newInput.value : "";
+  const confirmPassword = confirmInput ? confirmInput.value : "";
+
+  if (errBox) errBox.style.display = "none";
+  if (succBox) succBox.style.display = "none";
+
+  if (!currentPassword) {
+    if (errBox && errText) {
+      errText.textContent = "Please enter your current password.";
+      errBox.style.display = "block";
+    }
+    if (currInput) currInput.focus();
+    return;
+  }
+
+  if (!newPassword) {
+    if (errBox && errText) {
+      errText.textContent = "Please enter a new password.";
+      errBox.style.display = "block";
+    }
+    if (newInput) newInput.focus();
+    return;
+  }
+
+  if (newPassword.length < 6) {
+    if (errBox && errText) {
+      errText.textContent = "New password must be at least 6 characters long.";
+      errBox.style.display = "block";
+    }
+    if (newInput) newInput.focus();
+    return;
+  }
+
+  if (newPassword !== confirmPassword) {
+    if (errBox && errText) {
+      errText.textContent = "New passwords do not match. Please verify.";
+      errBox.style.display = "block";
+    }
+    if (confirmInput) confirmInput.focus();
+    return;
+  }
+
+  // Set loading state
+  if (submitBtn) submitBtn.disabled = true;
+  if (submitIcon) submitIcon.className = "fa-solid fa-spinner fa-spin";
+  if (submitText) submitText.textContent = "Updating...";
+
+  try {
+    const res = await fetch("/api/change_password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        current_password: currentPassword,
+        new_password: newPassword,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok && data.success) {
+      if (succBox) succBox.style.display = "block";
+      if (typeof showToast === "function") {
+        showToast("Password updated successfully!", "success");
+      }
+      if (currInput) currInput.value = "";
+      if (newInput) newInput.value = "";
+      if (confirmInput) confirmInput.value = "";
+
+      setTimeout(() => {
+        closePasswordModal();
+      }, 1200);
+    } else {
+      const msg = data.error || data.message || "Failed to update password. Please check your current password.";
+      if (errBox && errText) {
+        errText.textContent = msg;
+        errBox.style.display = "block";
+      }
+      if (typeof showToast === "function") {
+        showToast(msg, "error");
+      }
+    }
+  } catch (err) {
+    const msg = `Network error: ${err.message}`;
+    if (errBox && errText) {
+      errText.textContent = msg;
+      errBox.style.display = "block";
+    }
+    if (typeof showToast === "function") {
+      showToast(msg, "error");
+    }
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+    if (submitIcon) submitIcon.className = "fa-solid fa-key";
+    if (submitText) submitText.textContent = "Update Password";
+  }
+}
+
+// Ensure global attachment for inline event handlers
+window.openPasswordModal = openPasswordModal;
+window.closePasswordModal = closePasswordModal;
+window.togglePasswordVisibility = togglePasswordVisibility;
+window.submitChangePassword = submitChangePassword;
+
 
 
 

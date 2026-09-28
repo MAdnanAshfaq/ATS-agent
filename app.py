@@ -552,7 +552,7 @@ def api_me():
 @app.route("/api/change_password", methods=["POST"])
 @login_required
 def change_password():
-    data = request.json or {}
+    data = request.get_json(silent=True) or request.json or {}
     success, error = auth_module.change_password(
         current_user.username,
         data.get("current_password", ""),

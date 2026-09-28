@@ -38,6 +38,17 @@
       splash.style.pointerEvents = "none";
       setTimeout(function() { if (splash.parentNode) splash.parentNode.removeChild(splash); }, 600);
     }
+    /* Inline stubs: open/closePasswordModal prevents ReferenceError before app.js loads */
+    function openPasswordModal() {
+      var modal = document.getElementById("change-password-modal");
+      if (modal) modal.style.display = "flex";
+      var curr = document.getElementById("curr-pass-input");
+      if (curr) setTimeout(function() { curr.focus(); }, 50);
+    }
+    function closePasswordModal() {
+      var modal = document.getElementById("change-password-modal");
+      if (modal) modal.style.display = "none";
+    }
   </script>
 </head>
 <body>
@@ -1804,6 +1815,86 @@
           <span style="font-size: 13px; font-weight: 500;">Rendering formatted document...</span>
         </div>
         <iframe id="resume-preview-frame" style="width: 100%; height: 100%; border: none; background: #262935;" onload="if(typeof hidePreviewLoader==='function')hidePreviewLoader();" onerror="if(typeof hidePreviewLoader==='function')hidePreviewLoader();"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!-- CHANGE PASSWORD MODAL                                                  -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <div id="change-password-modal" class="modal-backdrop" style="display:none; position: fixed; inset: 0; background: rgba(5,7,12,0.85); backdrop-filter: blur(8px); z-index: 10001; align-items: center; justify-content: center; padding: 20px;" onclick="if(event.target === this) closePasswordModal();">
+    <div class="modal-card" style="background: var(--surface-card); border: 1px solid var(--border-base); border-radius: var(--r-lg); width: 90%; max-width: 460px; box-shadow: var(--shadow-xl); overflow: hidden; animation: modalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);">
+      <div class="modal-header" style="border-bottom: 1px solid var(--border-base); padding: 16px 22px; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="width: 38px; height: 38px; border-radius: var(--r-md); background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.35); display: flex; align-items: center; justify-content: center; color: #a855f7; font-size: 16px;">
+            <i class="fa-solid fa-key"></i>
+          </div>
+          <div>
+            <h3 style="margin: 0; font-size: 15px; font-weight: 700; color: var(--t0);">Change Password</h3>
+            <p style="margin: 2px 0 0; font-size: 11.5px; color: var(--t2);">Update your account login credentials</p>
+          </div>
+        </div>
+        <button type="button" class="btn-icon-subtle" onclick="closePasswordModal()" style="font-size: 15px;" title="Close">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="modal-body" style="padding: 22px; display: flex; flex-direction: column; gap: 16px;">
+        <!-- Status / Alert Banners -->
+        <div id="change-pass-error" style="display:none; color: #f87171; font-size: 12.5px; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 10px 14px; line-height: 1.45;">
+          <i class="fa-solid fa-circle-exclamation" style="margin-right: 6px;"></i>
+          <span id="change-pass-error-text"></span>
+        </div>
+
+        <div id="change-pass-success" style="display:none; color: #34d399; font-size: 12.5px; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 10px 14px; line-height: 1.45;">
+          <i class="fa-solid fa-circle-check" style="margin-right: 6px;"></i>
+          <span id="change-pass-success-text">Password updated successfully!</span>
+        </div>
+
+        <div>
+          <label class="form-label" style="font-size: 12px; margin-bottom: 6px; display:flex; align-items:center; gap:6px; color:var(--t1); font-weight:600;">
+            <i class="fa-solid fa-lock" style="color:var(--t2);"></i> Current Password
+          </label>
+          <div style="position: relative;">
+            <input type="password" id="curr-pass-input" class="form-input" placeholder="Enter current password" style="width:100%; font-size:13px; padding-right: 38px;" autocomplete="current-password" onkeydown="if(event.key==='Enter') submitChangePassword();">
+            <button type="button" onclick="togglePasswordVisibility('curr-pass-input', this)" style="position: absolute; right: 6px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: var(--t2); cursor: pointer; padding: 6px; font-size: 13px;" title="Show/hide password" aria-label="Show or hide password">
+              <i class="fa-regular fa-eye"></i>
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label class="form-label" style="font-size: 12px; margin-bottom: 6px; display:flex; align-items:center; gap:6px; color:var(--t1); font-weight:600;">
+            <i class="fa-solid fa-shield-halved" style="color: #a855f7;"></i> New Password
+          </label>
+          <div style="position: relative;">
+            <input type="password" id="new-pass-input" class="form-input" placeholder="At least 6 characters" style="width:100%; font-size:13px; padding-right: 38px;" autocomplete="new-password" onkeydown="if(event.key==='Enter') submitChangePassword();">
+            <button type="button" onclick="togglePasswordVisibility('new-pass-input', this)" style="position: absolute; right: 6px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: var(--t2); cursor: pointer; padding: 6px; font-size: 13px;" title="Show/hide password" aria-label="Show or hide password">
+              <i class="fa-regular fa-eye"></i>
+            </button>
+          </div>
+          <div style="font-size: 11px; color: var(--t2); margin-top: 4px;">Must be at least 6 characters long.</div>
+        </div>
+
+        <div>
+          <label class="form-label" style="font-size: 12px; margin-bottom: 6px; display:flex; align-items:center; gap:6px; color:var(--t1); font-weight:600;">
+            <i class="fa-solid fa-check-double" style="color:var(--ok);"></i> Confirm New Password
+          </label>
+          <div style="position: relative;">
+            <input type="password" id="confirm-pass-input" class="form-input" placeholder="Re-enter new password" style="width:100%; font-size:13px; padding-right: 38px;" autocomplete="new-password" onkeydown="if(event.key==='Enter') submitChangePassword();">
+            <button type="button" onclick="togglePasswordVisibility('confirm-pass-input', this)" style="position: absolute; right: 6px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: var(--t2); cursor: pointer; padding: 6px; font-size: 13px;" title="Show/hide password" aria-label="Show or hide password">
+              <i class="fa-regular fa-eye"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="border-top: 1px solid var(--border-base); padding: 14px 22px; display: flex; justify-content: flex-end; gap: 10px;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="closePasswordModal()">Cancel</button>
+        <button type="button" id="change-pass-submit-btn" class="btn btn-primary btn-sm" onclick="submitChangePassword()" style="background: linear-gradient(135deg, #7c3aed, #a855f7); color: #fff; border: none; font-weight: 600; padding: 8px 16px; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;">
+          <i class="fa-solid fa-key" id="change-pass-submit-icon"></i>
+          <span id="change-pass-submit-text">Update Password</span>
+        </button>
       </div>
     </div>
   </div>
