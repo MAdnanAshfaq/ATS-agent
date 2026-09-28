@@ -741,7 +741,7 @@
     const file = document.getElementById('resume-upload').files[0];
 
     let ok = true;
-    if (!email || !email.includes('@')) {
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       document.getElementById('email-error').classList.add('show');
       ok = false;
     } else {

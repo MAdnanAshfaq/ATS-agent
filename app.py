@@ -2088,7 +2088,18 @@ def analyze_job():
             if val:
                 os.environ[k] = val
 
-        base_resume = load_base_resume(str(get_user_resume_path()))
+        # Pre-check: ensure user has uploaded a resume before analysis
+        user_resume_path = get_user_resume_path()
+        has_resume_in_db = False
+        if db_layer.is_db_available():
+            has_resume_in_db = db_layer.db_has_resume(current_user.username)
+        if not has_resume_in_db and not user_resume_path.exists():
+            return jsonify({
+                "success": False,
+                "error": "Please upload your resume first in the Setup tab before analyzing a job."
+            }), 400
+
+        base_resume = load_base_resume(str(user_resume_path))
 
         # Initialize default analysis variables to guarantee scope safety
         missing_keywords = []

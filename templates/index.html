@@ -28,6 +28,16 @@
       var loader = document.getElementById("preview-loader");
       if (loader) loader.style.display = "none";
     }
+    /* Inline stub: dismissAtsSplash is fully defined in app.js (loaded at end of body).
+       This lightweight stub prevents "ReferenceError: dismissAtsSplash is not defined"
+       if the user clicks the splash overlay before app.js has finished loading. */
+    function dismissAtsSplash() {
+      var splash = document.getElementById("ats-app-splash");
+      if (!splash) return;
+      splash.style.opacity = "0";
+      splash.style.pointerEvents = "none";
+      setTimeout(function() { if (splash.parentNode) splash.parentNode.removeChild(splash); }, 600);
+    }
   </script>
 </head>
 <body>

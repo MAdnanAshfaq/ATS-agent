@@ -255,8 +255,8 @@ def register_user(email: str, password: str, display_name: str = "") -> tuple:
     Returns (User, error_message). On success, error_message is None.
     """
     email = email.strip().lower()
-    if not email or "@" not in email:
-        return None, "Please enter a valid email address."
+    if not email or not re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', email):
+        return None, "Please enter a valid email address (e.g. you@example.com)."
     if len(password) < 6:
         return None, "Password must be at least 6 characters."
 
