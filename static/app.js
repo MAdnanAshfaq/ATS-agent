@@ -78,6 +78,17 @@ function switchTab(tabId, updateHash = true) {
     } catch (e) {}
   }
 
+  const floatBar = document.getElementById("history-floating-action-bar");
+  if (floatBar) {
+    if (tabId === "history" && typeof selectedHistoryFiles !== "undefined" && selectedHistoryFiles.size > 0) {
+      floatBar.style.display = "block";
+      requestAnimationFrame(() => floatBar.classList.remove("hidden"));
+    } else {
+      floatBar.classList.add("hidden");
+      setTimeout(() => { if (floatBar.classList.contains("hidden")) floatBar.style.display = "none"; }, 200);
+    }
+  }
+
   if (tabId === "history") loadHistory();
   if (tabId === "setup") checkSystemHealth();
 }
@@ -177,6 +188,9 @@ function isNewResumeReady() {
 }
 
 function isAnyModalOpen() {
+  const confirmModal = document.getElementById("system-confirm-modal");
+  if (confirmModal && confirmModal.style.display === "flex") return true;
+
   const previewModal = document.getElementById("resume-preview-modal");
   if (previewModal && previewModal.style.display === "flex") return true;
 
@@ -193,6 +207,124 @@ function isAnyModalOpen() {
   if (historyModal && historyModal.style.display === "flex") return true;
 
   return false;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// BESPOKE SYSTEM CONFIRMATION & DIALOG CONTROLLER (REPLACES NATIVE ALERTS)
+// ════════════════════════════════════════════════════════════════════════════
+let _systemConfirmResolver = null;
+
+function showSystemConfirm(options = {}) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById("system-confirm-modal");
+    const card = document.getElementById("system-dialog-card");
+    const titleEl = document.getElementById("system-dialog-title");
+    const msgEl = document.getElementById("system-dialog-message");
+    const noteEl = document.getElementById("system-dialog-note");
+    const noteText = document.getElementById("system-dialog-note-text");
+    const iconWrap = document.getElementById("system-dialog-icon-wrap");
+    const iconEl = document.getElementById("system-dialog-icon");
+    const confirmBtn = document.getElementById("system-dialog-confirm-btn");
+    const confirmIcon = document.getElementById("system-dialog-confirm-icon");
+    const confirmText = document.getElementById("system-dialog-confirm-text");
+    const cancelBtn = document.getElementById("system-dialog-cancel-btn");
+    const badgeEl = document.getElementById("system-dialog-badge");
+
+    if (!modal) {
+      resolve(window.confirm(options.message || options.title || "Are you sure?"));
+      return;
+    }
+
+    _systemConfirmResolver = resolve;
+
+    const title = options.title || "Confirm Action";
+    const message = options.message || "Are you sure you want to proceed?";
+    const note = options.note || "";
+    const type = options.type || "danger";
+    const confirmLabel = options.confirmText || (type === "danger" ? "Delete" : "Confirm");
+    const cancelLabel = options.cancelText || "Cancel";
+    const isAlertOnly = !!options.isAlert;
+
+    if (titleEl) titleEl.textContent = title;
+    if (msgEl) {
+      msgEl.innerHTML = typeof message === "string" ? escapeHtml(message).replace(/\n/g, "<br>") : message;
+    }
+
+    if (note && noteEl && noteText) {
+      noteText.textContent = note;
+      noteEl.style.display = "flex";
+    } else if (noteEl) {
+      noteEl.style.display = "none";
+    }
+
+    if (card) card.className = `system-dialog-card glass-card type-${type}`;
+    if (iconWrap) iconWrap.className = `system-dialog-icon-wrap type-${type}`;
+
+    if (type === "danger") {
+      if (iconEl) iconEl.className = options.icon || "fa-solid fa-trash-can";
+      if (confirmBtn) confirmBtn.className = "btn btn-md system-dialog-confirm btn-danger-action";
+      if (confirmIcon) confirmIcon.className = "fa-solid fa-trash-can";
+      if (badgeEl) {
+        badgeEl.textContent = options.badgeText || "Permanent";
+        badgeEl.className = "system-dialog-badge badge-danger";
+        badgeEl.style.display = "inline-block";
+      }
+    } else if (type === "warning") {
+      if (iconEl) iconEl.className = options.icon || "fa-solid fa-triangle-exclamation";
+      if (confirmBtn) confirmBtn.className = "btn btn-md system-dialog-confirm btn-warning-action";
+      if (confirmIcon) confirmIcon.className = "fa-solid fa-triangle-exclamation";
+      if (badgeEl) {
+        badgeEl.textContent = options.badgeText || "Warning";
+        badgeEl.className = "system-dialog-badge badge-warning";
+        badgeEl.style.display = "inline-block";
+      }
+    } else {
+      if (iconEl) iconEl.className = options.icon || "fa-solid fa-circle-info";
+      if (confirmBtn) confirmBtn.className = "btn btn-md system-dialog-confirm btn-primary-action";
+      if (confirmIcon) confirmIcon.className = "fa-solid fa-check";
+      if (badgeEl) badgeEl.style.display = "none";
+    }
+
+    if (confirmText) confirmText.textContent = confirmLabel;
+    if (cancelBtn) {
+      cancelBtn.textContent = cancelLabel;
+      cancelBtn.style.display = isAlertOnly ? "none" : "inline-flex";
+    }
+
+    modal.style.display = "flex";
+    modal.classList.remove("hidden");
+
+    setTimeout(() => {
+      if (type === "danger" && cancelBtn && !isAlertOnly) {
+        cancelBtn.focus();
+      } else if (confirmBtn) {
+        confirmBtn.focus();
+      }
+    }, 60);
+  });
+}
+
+function showSystemAlert(options = {}) {
+  return showSystemConfirm({
+    ...options,
+    isAlert: true,
+    confirmText: options.okText || "OK"
+  });
+}
+
+function closeSystemConfirm(result = false) {
+  const modal = document.getElementById("system-confirm-modal");
+  if (modal) {
+    modal.classList.add("hidden");
+    setTimeout(() => {
+      modal.style.display = "none";
+    }, 160);
+  }
+  if (_systemConfirmResolver) {
+    const res = _systemConfirmResolver;
+    _systemConfirmResolver = null;
+    res(result);
+  }
 }
 
 let _scrollTroubleState = {
@@ -1194,6 +1326,18 @@ function toggleSelectAllHistory(isChecked) {
       selectedHistoryFiles.add(cb.dataset.filename);
     }
   });
+  const selectAllCb = document.getElementById("select-all-history-cb");
+  if (selectAllCb) selectAllCb.checked = isChecked;
+  updateHistoryToolbarUI();
+}
+
+function deselectAllHistory() {
+  selectedHistoryFiles.clear();
+  document.querySelectorAll(".history-item-cb").forEach(cb => {
+    cb.checked = false;
+  });
+  const selectAllCb = document.getElementById("select-all-history-cb");
+  if (selectAllCb) selectAllCb.checked = false;
   updateHistoryToolbarUI();
 }
 
@@ -1203,10 +1347,51 @@ function updateHistoryToolbarUI() {
   if (countElem) countElem.textContent = count;
   const btn = document.getElementById("bulk-delete-btn");
   if (btn) btn.disabled = (count === 0);
+
+  // Synchronize Floating Action Bar for Multi-Select History Operations
+  const floatBar = document.getElementById("history-floating-action-bar");
+  const floatCountText = document.getElementById("hfab-count-text");
+  const floatBtnCount = document.getElementById("hfab-btn-count");
+  const selectAllCb = document.getElementById("select-all-history-cb");
+  const floatSelectAllLabel = document.getElementById("hfab-select-all-label");
+
+  if (floatBar) {
+    if (count > 0) {
+      if (floatCountText) {
+        floatCountText.innerHTML = `<strong>${count}</strong> application${count === 1 ? "" : "s"} selected`;
+      }
+      if (floatBtnCount) {
+        floatBtnCount.textContent = count;
+      }
+      if (floatSelectAllLabel && selectAllCb) {
+        floatSelectAllLabel.textContent = selectAllCb.checked ? "Deselect All" : "Select All";
+      }
+      floatBar.style.display = "block";
+      requestAnimationFrame(() => {
+        floatBar.classList.remove("hidden");
+      });
+    } else {
+      floatBar.classList.add("hidden");
+      setTimeout(() => {
+        if (selectedHistoryFiles.size === 0) {
+          floatBar.style.display = "none";
+        }
+      }, 240);
+    }
+  }
 }
 
 async function deleteHistoryItem(filename) {
-  if (!confirm("Are you sure you want to permanently delete this application and hard delete its output folder from your computer?")) return;
+  const confirmed = await showSystemConfirm({
+    title: "Delete Application History?",
+    message: "Are you sure you want to permanently delete this application record?\nThis will hard delete its output folder and generated resume from your computer disk.",
+    note: "This action cannot be undone.",
+    confirmText: "Delete Application",
+    type: "danger",
+    icon: "fa-solid fa-trash-can"
+  });
+  if (!confirmed) return;
+
   try {
     const res = await fetch(`/api/history/${encodeURIComponent(filename)}`, {
       method: "DELETE",
@@ -1215,6 +1400,7 @@ async function deleteHistoryItem(filename) {
     if (data.success) {
       showToast("Application and folder permanently deleted from disk", "success");
       selectedHistoryFiles.delete(filename);
+      updateHistoryToolbarUI();
       loadHistory();
     } else {
       showToast(data.error || "Failed to delete item", "error");
@@ -1304,7 +1490,16 @@ async function saveEditHistory() {
 async function deleteSelectedHistoryBatch() {
   const count = selectedHistoryFiles.size;
   if (count === 0) return;
-  if (!confirm(`Are you sure you want to permanently delete ${count} selected applications and hard delete their output folders from your computer?`)) return;
+
+  const confirmed = await showSystemConfirm({
+    title: `Delete ${count} Selected Application${count === 1 ? "" : "s"}?`,
+    message: `You are about to permanently delete ${count} application record${count === 1 ? "" : "s"} and their generated output folders from your computer disk.`,
+    note: "All generated Word resumes, PDFs, and match score logs will be permanently deleted.",
+    confirmText: `Delete ${count} Application${count === 1 ? "" : "s"}`,
+    type: "danger",
+    icon: "fa-solid fa-trash-can"
+  });
+  if (!confirmed) return;
 
   const filenames = Array.from(selectedHistoryFiles);
   showToast(`Deleting ${count} history entries & folders...`, "info");
@@ -1319,6 +1514,7 @@ async function deleteSelectedHistoryBatch() {
     if (data.success) {
       showToast(data.message || `Deleted ${data.deleted_count} items cleanly!`, "success");
       selectedHistoryFiles.clear();
+      updateHistoryToolbarUI();
       loadHistory();
     } else {
       showToast(`Bulk delete failed: ${data.error}`, "error");
@@ -1329,7 +1525,16 @@ async function deleteSelectedHistoryBatch() {
 }
 
 async function confirmClearAllHistory() {
-  if (!confirm("⚠️ PERMANENT HARD DELETE:\nAre you sure you want to delete ALL application history and remove all generated application folders from your computer? This cannot be undone.")) return;
+  const confirmed = await showSystemConfirm({
+    title: "Clear ALL Application History?",
+    message: "Are you sure you want to permanently delete ALL application records and remove all generated application folders from your computer?",
+    note: "⚠️ PERMANENT HARD DELETE: This will remove every generated resume, PDF, and application log. This cannot be undone.",
+    confirmText: "Wipe All History",
+    type: "danger",
+    icon: "fa-solid fa-dumpster-fire"
+  });
+  if (!confirmed) return;
+
   try {
     const res = await fetch("/api/history/clear_all", {
       method: "POST"
@@ -1338,6 +1543,7 @@ async function confirmClearAllHistory() {
     if (data.success) {
       showToast(data.message || "All history and folders deleted from disk.", "success");
       selectedHistoryFiles.clear();
+      updateHistoryToolbarUI();
       loadHistory();
     } else {
       showToast(data.error || "Failed to clear history", "error");
@@ -2209,7 +2415,15 @@ async function uploadMasterResumeFile(event) {
 }
 
 async function deleteCurrentResume() {
-  if (!confirm("Are you sure you want to delete your Master Resume? You will need to upload a new one before generating applications.")) return;
+  const confirmed = await showSystemConfirm({
+    title: "Delete Master Resume?",
+    message: "Are you sure you want to delete your Master Resume from the system?",
+    note: "You will need to upload or paste a new master resume before generating future applications.",
+    confirmText: "Delete Master Resume",
+    type: "danger",
+    icon: "fa-solid fa-file-excel"
+  });
+  if (!confirmed) return;
 
   try {
     const res = await fetch("/api/delete_resume", { method: "DELETE" });
@@ -2223,27 +2437,6 @@ async function deleteCurrentResume() {
     }
   } catch (err) {
     showToast(`Error deleting resume: ${err.message}`, "error");
-  }
-}
-
-
-
-async function deleteHistoryItem(filename) {
-  if (!confirm("Are you sure you want to delete this test application from your history and computer?")) return;
-
-  try {
-    const res = await fetch(`/api/history/${encodeURIComponent(filename)}`, {
-      method: "DELETE"
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast("History entry deleted cleanly!", "success");
-      loadHistory();
-    } else {
-      showToast(`Delete failed: ${data.error}`, "error");
-    }
-  } catch (err) {
-    showToast(`Error deleting history entry: ${err.message}`, "error");
   }
 }
 
@@ -4524,8 +4717,27 @@ function previewMasterResume() {
   openPreviewModal("master_resume", "Master Resume Profile", "Authentic Candidate Base Profile");
 }
 
-// Close preview or password modal or compass on ESC, Save preview edits on Ctrl+S, Open Compass on Ctrl+G
+// Close preview or password modal or compass or system dialog on ESC, Save preview edits on Ctrl+S, Open Compass on Ctrl+G
 document.addEventListener("keydown", (e) => {
+  // Handle Bespoke System Confirm Modal with Enter / Escape
+  const sysModal = document.getElementById("system-confirm-modal");
+  if (sysModal && sysModal.style.display === "flex") {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeSystemConfirm(false);
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (document.activeElement && document.activeElement.id === "system-dialog-cancel-btn") {
+        closeSystemConfirm(false);
+      } else {
+        closeSystemConfirm(true);
+      }
+      return;
+    }
+  }
+
   // If Quick Scroll Compass is open
   if (typeof _scrollCompassState !== "undefined" && _scrollCompassState.isOpen) {
     if (e.key === "Escape") {
@@ -4557,6 +4769,15 @@ document.addEventListener("keydown", (e) => {
   }
 
   if (e.key === "Escape") {
+    // If in history with active selections, Escape deselects all
+    if (typeof selectedHistoryFiles !== "undefined" && selectedHistoryFiles.size > 0) {
+      const activeTab = document.querySelector(".nav-tab.active");
+      if (activeTab && activeTab.dataset.tab === "history") {
+        deselectAllHistory();
+        return;
+      }
+    }
+
     const pModal = document.getElementById("resume-preview-modal");
     if (pModal && pModal.style.display === "flex") {
       closePreviewModal();

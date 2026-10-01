@@ -1022,6 +1022,31 @@
           <p>Run your first application from the New Application tab!</p>
         </div>
       </div>
+
+      <!-- ── FLOATING STICKY ACTION BAR FOR MULTI-SELECT HISTORY ──────────────── -->
+      <div id="history-floating-action-bar" class="history-floating-action-bar hidden" style="display:none;" role="region" aria-label="Selected history actions">
+        <div class="hfab-inner">
+          <div class="hfab-left">
+            <div class="hfab-badge">
+              <i class="fa-solid fa-square-check"></i>
+              <span id="hfab-count-text"><strong>1</strong> Selected</span>
+            </div>
+            <button type="button" class="hfab-btn-ghost" id="hfab-select-all-btn" onclick="toggleSelectAllHistory(!document.getElementById('select-all-history-cb').checked)">
+              <i class="fa-solid fa-list-check"></i>
+              <span id="hfab-select-all-label">Select All</span>
+            </button>
+          </div>
+          <div class="hfab-right">
+            <button type="button" class="hfab-btn-danger" id="hfab-delete-btn" onclick="deleteSelectedHistoryBatch()">
+              <i class="fa-solid fa-trash-can"></i>
+              <span>Delete Selected (<span id="hfab-btn-count">1</span>)</span>
+            </button>
+            <button type="button" class="hfab-btn-close" onclick="deselectAllHistory()" title="Clear Selection (Esc)" aria-label="Clear selection">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- ── TAB 3: PREREQUISITES & SETUP ──────────────────────────────────── -->
@@ -2053,6 +2078,44 @@
         <button type="button" id="change-pass-submit-btn" class="btn btn-primary btn-sm" onclick="submitChangePassword()" style="background: linear-gradient(135deg, #7c3aed, #a855f7); color: #fff; border: none; font-weight: 600; padding: 8px 16px; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;">
           <i class="fa-solid fa-key" id="change-pass-submit-icon"></i>
           <span id="change-pass-submit-text">Update Password</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── BESPOKE SYSTEM CONFIRMATION MODAL (REPLACES BROWSER CONFIRM/ALERT) ── -->
+  <div id="system-confirm-modal" class="modal-backdrop system-dialog-overlay" style="display:none; position: fixed; inset: 0; background: rgba(5,7,12,0.85); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); z-index: 10005; align-items: center; justify-content: center; padding: 20px;" onclick="if(event.target === this) closeSystemConfirm(false);">
+    <div class="system-dialog-card glass-card" id="system-dialog-card">
+      <div class="system-dialog-header">
+        <div class="system-dialog-icon-wrap type-danger" id="system-dialog-icon-wrap">
+          <i class="fa-solid fa-trash-can" id="system-dialog-icon"></i>
+        </div>
+        <div class="system-dialog-heading">
+          <h3 id="system-dialog-title">Confirm Action</h3>
+          <span class="system-dialog-badge badge-danger" id="system-dialog-badge" style="display:none;">Action Required</span>
+        </div>
+        <button type="button" class="btn-icon-subtle system-dialog-close" id="system-dialog-close-btn" onclick="closeSystemConfirm(false)" title="Dismiss (Esc)" aria-label="Close dialog">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="system-dialog-body">
+        <div id="system-dialog-message" class="system-dialog-message">
+          Are you sure you want to proceed?
+        </div>
+        <div id="system-dialog-note" class="system-dialog-note" style="display:none;">
+          <i class="fa-solid fa-circle-exclamation"></i>
+          <span id="system-dialog-note-text"></span>
+        </div>
+      </div>
+
+      <div class="system-dialog-footer">
+        <button type="button" class="btn btn-secondary btn-md system-dialog-cancel" id="system-dialog-cancel-btn" onclick="closeSystemConfirm(false)">
+          Cancel
+        </button>
+        <button type="button" class="btn btn-md system-dialog-confirm btn-danger-action" id="system-dialog-confirm-btn" onclick="closeSystemConfirm(true)">
+          <i class="fa-solid fa-trash-can" id="system-dialog-confirm-icon"></i>
+          <span id="system-dialog-confirm-text">Confirm</span>
         </button>
       </div>
     </div>
