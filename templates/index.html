@@ -2068,6 +2068,116 @@
       <i class="fa-solid fa-arrow-up"></i>
       <span class="btn-back-to-top-tooltip">Back to Top</span>
     </button>
+    <button type="button" id="compass-nav-trigger-btn" class="btn-back-to-top" onclick="openScrollCompass(event.clientX, event.clientY)" title="Quick Navigator (Ctrl+G)" aria-label="Quick Navigator" style="margin-top: 6px; border-color: rgba(56, 189, 248, 0.35); color: var(--cyan);">
+      <i class="fa-solid fa-compass"></i>
+      <span class="btn-back-to-top-tooltip">Quick Jump (Ctrl+G)</span>
+    </button>
+  </div>
+
+  <!-- ── SMART CURSOR QUICK NAVIGATOR POPUP (SCROLL COMPASS) ──────────────── -->
+  <div id="quick-scroll-compass" class="quick-scroll-compass hidden" style="display:none;" role="dialog" aria-label="Quick Navigator">
+    <div class="compass-backdrop" onclick="closeScrollCompass()"></div>
+    <div class="compass-card" id="compass-card">
+      <div class="compass-header">
+        <div class="compass-title-wrap">
+          <div class="compass-icon"><i class="fa-solid fa-compass"></i></div>
+          <div>
+            <div class="compass-title">Quick Navigator</div>
+            <div class="compass-subtitle">Where would you like to jump?</div>
+          </div>
+        </div>
+        <button type="button" class="compass-close-btn" onclick="closeScrollCompass()" title="Dismiss (Esc)">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="compass-grid">
+        <!-- 1. Tailor / Job Inputs -->
+        <button type="button" class="compass-item" onclick="compassNavigate('job-inputs')">
+          <div class="compass-item-icon" style="color: #38bdf8;"><i class="fa-solid fa-bullseye"></i></div>
+          <div class="compass-item-text">
+            <span class="compass-item-label">Job Input &amp; URL</span>
+            <span class="compass-item-hint">Paste link or JD text</span>
+          </div>
+          <span class="compass-item-key">1</span>
+        </button>
+
+        <!-- 2. Resume Preview & Live Editor -->
+        <button type="button" class="compass-item" onclick="compassNavigate('preview')">
+          <div class="compass-item-icon" style="color: #a855f7;"><i class="fa-solid fa-file-pdf"></i></div>
+          <div class="compass-item-text">
+            <span class="compass-item-label">Resume Preview</span>
+            <span class="compass-item-hint">In-browser live editor</span>
+          </div>
+          <span class="compass-item-key">2</span>
+        </button>
+
+        <!-- 3. AI Refinement Copilot -->
+        <button type="button" class="compass-item" onclick="compassNavigate('refine')">
+          <div class="compass-item-icon" style="color: #f59e0b;"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+          <div class="compass-item-text">
+            <span class="compass-item-label">Refine Copilot</span>
+            <span class="compass-item-hint">Chips &amp; JD weaving</span>
+          </div>
+          <span class="compass-item-key">3</span>
+        </button>
+
+        <!-- 4. Cover Letter Generator -->
+        <button type="button" class="compass-item" onclick="compassNavigate('cover-letter')">
+          <div class="compass-item-icon" style="color: #10b981;"><i class="fa-solid fa-envelope-open-text"></i></div>
+          <div class="compass-item-text">
+            <span class="compass-item-label">Cover Letter</span>
+            <span class="compass-item-hint">Generate &amp; download</span>
+          </div>
+          <span class="compass-item-key">4</span>
+        </button>
+
+        <!-- 5. History & Past Runs -->
+        <button type="button" class="compass-item" onclick="compassNavigate('history')">
+          <div class="compass-item-icon" style="color: #3b82f6;"><i class="fa-solid fa-clock-rotate-left"></i></div>
+          <div class="compass-item-text">
+            <span class="compass-item-label">History &amp; Files</span>
+            <span class="compass-item-hint">Past resumes, .docx, .pdf</span>
+          </div>
+          <span class="compass-item-key">5</span>
+        </button>
+
+        <!-- 6. ATS Score & Diagnostics -->
+        <button type="button" class="compass-item" onclick="compassNavigate('results')">
+          <div class="compass-item-icon" style="color: #f43f5e;"><i class="fa-solid fa-chart-pie"></i></div>
+          <div class="compass-item-text">
+            <span class="compass-item-label">ATS Score &amp; Results</span>
+            <span class="compass-item-hint">Match score, gap diagnostics</span>
+          </div>
+          <span class="compass-item-key">6</span>
+        </button>
+
+        <!-- 7. Top of Page -->
+        <button type="button" class="compass-item" onclick="compassNavigate('top')">
+          <div class="compass-item-icon" style="color: #0284c7;"><i class="fa-solid fa-arrow-up"></i></div>
+          <div class="compass-item-text">
+            <span class="compass-item-label">Top of Page</span>
+            <span class="compass-item-hint">Scroll to top</span>
+          </div>
+          <span class="compass-item-key">7</span>
+        </button>
+
+        <!-- 8. Bottom / Terminal -->
+        <button type="button" class="compass-item" onclick="compassNavigate('bottom')">
+          <div class="compass-item-icon" style="color: #6366f1;"><i class="fa-solid fa-terminal"></i></div>
+          <div class="compass-item-text">
+            <span class="compass-item-label">Bottom / Console</span>
+            <span class="compass-item-hint">Scroll to bottom &amp; logs</span>
+          </div>
+          <span class="compass-item-key">8</span>
+        </button>
+      </div>
+
+      <div class="compass-footer">
+        <span><i class="fa-solid fa-keyboard"></i> Press <strong>1–8</strong> • <strong>Esc</strong> to close</span>
+        <span class="compass-dismiss-hint" onclick="muteScrollCompass(300)">Mute 5m</span>
+      </div>
+    </div>
   </div>
 
   <!-- ── UNIVERSAL LIVE CONSOLE LAUNCHER & DRAWER ────────────────────────── -->

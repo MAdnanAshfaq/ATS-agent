@@ -79,6 +79,7 @@ function scrollToTop() {
 
 function initScrollNavigation() {
   const backToTopBtn = document.getElementById("back-to-top-btn");
+  const compassTriggerBtn = document.getElementById("compass-nav-trigger-btn");
   const progressCircle = document.getElementById("scroll-progress-circle");
   const appHeader = document.querySelector(".app-header");
   const circumference = 106.81; // 2 * pi * 17
@@ -87,12 +88,14 @@ function initScrollNavigation() {
     const scrollY = window.scrollY || document.documentElement.scrollTop;
     const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
 
-    // Toggle Back to Top Button
+    // Toggle Back to Top & Compass Buttons
     if (backToTopBtn) {
       if (scrollY > 260) {
         backToTopBtn.classList.add("visible");
+        if (compassTriggerBtn) compassTriggerBtn.classList.add("visible");
       } else {
         backToTopBtn.classList.remove("visible");
+        if (compassTriggerBtn) compassTriggerBtn.classList.remove("visible");
       }
 
       // Update circular SVG progress indicator
@@ -115,6 +118,188 @@ function initScrollNavigation() {
 
   window.addEventListener("scroll", onScroll, { passive: true });
   onScroll();
+  initScrollCompassDetector();
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SMART CURSOR SCROLL COMPASS / QUICK NAVIGATOR CONTROLLER
+// ════════════════════════════════════════════════════════════════════════════
+
+let _scrollWheelTicks = [];
+let _lastCompassTrigger = 0;
+let _compassMutedUntil = 0;
+let _compassIsOpen = false;
+
+window._lastMouseX = window.innerWidth / 2;
+window._lastMouseY = window.innerHeight / 2;
+
+window.addEventListener("mousemove", (e) => {
+  window._lastMouseX = e.clientX;
+  window._lastMouseY = e.clientY;
+}, { passive: true });
+
+function isAnyModalOpen() {
+  const previewModal = document.getElementById("resume-preview-modal");
+  if (previewModal && previewModal.style.display === "flex") return true;
+
+  const liveEditModal = document.getElementById("live-edit-modal");
+  if (liveEditModal && liveEditModal.style.display === "flex") return true;
+
+  const clModal = document.getElementById("cover-letter-modal");
+  if (clModal && !clModal.classList.contains("hidden")) return true;
+
+  const pwModal = document.getElementById("change-password-modal");
+  if (pwModal && pwModal.style.display === "flex") return true;
+
+  const historyModal = document.getElementById("history-refine-modal");
+  if (historyModal && historyModal.style.display === "flex") return true;
+
+  return false;
+}
+
+function initScrollCompassDetector() {
+  function recordScrollTick() {
+    if (_compassIsOpen) return;
+
+    const now = Date.now();
+    if (now < _compassMutedUntil) return;
+    if (now - _lastCompassTrigger < 9000) return;
+
+    if (isAnyModalOpen()) return;
+    const activeEl = document.activeElement;
+    if (activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA" || activeEl.isContentEditable)) {
+      return;
+    }
+
+    _scrollWheelTicks = _scrollWheelTicks.filter(t => now - t < 1800);
+    _scrollWheelTicks.push(now);
+
+    // If user scrolled 6 times within 1.8 seconds
+    if (_scrollWheelTicks.length >= 6) {
+      _scrollWheelTicks = [];
+      _lastCompassTrigger = now;
+      openScrollCompass(window._lastMouseX, window._lastMouseY);
+    }
+  }
+
+  // Wheel scroll notches / trackpad gestures
+  window.addEventListener("wheel", (e) => {
+    if (Math.abs(e.deltaY) >= 6) {
+      recordScrollTick();
+    }
+  }, { passive: true });
+}
+
+function openScrollCompass(x, y) {
+  const compass = document.getElementById("quick-scroll-compass");
+  const card = document.getElementById("compass-card");
+  if (!compass || !card) return;
+
+  const mouseX = (typeof x === "number" && x > 0) ? x : window._lastMouseX || window.innerWidth / 2;
+  const mouseY = (typeof y === "number" && y > 0) ? y : window._lastMouseY || window.innerHeight / 2;
+
+  const cardW = 330;
+  const cardH = 340;
+  const pad = 16;
+
+  let left = mouseX + 12;
+  let top = mouseY + 12;
+
+  // Clamp within viewport
+  if (left + cardW > window.innerWidth - pad) {
+    left = mouseX - cardW - 12;
+  }
+  if (left < pad) left = pad;
+
+  if (top + cardH > window.innerHeight - pad) {
+    top = mouseY - cardH - 12;
+  }
+  if (top < pad) top = pad;
+
+  card.style.left = left + "px";
+  card.style.top = top + "px";
+
+  compass.style.display = "block";
+  compass.classList.remove("hidden");
+  _compassIsOpen = true;
+}
+
+function closeScrollCompass() {
+  const compass = document.getElementById("quick-scroll-compass");
+  if (!compass) return;
+  compass.classList.add("hidden");
+  setTimeout(() => {
+    compass.style.display = "none";
+  }, 180);
+  _compassIsOpen = false;
+}
+
+function muteScrollCompass(seconds = 300) {
+  _compassMutedUntil = Date.now() + (seconds * 1000);
+  closeScrollCompass();
+  showToast(`Quick Navigator muted for ${Math.round(seconds / 60)} minutes`, "info");
+}
+
+function compassNavigate(destination) {
+  closeScrollCompass();
+
+  function highlightAndScroll(el, focusEl) {
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("section-highlight-pulse");
+    setTimeout(() => el.classList.remove("section-highlight-pulse"), 1800);
+    if (focusEl && typeof focusEl.focus === "function") {
+      setTimeout(() => focusEl.focus(), 350);
+    }
+  }
+
+  switch (destination) {
+    case "job-inputs":
+      switchTab("new-app", true);
+      const urlInp = document.getElementById("url-input");
+      const jdCard = document.getElementById("jd-input-container") || document.querySelector(".job-input-card") || urlInp;
+      highlightAndScroll(jdCard, urlInp);
+      break;
+
+    case "preview":
+      previewCurrentResume();
+      break;
+
+    case "refine":
+      switchTab("new-app", true);
+      const refCard = document.getElementById("refine-copilot-card");
+      const refInp = document.getElementById("refine-instruction-input");
+      highlightAndScroll(refCard, refInp);
+      break;
+
+    case "cover-letter":
+      if (typeof openCurrentCoverLetter === "function") {
+        openCurrentCoverLetter();
+      } else if (typeof openCoverLetterModal === "function") {
+        openCoverLetterModal();
+      }
+      break;
+
+    case "history":
+      switchTab("history", true);
+      const histGrid = document.getElementById("history-grid");
+      highlightAndScroll(histGrid);
+      break;
+
+    case "results":
+      switchTab("new-app", true);
+      const resDash = document.getElementById("results-dashboard") || document.querySelector(".results-dashboard");
+      highlightAndScroll(resDash);
+      break;
+
+    case "top":
+      scrollToTop();
+      break;
+
+    case "bottom":
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
+      break;
+  }
 }
 
 function initHashSync() {
@@ -4092,8 +4277,48 @@ function previewMasterResume() {
   openPreviewModal("master_resume", "Master Resume Profile", "Authentic Candidate Base Profile");
 }
 
-// Close preview or password modal on ESC, Save preview edits on Ctrl+S
+// Close preview or password modal or compass on ESC, Save preview edits on Ctrl+S, Open Compass on Ctrl+G
 document.addEventListener("keydown", (e) => {
+  // If Quick Scroll Compass is open
+  if (_compassIsOpen) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeScrollCompass();
+      return;
+    }
+    const num = parseInt(e.key, 10);
+    if (!isNaN(num) && num >= 1 && num <= 8) {
+      e.preventDefault();
+      const destinations = [
+        "job-inputs",
+        "preview",
+        "refine",
+        "cover-letter",
+        "history",
+        "results",
+        "top",
+        "bottom"
+      ];
+      compassNavigate(destinations[num - 1]);
+      return;
+    }
+  }
+
+  // Ctrl+G / Cmd+G to open Quick Navigator manually
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "g" && !e.shiftKey) {
+    const activeEl = document.activeElement;
+    const isTyping = activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA" || activeEl.isContentEditable);
+    if (!isTyping && !isAnyModalOpen()) {
+      e.preventDefault();
+      if (_compassIsOpen) {
+        closeScrollCompass();
+      } else {
+        openScrollCompass(window._lastMouseX, window._lastMouseY);
+      }
+      return;
+    }
+  }
+
   if (e.key === "Escape") {
     const pModal = document.getElementById("resume-preview-modal");
     if (pModal && pModal.style.display === "flex") {
