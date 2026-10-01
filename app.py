@@ -3067,7 +3067,8 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
         # Parse user-provided custom missing keywords if present
         user_keywords = []
         if custom_keywords_str:
-            user_keywords = [k.strip() for k in custom_keywords_str.replace("\n", ",").replace(";", ",").split(",") if k.strip()]
+            from rewriter import sanitize_keywords_list
+            user_keywords = sanitize_keywords_list(custom_keywords_str)
 
         if user_keywords:
             missing_keywords = user_keywords
@@ -3077,7 +3078,8 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                      status="success")
         elif cached_analysis and cached_analysis.get("missing_keywords"):
             # Instant memory reuse from Analyze step
-            missing_keywords = cached_analysis["missing_keywords"]
+            from rewriter import sanitize_keywords_list
+            missing_keywords = sanitize_keywords_list(cached_analysis["missing_keywords"])
             matching_keywords = cached_analysis.get("matching_keywords", [])
             simplify_score_before = cached_analysis.get("score")
             source_label = "Simplify extension (cached)" if cached_analysis.get("source") == "simplify_extension" else "LLM Cross-Check (cached)"

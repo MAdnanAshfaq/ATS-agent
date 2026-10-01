@@ -318,7 +318,8 @@ Return ONLY valid JSON now.
         ])
 
         ref_skills = refined.get("skills", []) or []
-        ref_skills_clean = [str(s).strip() for s in ref_skills if s and str(s).strip() and len(str(s).split()) <= 5]
+        from rewriter import sanitize_keywords_list
+        ref_skills_clean = sanitize_keywords_list(ref_skills)
 
         if _user_wants_overwrite:
             # USER SAID REPLACE — trust AI output exactly; do NOT add base skills back

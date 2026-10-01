@@ -296,6 +296,7 @@
                 class="form-input"
                 placeholder="Paste missing keywords from Simplify (e.g. end-to-end, product features, FastAPI, Docker)..."
                 autocomplete="off"
+                onpaste="handleCustomKeywordsPaste(event)"
               >
             </div>
             <div class="form-hint">
@@ -598,7 +599,7 @@
                 <div class="matrix-add-keyword-bar">
                   <div style="position:relative; flex:1; max-width:360px;">
                     <i class="fa-solid fa-plus" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#94a3b8; font-size:12px;"></i>
-                    <input type="text" id="matrix-manual-kw-input" class="matrix-manual-input" placeholder="Add custom missing skill or tool..." onkeydown="if(event.key==='Enter'){event.preventDefault();addMatrixManualChip();}">
+                    <input type="text" id="matrix-manual-kw-input" class="matrix-manual-input" placeholder="Paste all keywords or enter a skill..." onkeydown="if(event.key==='Enter'){event.preventDefault();addMatrixManualChip();}" onpaste="handleMatrixManualKwPaste(event)">
                   </div>
                   <button type="button" class="btn btn-secondary btn-sm" onclick="addMatrixManualChip()" style="border-radius:8px; font-weight:600; padding:7px 16px;">
                     + Add to Injection List

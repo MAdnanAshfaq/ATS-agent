@@ -65,11 +65,45 @@ def _build_resume_text(resume: dict) -> str:
     return " ".join(parts).lower()
 
 
+def sanitize_keywords_list(keywords) -> list[str]:
+    """
+    Decomposes any bundled/pasted keywords (comma, newline, semicolon, pipe,
+    tabs, bullet points, numbering) into clean, distinct, deduplicated individual keywords.
+    """
+    if not keywords:
+        return []
+
+    if isinstance(keywords, str):
+        keywords = [keywords]
+
+    cleaned = []
+    seen = set()
+
+    for item in keywords:
+        if not item or not isinstance(item, str):
+            continue
+        # Split on commas, newlines, semicolons, pipes, tabs, bullet characters
+        sub_items = re.split(r'[\r\n,;|•\t]+', item)
+        for sub in sub_items:
+            kw = sub.strip()
+            # Strip leading bullets, numbered lists (e.g. "1. ", "1) "), dashes, quotes, brackets
+            kw = re.sub(r'^[\s\-\*\•\d\.\)\(\[\]]+', '', kw)
+            kw = kw.strip(' "\'`;:()[]{}')
+            if kw and len(kw) > 1:
+                lower = kw.lower()
+                if lower not in seen:
+                    seen.add(lower)
+                    cleaned.append(kw)
+
+    return cleaned
+
+
 def verify_dynamic_keywords(rewritten_json_output: dict, simplify_keywords: list) -> tuple[list, list]:
     """
     Dynamically checks the newly generated resume text using strict word boundaries,
     ensuring it exactly matches how keyword_matcher and Simplify read it.
     """
+    simplify_keywords = sanitize_keywords_list(simplify_keywords)
     # Flatten the JSON values into a clean string pool
     content_pool = json.dumps(rewritten_json_output).lower()
     missing_gaps = []
@@ -315,6 +349,7 @@ def rewrite_resume(
         Merged resume dict with rewritten content + original metadata.
     """
     client = _get_gemini_client()
+    missing_keywords = sanitize_keywords_list(missing_keywords)
 
     if not missing_keywords and not (custom_bullets and custom_bullets.strip()):
         print("[Rewriter] No missing keywords or custom bullets — returning base resume unchanged")

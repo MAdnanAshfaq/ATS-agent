@@ -2417,6 +2417,49 @@ function _execCopyFallback(text) {
   showToast("📋 Bookmarklet code copied to clipboard!", "success");
 }
 
+function parseKeywordsList(rawText) {
+  if (!rawText || typeof rawText !== "string") return [];
+  // Split on newlines, carriage returns, commas, semicolons, pipes, tabs, or bullets
+  const rawItems = rawText.split(/[\r\n,;|•\t]+/);
+  const cleaned = [];
+  const seen = new Set();
+
+  for (let item of rawItems) {
+    if (!item) continue;
+    // Strip leading bullets (•, -, *), numbered lists (1., 1)), brackets, outer quotes
+    let kw = item.trim()
+      .replace(/^[\s\-\*\•\d\.\)\(\[\]]+/, "")
+      .replace(/^["'`]+|["'`]+$/g, "")
+      .replace(/[,;]+$/, "")
+      .trim();
+
+    if (kw && kw.length > 1 && !seen.has(kw.toLowerCase())) {
+      seen.add(kw.toLowerCase());
+      cleaned.push(kw);
+    }
+  }
+  return cleaned;
+}
+
+function handleCustomKeywordsPaste(event) {
+  const pasted = (event.clipboardData || window.clipboardData)?.getData("text");
+  if (!pasted) return;
+  const items = parseKeywordsList(pasted);
+  if (items.length > 1) {
+    event.preventDefault();
+    const input = document.getElementById("custom-keywords-input");
+    if (!input) return;
+    const cleanStr = items.join(", ");
+    const curVal = input.value.trim();
+    if (curVal) {
+      input.value = curVal.endsWith(",") ? `${curVal} ${cleanStr}` : `${curVal}, ${cleanStr}`;
+    } else {
+      input.value = cleanStr;
+    }
+    showToast(`✨ Auto-separated & formatted ${items.length} pasted keywords!`, "success");
+  }
+}
+
 async function pasteSimplifyFromClipboard() {
   try {
     if (navigator.clipboard && navigator.clipboard.readText) {
@@ -2427,9 +2470,15 @@ async function pasteSimplifyFromClipboard() {
       }
       const input = document.getElementById("custom-keywords-input");
       if (input) {
-        input.value = text.trim();
+        const parsed = parseKeywordsList(text);
+        if (parsed.length > 1) {
+          input.value = parsed.join(", ");
+          showToast(`✨ Auto-detected and formatted ${parsed.length} keywords from clipboard!`, "success");
+        } else {
+          input.value = text.trim();
+          showToast("Pasted keywords into Simplify Missing Keywords field!", "success");
+        }
         input.focus();
-        showToast("Pasted keywords into Simplify Missing Keywords field!", "success");
       }
     } else {
       showToast("Clipboard access not available in this browser context. Please paste manually into the input box.", "info");
@@ -2702,22 +2751,56 @@ function selectAllMatrixChips(state) {
   updateMatrixSelectionCounters();
 }
 
-function addMatrixManualChip() {
+function handleMatrixManualKwPaste(event) {
+  const pasted = (event.clipboardData || window.clipboardData)?.getData("text");
+  if (!pasted) return;
+  const items = parseKeywordsList(pasted);
+  if (items.length > 1 || (items.length === 1 && (pasted.includes("\n") || pasted.includes("•") || pasted.includes(";")))) {
+    event.preventDefault();
+    const input = document.getElementById("matrix-manual-kw-input");
+    if (input) input.value = "";
+    addMatrixManualChip(pasted);
+  }
+}
+
+function addMatrixManualChip(overrideText = null) {
   const input = document.getElementById("matrix-manual-kw-input");
-  if (!input) return;
-  const val = input.value.trim();
-  if (!val) return;
+  const rawVal = overrideText !== null ? overrideText : (input ? input.value : "");
+  if (!rawVal || !rawVal.trim()) return;
 
   const container = document.getElementById("matrix-missing-container");
   if (!container) return;
 
-  if (!selectedMissingKeywords.has(val)) {
-    selectedMissingKeywords.add(val);
-    renderMatrixMissingChip(val, container);
+  const keywords = parseKeywordsList(rawVal);
+  if (keywords.length === 0) return;
+
+  let addedCount = 0;
+  const addedNames = [];
+
+  keywords.forEach(kw => {
+    if (!selectedMissingKeywords.has(kw)) {
+      selectedMissingKeywords.add(kw);
+      renderMatrixMissingChip(kw, container);
+      addedCount++;
+      addedNames.push(kw);
+    }
+  });
+
+  if (addedCount > 0) {
     updateMatrixSelectionCounters();
-    showToast(`Added '${val}' to keyword injection list!`, "success");
+    if (addedCount === 1) {
+      showToast(`Added '${addedNames[0]}' to keyword injection list!`, "success");
+    } else {
+      const sample = addedNames.slice(0, 3).join(", ") + (addedNames.length > 3 ? ` +${addedNames.length - 3} more` : "");
+      showToast(`✨ Auto-detected & added ${addedCount} separate keywords (${sample})!`, "success");
+    }
+  } else {
+    showToast("Keyword(s) already in the list!", "info");
   }
-  input.value = "";
+
+  if (input && overrideText === null) {
+    input.value = "";
+  }
 }
 
 function onCompanyEdited(newVal) {
@@ -5501,8 +5584,8 @@ async function applyLiveEdits() {
     if (key === "summary") {
       updatedResume.summary = val;
     } else if (key === "skills") {
-      // Parse comma-separated
-      updatedResume.skills = val.split(",").map(s => s.trim()).filter(s => s);
+      // Parse comma-separated, newlines, or bullets
+      updatedResume.skills = parseKeywordsList(val);
     } else if (key === "target_role") {
       updatedResume.target_role = val;
     } else if (key.startsWith("experience.")) {
