@@ -23,36 +23,86 @@ try:
 except Exception:
     pass
 
-REFINEMENT_SYSTEM_PROMPT = """You are the ATS Agent Senior Resume Refiner & Career Copilot.
-Your job is to apply explicit candidate revision requests to a newly tailored resume.
+REFINEMENT_SYSTEM_PROMPT = """You are the ATS Agent Senior Resume Precision-Refiner & Career Copilot.
+Your ONE job: execute the candidate's revision instructions with SURGICAL, LINE-BY-LINE EXACTNESS.
 
-The candidate has reviewed the current tailored resume and said:
-"I want the resume to be like this: should have this, not this, change this, etc."
+═══════════════════════════════════════════════════════════════
+⚠️  COMMAND-EXECUTION MODE — USER INSTRUCTIONS ARE LAW ⚠️
+═══════════════════════════════════════════════════════════════
+The candidate's revision request is a LIST OF COMMANDS, not suggestions.
+You must parse EVERY sentence, EVERY comma-separated item, EVERY bullet in their request
+as an independent, non-negotiable directive. Nothing is optional. Nothing is skipped.
 
-You must execute their revision instructions with 100% precision across ANY requested part of the resume:
-- Target role / title under candidate name (e.g., "Senior Data Engineer", remove unwanted leveling tags, codes like "Con II", or change headline)
-- Summary (length, tone, focus, specific tech, executive level)
-- Skills list (add technologies, remove tools, reorganize, specialize)
-- Experience bullets (rewrite specific bullets, add hard numbers/metrics, front-load impact, change focus)
-- Bullet additions or deletions (if requested to cut or expand)
-- Negative constraints (e.g., "do not mention AWS", "remove bullet 3", "no buzzwords")
+If the user says:
+  - "Replace ALL skills with: Python, SQL, Tableau" → output EXACTLY those skills, nothing more
+  - "Change skill X to Y" → make that exact swap
+  - "Add Z to skills" → add Z verbatim
+  - "Rewrite bullet 2 of Company A to focus on cost savings" → rewrite THAT SPECIFIC bullet only
+  - "Remove 'leveraged' from all bullets" → scan every bullet and remove it
+  - "Add the following responsibilities to my experience: [...]" → weave EVERY listed item into relevant experience bullets
+  - "Change summary to focus on [topic]" → do EXACTLY that, word for word per their description
 
-STRICT GROUNDING & COMPLIANCE RULES:
-1. TRUTH ANCHOR: All company names, job titles, employment dates, and educational degrees from the Base Resume MUST remain authentic. Never invent fake employers or fake academic degrees.
-2. HUMAN VOICE RULES:
-   - Front-load business impact and concrete metrics (e.g., "Reduced pipeline runtimes by 42% by...", NOT "Responsible for...").
-   - Ban all corporate throat-clearing and AI cliches: "spearheaded", "orchestrated", "leveraged", "testament to", "synergy", "seamlessly", "passionate about", "delving into", "fostered".
-   - Plain, strong engineering verbs: built, cut, owned, migrated, automated, tuned, deployed, designed.
-3. ATS KEYWORD PRESERVATION: Keep previously injected ATS keywords unless the user explicitly requested their removal.
-4. RETURN FORMAT: Return ONLY a valid JSON object with NO markdown formatting, backticks, or code fencing.
-5. JSON SYNTAX: Ensure all arrays (e.g. skills, experience, bullets, education) are properly opened with [ and closed with ]. Never close an array with } or an object with ].
+Do NOT:
+  ❌ Skip any instruction because it seems minor
+  ❌ Partially apply a list (if user gives 20 keywords, ALL 20 must appear)
+  ❌ Add skills the user didn't ask for
+  ❌ Remove skills the user didn't ask to remove (unless they said "replace all")
+  ❌ Preserve old skills if user explicitly said to replace/overwrite/clear the skills section
+  ❌ Hallucinate new employers, dates, or degrees
+  ❌ Use banned clichés: "spearheaded", "orchestrated", "leveraged", "synergy", "seamlessly",
+     "passionate about", "delving into", "fostered", "testament to"
+
+SKILLS OVERWRITE RULE:
+  - If user says "replace skills with X,Y,Z" or "my skills should be: ..." or "only these skills: ...",
+    output EXACTLY those skills and ONLY those skills in the skills array.
+  - If user says "add X to skills", add X to existing list.
+  - If user says "remove X from skills", remove only X.
+  - Default: preserve existing skills + apply requested additions/removals.
+
+JD RESPONSIBILITIES WEAVING RULE:
+  - If user provides responsibilities from a job description to add to experience:
+    EVERY responsibility must be represented in a bullet point (may be combined/adapted but not omitted).
+  - Integrate naturally as first-person, impact-led bullets with strong action verbs.
+
+SECTION TAG PARSING RULE (CRITICAL — NEW FEATURE):
+  When the instruction contains lines starting with a section tag in square brackets, parse each line
+  independently and apply the instruction ONLY to the targeted section:
+  
+  Tag Format Examples:
+    [SUMMARY] Rewrite to focus on data engineering     → update ONLY the "summary" field
+    [SKILLS] Replace with: Python, SQL, Spark          → update ONLY the "skills" array
+    [EXPERIENCE/Acme Corp] Add metrics to all bullets  → update ONLY the experience entry where company ≈ "Acme Corp"
+    [EXPERIENCE/Most Recent Role]                      → target the FIRST (index 0) experience entry
+    [TITLE] Change to: Senior Data Engineer            → update ONLY "target_role"
+    [ALL BULLETS] Make more concise                    → update bullets in ALL experience entries
+  
+  Rules:
+  - If a line has a section tag, that line's instruction applies EXCLUSIVELY to that section.
+  - All other sections remain EXACTLY unchanged.
+  - If multiple lines target the same section, apply ALL of them to that section.
+  - If a tag references a company name (e.g. [EXPERIENCE/Acme Corp]), match it case-insensitively
+    against the "company" field of each experience entry.
+  - [EXPERIENCE/Most Recent Role] always means index 0 (most recent).
+  - Sections NOT mentioned in any tag are PRESERVED EXACTLY as in the current resume.
+
+HUMAN VOICE:
+  Front-load business impact and metrics. Plain, strong verbs: built, cut, owned, migrated,
+  automated, tuned, deployed, designed, shipped, reduced, scaled.
+
+TRUTH ANCHOR:
+  Company names, job titles, employment dates, and educational degrees from Base Resume
+  MUST remain authentic. Never invent fake employers or degrees.
+
+RETURN: ONLY a valid JSON object. NO markdown, NO backticks, NO code fencing.
+JSON SYNTAX: Arrays opened with [ and closed with ]. Objects opened with { and closed with }.
 
 JSON Schema:
 {
-  "change_summary": "1-2 sentence human-readable summary of exactly what you revised",
+  "change_summary": "Precise 1-3 sentence summary listing EVERY change you made",
+  "skills_mode": "overwrite | additive",
   "refined_resume": {
     "name": "Candidate Name",
-    "target_role": "Target role or headline subtitle under candidate name (e.g. Senior Data Engineer)",
+    "target_role": "Target role headline under candidate name",
     "contact": { "email": "...", "phone": "...", "location": "...", "linkedin": "...", "github": "..." },
     "summary": "Updated professional summary",
     "skills": ["Skill 1", "Skill 2"],
@@ -121,25 +171,61 @@ def refine_tailored_resume(
     if not instruction or not instruction.strip():
         return current_resume, "No revision instructions provided."
 
+    # Detect if this instruction implies a skills overwrite (user wants ONLY their listed skills)
+    _inst_lower = instruction.lower()
+    _skills_overwrite = any(phrase in _inst_lower for phrase in [
+        "replace all skills", "replace my skills", "replace skills with",
+        "my skills should be", "only these skills", "skills should only be",
+        "replace the skills", "change the skills to", "change skills to",
+        "set skills to", "skills are:", "skills list should be", "new skills:",
+        "overwrite skills", "replace skill section",
+        # Section-tag variants — e.g. "[SKILLS] Replace with: ..." or "[SKILLS] Set to:"
+        "[skills] replace", "[skills] set", "[skills] overwrite", "[skills] change to",
+        "[skills] only", "[skills] use only", "[skills] use these",
+    ])
+
+    # Check whether any section tags are used (for checklist reminder)
+    _has_section_tags = bool(re.search(r'\[(?:SUMMARY|SKILLS|TITLE|ALL BULLETS|EXPERIENCE\/[^\]]+)\]', instruction, re.IGNORECASE))
+
+    # Parse instruction into numbered items so the model sees them clearly
+    _instr_lines = [l.strip() for l in re.split(r'[;\n]+', instruction.strip()) if l.strip()]
+    if len(_instr_lines) > 1:
+        _instr_formatted = "\n".join(f"{i+1}. {line}" for i, line in enumerate(_instr_lines))
+    else:
+        _instr_formatted = instruction.strip()
+
     user_prompt = f"""
-CANDIDATE'S EXACT REVISION REQUEST:
-"{instruction.strip()}"
+═══════════════════════════════════════════════════════════════
+CANDIDATE'S EXACT REVISION REQUEST ({len(_instr_lines)} directive(s)):
+═══════════════════════════════════════════════════════════════
+{_instr_formatted}
+
+⚠️  APPLY EVERY DIRECTIVE ABOVE — nothing is optional or skippable.
+⚠️  SKILLS MODE: {"OVERWRITE — output ONLY the skills the user specified" if _skills_overwrite else "ADDITIVE — add/remove specific skills as requested, preserve existing"}
+{"⚠️  SECTION TAGS DETECTED — parse each [TAG] prefix and apply that line's instruction ONLY to the named section. Leave ALL other sections exactly as in current resume." if _has_section_tags else ""}
 
 TARGET JOB CONTEXT:
 - Company: {company or 'Target Company'}
 - Role: {role or 'Target Role'}
-- Key JD Snippet: {jd_text[:1500] if jd_text else 'Not provided'}
+- Job Description (for context when weaving responsibilities):
+{jd_text[:4000] if jd_text else 'Not provided'}
 
-CANDIDATE'S MASTER TRUTH (Base Resume):
+CANDIDATE'S MASTER TRUTH (Base Resume — for grounding only, do NOT revert changes):
 {json.dumps(base_resume, indent=2)}
 
 CURRENT TAILORED RESUME TO REVISE:
 {json.dumps(current_resume, indent=2)}
 
-INSTRUCTIONS:
-1. Apply the candidate's exact feedback above.
-2. Return the full refined_resume JSON object with the changes applied.
-3. Provide a clear, punchy change_summary string describing what you changed.
+CHECKLIST BEFORE RETURNING:
+☑ Every numbered directive above is addressed
+☑ If skills overwrite was requested: output ONLY the requested skills
+☑ If JD responsibilities were listed: EVERY one appears in experience bullets
+{"☑ Section tags used — each [TAG] directive applied ONLY to its target section; ALL others preserved verbatim" if _has_section_tags else ""}
+☑ No banned clichés used
+☑ change_summary lists every discrete change made
+☑ skills_mode is set to "overwrite" or "additive"
+
+Return ONLY valid JSON now.
 """
 
     def _call_gemini(client: genai.Client):
@@ -218,19 +304,35 @@ INSTRUCTIONS:
                 ref_exp.append(orig_e)
         refined["experience"] = ref_exp
 
-        # ── MASTER SKILLS ZERO-LOSS GUARANTEE ──
-        # Preserve all original skills from base_resume; never drop master skills
-        base_skills = [str(s).strip() for s in base_resume.get("skills", []) if s and str(s).strip()]
-        ref_skills = refined.get("skills", []) or []
-        ref_skills_clean = [str(s).strip() for s in ref_skills if s and str(s).strip() and len(str(s).split()) <= 4]
+        # ── SKILLS MERGE / OVERWRITE — respects user instruction ──
+        # If user asked to replace/overwrite skills, honour that (don't add old skills back).
+        # If additive, merge refined skills with base skills so nothing is silently lost.
+        ai_skills_mode = data.get("skills_mode", "additive").lower().strip()
+        # Also detect from instruction text as a fallback
+        _il = (instruction or "").lower()
+        _user_wants_overwrite = ai_skills_mode == "overwrite" or any(phrase in _il for phrase in [
+            "replace all skills", "replace my skills", "replace skills with",
+            "my skills should be", "only these skills", "skills should only be",
+            "replace the skills", "change the skills to", "change skills to",
+            "set skills to", "new skills:", "overwrite skills", "replace skill section",
+        ])
 
-        combined_skills = list(base_skills)
-        combined_lower = {s.lower() for s in combined_skills}
-        for s in ref_skills_clean:
-            if s.lower() not in combined_lower:
-                combined_skills.append(s)
-                combined_lower.add(s.lower())
-        refined["skills"] = combined_skills
+        ref_skills = refined.get("skills", []) or []
+        ref_skills_clean = [str(s).strip() for s in ref_skills if s and str(s).strip() and len(str(s).split()) <= 5]
+
+        if _user_wants_overwrite:
+            # USER SAID REPLACE — trust AI output exactly; do NOT add base skills back
+            refined["skills"] = ref_skills_clean
+        else:
+            # ADDITIVE MODE — merge: base first, then any new skills the AI added
+            base_skills = [str(s).strip() for s in base_resume.get("skills", []) if s and str(s).strip()]
+            combined_skills = list(base_skills)
+            combined_lower = {s.lower() for s in combined_skills}
+            for s in ref_skills_clean:
+                if s.lower() not in combined_lower:
+                    combined_skills.append(s)
+                    combined_lower.add(s.lower())
+            refined["skills"] = combined_skills
 
         return refined, change_summary
 

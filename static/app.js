@@ -5316,5 +5316,324 @@ window.togglePasswordVisibility = togglePasswordVisibility;
 window.submitChangePassword = submitChangePassword;
 
 
+/* ── SECTION COMMENT APPENDER ──────────────────────────────────────────────── */
 
+function appendSectionComment(sectionTag) {
+  const input = document.getElementById("refine-instruction-input");
+  if (!input) return;
+  const current = input.value.trim();
+  const cursor = `${sectionTag} `;
+  if (current) {
+    input.value = current + "\n" + cursor;
+  } else {
+    input.value = cursor;
+  }
+  input.focus();
+  // Move cursor to end
+  input.setSelectionRange(input.value.length, input.value.length);
+}
 
+/* ── JD RESPONSIBILITIES PASTE DRAWER ─────────────────────────────────────── */
+
+function toggleJDResponsibilitiesDrawer() {
+  const drawer = document.getElementById("jd-responsibilities-drawer");
+  const arrow = document.getElementById("jd-resp-arrow");
+  if (!drawer) return;
+  const isOpen = drawer.style.display !== "none";
+  drawer.style.display = isOpen ? "none" : "block";
+  if (arrow) arrow.style.transform = isOpen ? "rotate(0deg)" : "rotate(90deg)";
+}
+
+async function weaveJDResponsibilities() {
+  const textarea = document.getElementById("jd-responsibilities-textarea");
+  const rawText = (textarea ? textarea.value : "").trim();
+  if (!rawText) {
+    showToast("Please paste job description responsibilities first.", "warning");
+    textarea && textarea.focus();
+    return;
+  }
+
+  // Parse lines — strip bullet markers
+  const lines = rawText.split("\n")
+    .map(l => l.replace(/^[\u2022\u2023\u25aa\u25ab\u25cf\u2013\u2014\*\-\u25b8\u25ba]\s*/u, "").trim())
+    .filter(l => l.length > 5);
+
+  if (lines.length === 0) {
+    showToast("No valid responsibility lines found — please check the input.", "warning");
+    return;
+  }
+
+  // Build a structured instruction and send to the main refinement input
+  const instruction = `[EXPERIENCE/Most Recent Role] Weave ALL of the following job description responsibilities into my experience bullets (every single one must appear):\n${lines.map((l, i) => `${i+1}. ${l}`).join("\n")}`;
+
+  const mainInput = document.getElementById("refine-instruction-input");
+  if (mainInput) {
+    mainInput.value = instruction;
+  }
+
+  // Auto-submit
+  showToast(`Weaving ${lines.length} JD responsibilities into your resume...`, "info");
+  await submitResumeRefinement();
+}
+
+/* ── LIVE EDIT MODAL ───────────────────────────────────────────────────────── */
+
+function openLiveEditModal() {
+  const modal = document.getElementById("live-edit-modal");
+  if (!modal) return;
+
+  const resume = (window.lastResult && window.lastResult.tailored_resume) || null;
+  if (!resume) {
+    showToast("Please generate a tailored resume first, then open Live Edit.", "warning");
+    return;
+  }
+
+  _renderLiveEditSections(resume);
+
+  const statusEl = document.getElementById("live-edit-status");
+  if (statusEl) statusEl.style.display = "none";
+
+  modal.style.display = "flex";
+  document.body.style.overflow = "hidden";
+}
+
+function closeLiveEditModal() {
+  const modal = document.getElementById("live-edit-modal");
+  if (modal) modal.style.display = "none";
+  document.body.style.overflow = "";
+}
+
+function _renderLiveEditSections(resume) {
+  const container = document.getElementById("live-edit-sections");
+  if (!container) return;
+
+  const sectionStyle = "background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:16px; display:flex; flex-direction:column; gap:10px;";
+  const labelStyle = "font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--cyan); margin-bottom:2px;";
+  const editableStyle = "width:100%; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:10px 12px; font-size:13px; color:var(--t0); resize:vertical; outline:none; font-family:inherit; box-sizing:border-box; line-height:1.6;";
+  const commentStyle = "width:100%; background:rgba(245,158,11,0.05); border:1px solid rgba(245,158,11,0.25); border-radius:8px; padding:8px 12px; font-size:12px; color:#fbbf24; resize:vertical; outline:none; font-family:inherit; box-sizing:border-box; line-height:1.5;";
+  const commentLabelStyle = "font-size:11px; color:#f59e0b; display:flex; align-items:center; gap:5px; margin-bottom:3px;";
+
+  let html = "";
+
+  // ── Summary ──
+  html += `<div style="${sectionStyle}" data-section="summary">
+    <div style="${labelStyle}"><i class="fa-solid fa-id-badge" style="margin-right:4px;"></i>Professional Summary</div>
+    <textarea class="le-field" data-key="summary" style="${editableStyle}" rows="3" placeholder="Your professional summary...">${escHtml(resume.summary || "")}</textarea>
+    <div style="${commentLabelStyle}"><i class="fa-solid fa-comment-dots"></i> Tell AI how to rewrite this summary (leave blank to use direct edit above)</div>
+    <textarea class="le-ai-comment" data-target="[SUMMARY]" style="${commentStyle}" rows="2" placeholder="e.g. Focus on data engineering and pipeline automation, remove cloud buzzwords, keep to 2 sentences max"></textarea>
+  </div>`;
+
+  // ── Skills ──
+  const skillsStr = Array.isArray(resume.skills) ? resume.skills.join(", ") : (resume.skills || "");
+  html += `<div style="${sectionStyle}" data-section="skills">
+    <div style="${labelStyle}"><i class="fa-solid fa-code" style="margin-right:4px;"></i>Skills</div>
+    <textarea class="le-field" data-key="skills" style="${editableStyle}" rows="3" placeholder="Comma-separated skills...">${escHtml(skillsStr)}</textarea>
+    <div style="${commentLabelStyle}"><i class="fa-solid fa-comment-dots"></i> Tell AI what to do with skills (leave blank to use direct edit above)</div>
+    <textarea class="le-ai-comment" data-target="[SKILLS]" style="${commentStyle}" rows="2" placeholder="e.g. Replace all skills with: Python, SQL, Spark, Kafka, Airflow, AWS, Docker, Kubernetes"></textarea>
+  </div>`;
+
+  // ── Experience ──
+  const experiences = resume.experience || [];
+  experiences.forEach((exp, idx) => {
+    const company = exp.company || `Role ${idx + 1}`;
+    const title = exp.title || exp.role || "";
+    const dates = exp.dates || "";
+    const bullets = Array.isArray(exp.bullets) ? exp.bullets.join("\n") : "";
+    html += `<div style="${sectionStyle}" data-section="exp-${idx}">
+      <div style="${labelStyle}"><i class="fa-solid fa-briefcase" style="margin-right:4px;"></i>${escHtml(company)} — ${escHtml(title)} <span style="font-weight:400; color:var(--t2); text-transform:none;">${escHtml(dates)}</span></div>
+      <textarea class="le-field" data-key="experience.${idx}.bullets" style="${editableStyle}" rows="5" placeholder="One bullet per line...">${escHtml(bullets)}</textarea>
+      <div style="${commentLabelStyle}"><i class="fa-solid fa-comment-dots"></i> Tell AI what to do with these bullets</div>
+      <textarea class="le-ai-comment" data-target="[EXPERIENCE/${company}]" style="${commentStyle}" rows="2" placeholder="e.g. Add quantified metrics to every bullet and front-load impact statements"></textarea>
+    </div>`;
+  });
+
+  // ── Job Title / Headline ──
+  html += `<div style="${sectionStyle}" data-section="title">
+    <div style="${labelStyle}"><i class="fa-solid fa-signature" style="margin-right:4px;"></i>Job Title / Headline (shown under your name)</div>
+    <input class="le-field" data-key="target_role" style="${editableStyle.replace('resize:vertical;','')} height:38px;" type="text" value="${escHtml(resume.target_role || "")}" placeholder="e.g. Senior Data Engineer">
+    <div style="${commentLabelStyle}"><i class="fa-solid fa-comment-dots"></i> Tell AI what headline to use</div>
+    <textarea class="le-ai-comment" data-target="[TITLE]" style="${commentStyle}" rows="1" placeholder="e.g. Change to: Senior Cloud Data Engineer"></textarea>
+  </div>`;
+
+  container.innerHTML = html;
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+async function applyLiveEdits() {
+  const applyBtn = document.getElementById("live-edit-apply-btn");
+  const applySpinner = document.getElementById("live-edit-apply-spinner");
+  const applyIcon = document.getElementById("live-edit-apply-icon");
+  const applyText = document.getElementById("live-edit-apply-text");
+  const statusEl = document.getElementById("live-edit-status");
+  const statusText = document.getElementById("live-edit-status-text");
+
+  const resume = (window.lastResult && window.lastResult.tailored_resume) || null;
+  if (!resume) {
+    showToast("No resume loaded — please generate a resume first.", "warning");
+    return;
+  }
+
+  // ── Collect AI comments (Tell AI boxes) ──
+  const aiComments = [];
+  document.querySelectorAll(".le-ai-comment").forEach(el => {
+    const val = el.value.trim();
+    const target = el.getAttribute("data-target") || "";
+    if (val) {
+      aiComments.push(`${target} ${val}`);
+    }
+  });
+
+  // ── Collect direct edits and merge into the resume JSON ──
+  const updatedResume = JSON.parse(JSON.stringify(resume)); // deep clone
+
+  document.querySelectorAll(".le-field").forEach(el => {
+    const key = el.getAttribute("data-key") || "";
+    const val = (el.tagName === "TEXTAREA" ? el.value : el.value).trim();
+
+    if (key === "summary") {
+      updatedResume.summary = val;
+    } else if (key === "skills") {
+      // Parse comma-separated
+      updatedResume.skills = val.split(",").map(s => s.trim()).filter(s => s);
+    } else if (key === "target_role") {
+      updatedResume.target_role = val;
+    } else if (key.startsWith("experience.")) {
+      const parts = key.split(".");
+      const idx = parseInt(parts[1]);
+      const field = parts[2];
+      if (!isNaN(idx) && updatedResume.experience && updatedResume.experience[idx]) {
+        if (field === "bullets") {
+          updatedResume.experience[idx].bullets = val.split("\n").map(b => b.trim()).filter(b => b.length > 3);
+        }
+      }
+    }
+  });
+
+  // ── If there are AI comments, send to refinement API with the directly-edited resume as current ──
+  if (aiComments.length > 0) {
+    // Build structured instruction from AI comments
+    const instruction = aiComments.join("\n");
+
+    if (applyBtn) applyBtn.disabled = true;
+    if (applySpinner) applySpinner.style.display = "inline-block";
+    if (applyIcon) applyIcon.style.display = "none";
+    if (applyText) applyText.textContent = "Applying AI instructions...";
+
+    try {
+      const lastRes = window.lastResult || {};
+      const res = await fetch("/api/refine-resume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          instruction: instruction,
+          folder_path: lastRes.folder_path || "",
+          company: lastRes.company || "",
+          role: lastRes.role || "",
+          url: lastRes.url || "",
+          current_resume: updatedResume, // use the directly-edited version as base
+          jd_text: window.analyzeJdText || "",
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Refinement failed");
+
+      if (window.lastResult) {
+        window.lastResult.output_file = data.output_file;
+        window.lastResult.relative_path = data.relative_path;
+        window.lastResult.relative_pdf = data.relative_pdf;
+        if (data.updated_resume) {
+          window.lastResult.tailored_resume = data.updated_resume;
+          // Re-render the live edit panel with updated data
+          _renderLiveEditSections(data.updated_resume);
+        }
+      }
+
+      if (statusEl) { statusEl.style.display = "flex"; }
+      if (statusText) statusText.textContent = data.change_summary || "All changes applied and resume rebuilt!";
+      showToast("Live edits applied & resume rebuilt!", "success");
+      loadHistory();
+
+    } catch (err) {
+      showToast(`Live Edit failed: ${err.message}`, "error");
+    } finally {
+      if (applyBtn) applyBtn.disabled = false;
+      if (applySpinner) applySpinner.style.display = "none";
+      if (applyIcon) applyIcon.style.display = "inline";
+      if (applyText) applyText.textContent = "Apply All & Rebuild";
+    }
+
+  } else {
+    // No AI comments — only direct edits. Save directly and rebuild.
+    if (applyBtn) applyBtn.disabled = true;
+    if (applyText) applyText.textContent = "Saving direct edits...";
+
+    try {
+      const lastRes = window.lastResult || {};
+
+      // Build a trivial instruction that signals direct edit pass-through (no AI rewrite needed for changed fields)
+      // We'll send the directly-edited resume and ask AI to just preserve it as-is
+      const res = await fetch("/api/refine-resume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          instruction: "Apply the direct edits I made to this resume exactly as provided. Do not change any content — preserve all text exactly as given in the CURRENT TAILORED RESUME. Just rebuild the documents.",
+          folder_path: lastRes.folder_path || "",
+          company: lastRes.company || "",
+          role: lastRes.role || "",
+          current_resume: updatedResume,
+          jd_text: "",
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Save failed");
+
+      if (window.lastResult) {
+        window.lastResult.output_file = data.output_file;
+        window.lastResult.relative_path = data.relative_path;
+        window.lastResult.relative_pdf = data.relative_pdf;
+        if (data.updated_resume) {
+          window.lastResult.tailored_resume = data.updated_resume;
+        }
+      }
+
+      if (statusEl) { statusEl.style.display = "flex"; }
+      if (statusText) statusText.textContent = "Direct edits saved and resume rebuilt!";
+      showToast("Direct edits saved & resume rebuilt!", "success");
+      loadHistory();
+
+    } catch (err) {
+      showToast(`Save failed: ${err.message}`, "error");
+    } finally {
+      if (applyBtn) applyBtn.disabled = false;
+      if (applyText) applyText.textContent = "Apply All & Rebuild";
+    }
+  }
+}
+
+// Close live edit on ESC
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    const leModal = document.getElementById("live-edit-modal");
+    if (leModal && leModal.style.display === "flex") {
+      closeLiveEditModal();
+    }
+  }
+});
+
+// Expose new functions globally
+window.appendSectionComment = appendSectionComment;
+window.toggleJDResponsibilitiesDrawer = toggleJDResponsibilitiesDrawer;
+window.weaveJDResponsibilities = weaveJDResponsibilities;
+window.openLiveEditModal = openLiveEditModal;
+window.closeLiveEditModal = closeLiveEditModal;
+window.applyLiveEdits = applyLiveEdits;

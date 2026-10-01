@@ -888,19 +888,79 @@
               </button>
             </div>
 
-            <!-- Freeform Revision Prompt Box -->
+            <!-- Section-Targeted Comment Chips + Live Edit -->
+            <div class="refine-chips-row" style="margin-top:6px; border-top: 1px solid rgba(255,255,255,0.06); padding-top:10px;">
+              <span class="refine-chip-label" style="color:var(--cyan);">Target Section:</span>
+              <button type="button" class="refine-chip" style="border-color:rgba(56,189,248,0.3); color:var(--cyan);" onclick="appendSectionComment('[SUMMARY]')">
+                <i class="fa-solid fa-id-badge"></i> Summary
+              </button>
+              <button type="button" class="refine-chip" style="border-color:rgba(56,189,248,0.3); color:var(--cyan);" onclick="appendSectionComment('[SKILLS]')">
+                <i class="fa-solid fa-code"></i> Skills
+              </button>
+              <button type="button" class="refine-chip" style="border-color:rgba(56,189,248,0.3); color:var(--cyan);" onclick="appendSectionComment('[EXPERIENCE/Most Recent Role]')">
+                <i class="fa-solid fa-briefcase"></i> Latest Role
+              </button>
+              <button type="button" class="refine-chip" style="border-color:rgba(56,189,248,0.3); color:var(--cyan);" onclick="appendSectionComment('[TITLE]')">
+                <i class="fa-solid fa-signature"></i> Headline
+              </button>
+              <button type="button" class="refine-chip" style="border-color:rgba(56,189,248,0.3); color:var(--cyan);" onclick="appendSectionComment('[ALL BULLETS]')">
+                <i class="fa-solid fa-list-ul"></i> All Bullets
+              </button>
+              <button type="button" class="refine-chip" style="border-color:rgba(168,85,247,0.4); color:#a855f7; font-weight:700;" onclick="openLiveEditModal()">
+                <i class="fa-solid fa-pen-to-square"></i> Live Edit Resume
+              </button>
+            </div>
+
+            <!-- Format Tip -->
+            <div style="margin: 8px 0 4px; padding: 8px 12px; background: rgba(56,189,248,0.05); border-left: 3px solid rgba(56,189,248,0.4); border-radius: 6px; font-size: 12px; color: var(--t2); line-height:1.6;">
+              <strong style="color:var(--cyan);">&#128161; Power Tip:</strong> Write <strong>one instruction per line</strong>. Prefix with section tag for laser precision:
+              <code style="background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:3px; font-size:11px;">[SKILLS] Replace all skills with: Python, SQL, Spark</code>
+              &nbsp;or&nbsp;
+              <code style="background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:3px; font-size:11px;">[EXPERIENCE/Acme Corp] Emphasize cost reduction</code>
+            </div>
+
             <div class="refine-input-wrap">
               <textarea 
                 id="refine-instruction-input" 
                 class="refine-textarea" 
-                rows="2" 
-                placeholder="Type anything to change... (e.g. 'In recent role, emphasize architecture and performance scaling; remove outdated tooling; tighten summary to 2 lines')"
+                rows="4" 
+                placeholder="Write one instruction per line. Examples:
+[SKILLS] Replace all skills with: Python, SQL, Spark, Kafka, Airflow, AWS, Docker
+[SUMMARY] Rewrite to focus on data engineering, pipeline automation, and cost reduction
+[EXPERIENCE/Acme Corp] Add quantified metrics to all bullets and front-load impact
+[TITLE] Change headline to: Senior Data Engineer"
               ></textarea>
               <button type="button" class="btn btn-primary btn-lg refine-submit-btn" id="refine-submit-btn" onclick="submitResumeRefinement()">
                 <span id="refine-btn-spinner" class="spinner-inline hidden"></span>
                 <i class="fa-solid fa-bolt" id="refine-btn-icon"></i>
                 <span id="refine-btn-text">Apply Fixes & Rebuild</span>
               </button>
+            </div>
+
+            <!-- JD Responsibilities Paste Drawer -->
+            <div style="margin-top:12px; border-top: 1px solid rgba(255,255,255,0.06); padding-top:10px;">
+              <button type="button" onclick="toggleJDResponsibilitiesDrawer()" style="background:none; border:none; cursor:pointer; font-size:12.5px; color:var(--t2); display:flex; align-items:center; gap:6px; padding:0;">
+                <i class="fa-solid fa-chevron-right" id="jd-resp-arrow" style="transition:transform 0.2s; font-size:10px;"></i>
+                <strong style="color:var(--t1);">&#128203; Paste JD Responsibilities</strong>
+                <span style="color:var(--t3);">&#8212; weave job duties directly into your experience bullets</span>
+              </button>
+              <div id="jd-responsibilities-drawer" style="display:none; margin-top:10px;">
+                <p style="font-size:12px; color:var(--t2); margin:0 0 6px;">Paste responsibilities/duties from the job description. Each line will be woven into your most recent experience bullets.</p>
+                <textarea 
+                  id="jd-responsibilities-textarea"
+                  rows="5"
+                  style="width:100%; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:10px 12px; font-size:13px; color:var(--t1); resize:vertical; outline:none; font-family:inherit; box-sizing:border-box;"
+                  placeholder="Paste JD bullet points here, one per line. Example:
+&#x2022; Design and implement scalable data pipelines using Apache Spark
+&#x2022; Collaborate with product teams to define data requirements
+&#x2022; Monitor and optimize data infrastructure for cost and performance"
+                ></textarea>
+                <button type="button" 
+                  style="margin-top:8px; padding:7px 16px; background:linear-gradient(135deg,#0891b2,#7c3aed); border:none; border-radius:8px; color:#fff; font-size:12.5px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:6px;"
+                  onclick="weaveJDResponsibilities()">
+                  <i class="fa-solid fa-shuffle"></i> Weave into Resume &amp; Rebuild
+                </button>
+              </div>
             </div>
 
             <!-- Status Alert for Change Summary -->
@@ -1822,6 +1882,54 @@
   <!-- ═══════════════════════════════════════════════════════════════════════ -->
   <!-- CHANGE PASSWORD MODAL                                                  -->
   <!-- ═══════════════════════════════════════════════════════════════════════ -->
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!-- LIVE EDIT RESUME MODAL                                                 -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <div id="live-edit-modal" style="display:none; position:fixed; inset:0; background:rgba(5,7,12,0.92); backdrop-filter:blur(12px); z-index:10500; align-items:center; justify-content:center; padding:16px;">
+    <div style="background:var(--surface-card); border:1px solid var(--border-base); border-radius:16px; width:100%; max-width:900px; height:92vh; display:flex; flex-direction:column; box-shadow:0 25px 60px -10px rgba(0,0,0,0.8); overflow:hidden; animation:modalFadeIn 0.2s cubic-bezier(0.16,1,0.3,1);">
+      <!-- Header -->
+      <div style="border-bottom:1px solid var(--border-base); padding:14px 20px; display:flex; justify-content:space-between; align-items:center; background:rgba(18,22,34,0.98); flex-shrink:0;">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div style="width:38px; height:38px; border-radius:10px; background:rgba(168,85,247,0.15); border:1px solid rgba(168,85,247,0.35); display:flex; align-items:center; justify-content:center; color:#a855f7; font-size:16px;">
+            <i class="fa-solid fa-pen-to-square"></i>
+          </div>
+          <div>
+            <h3 style="margin:0; font-size:15px; font-weight:700; color:var(--t0);">&#x270F;&#xFE0F; Live Edit Resume</h3>
+            <p style="margin:2px 0 0; font-size:11.5px; color:var(--t2);">Edit any section directly — or add a <strong>&#x1F4AC; Tell AI</strong> comment to instruct the AI exactly what to do</p>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button type="button" id="live-edit-apply-btn" onclick="applyLiveEdits()" style="padding:8px 18px; background:linear-gradient(135deg,#7c3aed,#0891b2); border:none; border-radius:8px; color:#fff; font-size:13px; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:6px;">
+            <span id="live-edit-apply-spinner" style="display:none; width:14px; height:14px; border:2px solid rgba(255,255,255,0.3); border-top-color:#fff; border-radius:50%; animation:spin 0.8s linear infinite;"></span>
+            <i id="live-edit-apply-icon" class="fa-solid fa-bolt"></i>
+            <span id="live-edit-apply-text">Apply All &amp; Rebuild</span>
+          </button>
+          <button type="button" onclick="closeLiveEditModal()" style="background:none; border:none; color:var(--t2); font-size:18px; cursor:pointer; padding:4px 8px;">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+      </div>
+      <!-- Instructions bar -->
+      <div style="background:rgba(168,85,247,0.07); border-bottom:1px solid rgba(168,85,247,0.15); padding:8px 20px; font-size:12px; color:var(--t2); display:flex; align-items:center; gap:16px; flex-shrink:0;">
+        <span><i class="fa-solid fa-pencil" style="color:#a855f7;"></i> <strong>Direct edit</strong> = instantly saves as-is</span>
+        <span><i class="fa-solid fa-comment-dots" style="color:#f59e0b;"></i> <strong>Tell AI box</strong> = AI rewrites that section per your instruction</span>
+        <span><i class="fa-solid fa-bolt" style="color:#38bdf8;"></i> Click <strong>Apply All &amp; Rebuild</strong> when done</span>
+      </div>
+      <!-- Scrollable sections -->
+      <div id="live-edit-sections" style="flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:16px;">
+        <div style="text-align:center; color:var(--t2); padding:40px 0;">
+          <div style="font-size:28px; margin-bottom:12px;">&#128221;</div>
+          <p>Open <strong>Live Edit</strong> after generating a resume to edit each section here.</p>
+        </div>
+      </div>
+      <!-- Status bar -->
+      <div id="live-edit-status" style="display:none; border-top:1px solid var(--border-base); padding:10px 20px; background:rgba(16,185,129,0.08); color:#10b981; font-size:13px; font-weight:600; display:flex; align-items:center; gap:8px; flex-shrink:0;">
+        <i class="fa-solid fa-circle-check"></i>
+        <span id="live-edit-status-text">Changes applied successfully!</span>
+      </div>
+    </div>
+  </div>
   <div id="change-password-modal" class="modal-backdrop" style="display:none; position: fixed; inset: 0; background: rgba(5,7,12,0.85); backdrop-filter: blur(8px); z-index: 10001; align-items: center; justify-content: center; padding: 20px;" onclick="if(event.target === this) closePasswordModal();">
     <div class="modal-card" style="background: var(--surface-card); border: 1px solid var(--border-base); border-radius: var(--r-lg); width: 90%; max-width: 460px; box-shadow: var(--shadow-xl); overflow: hidden; animation: modalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);">
       <div class="modal-header" style="border-bottom: 1px solid var(--border-base); padding: 16px 22px; display: flex; justify-content: space-between; align-items: center;">
