@@ -157,26 +157,23 @@ function isFirstTabActive() {
   return firstTab && firstTab.classList.contains("active");
 }
 
-function hasActiveResults() {
-  // Only valid if user is currently on the first tab
+function isNewResumeReady() {
+  // 1. STRICT RULE: ONLY on first tab!
   if (!isFirstTabActive()) return false;
 
-  // Check if a tailored resume result exists
-  if (window.lastResult && window.lastResult.relative_path) return true;
-
-  // Check if results dashboard is visible
+  // 2. STRICT RULE: ONLY after the new resume has been created!
+  // The results dashboard ("Tailored Resume Ready!") must be actively displayed in the DOM
   const resDash = document.getElementById("results-dashboard");
-  if (resDash && !resDash.classList.contains("hidden") && resDash.style.display !== "none") {
-    return true;
+  if (!resDash || resDash.classList.contains("hidden") || resDash.style.display === "none") {
+    return false;
   }
 
-  // Check if refine copilot card is visible
-  const refCard = document.getElementById("refine-copilot-card");
-  if (refCard && !refCard.classList.contains("hidden") && refCard.style.display !== "none") {
-    return true;
+  // And a tailored resume must actually exist in memory (relative_path, docx, or tailored_resume)
+  if (!window.lastResult || (!window.lastResult.relative_path && !window.lastResult.tailored_resume)) {
+    return false;
   }
 
-  return false;
+  return true;
 }
 
 function isAnyModalOpen() {
@@ -209,8 +206,8 @@ function initScrollCompassDetector() {
       return;
     }
 
-    // 2. STRICT RULE: ONLY when results exist on page (after analyze)
-    if (!hasActiveResults()) {
+    // 2. STRICT RULE: ONLY after the new resume has been created! Never during or after analyzing ends.
+    if (!isNewResumeReady()) {
       _scrollCompassState.recentScrolls = [];
       _scrollCompassState.accumulatedDistance = 0;
       _scrollCompassState.directionChanges = 0;
@@ -375,8 +372,8 @@ function getAvailableCompassItems() {
 }
 
 function openScrollCompass(x, y) {
-  // STRICT RULE: Only on first tab!
-  if (!isFirstTabActive()) return;
+  // STRICT RULE: Only on first tab after the new resume has been created!
+  if (!isNewResumeReady()) return;
 
   const compass = document.getElementById("quick-scroll-compass");
   const card = document.getElementById("compass-card");
@@ -2370,6 +2367,12 @@ async function analyzeJobKeywords(opts = {}) {
     analyzeAbortController.abort();
   }
   analyzeAbortController = new AbortController();
+
+  // Reset any previous tailored resume state so Quick Navigator never triggers during or after analysis
+  const resDash = document.getElementById("results-dashboard");
+  if (resDash) resDash.classList.add("hidden");
+  window.lastResult = null;
+  if (typeof closeScrollCompass === "function") closeScrollCompass(true);
 
   // Clear any previous inline error and activate inline live terminal drawer
   _analyzeHideError();
@@ -4463,11 +4466,11 @@ document.addEventListener("keydown", (e) => {
     }
   }
 
-  // Ctrl+G / Cmd+G to open Quick Navigator manually (STRICT: First tab only)
+  // Ctrl+G / Cmd+G to open Quick Navigator manually (STRICT: Only after new resume has been created)
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "g" && !e.shiftKey) {
     const activeEl = document.activeElement;
     const isTyping = activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA" || activeEl.isContentEditable);
-    if (!isTyping && !isAnyModalOpen() && typeof isFirstTabActive === "function" && isFirstTabActive()) {
+    if (!isTyping && !isAnyModalOpen() && typeof isNewResumeReady === "function" && isNewResumeReady()) {
       e.preventDefault();
       if (_scrollCompassState && _scrollCompassState.isOpen) {
         closeScrollCompass(true);
