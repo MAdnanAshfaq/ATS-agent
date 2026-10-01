@@ -252,12 +252,111 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
         margin: 0;
       }}
     }}
+
+    /* Live Paper Editor Styles */
+    body.editor-mode-active [contenteditable="true"] {{
+      transition: background 0.12s ease, outline 0.12s ease;
+      cursor: text !important;
+      border-radius: 2px;
+      min-height: 1.1em;
+    }}
+    body.editor-mode-active [contenteditable="true"]:hover {{
+      outline: 1.5px dashed rgba(2, 132, 199, 0.45) !important;
+      background: rgba(2, 132, 199, 0.04) !important;
+    }}
+    body.editor-mode-active [contenteditable="true"]:focus {{
+      outline: 2px solid #0284c7 !important;
+      background: rgba(2, 132, 199, 0.07) !important;
+      box-shadow: 0 0 6px rgba(2, 132, 199, 0.25) !important;
+    }}
+    body.editor-mode-active .bullet-item:empty:before {{
+      content: "Type new bullet point here...";
+      color: #9ca3af;
+      font-style: italic;
+    }}
   </style>
 </head>
-<body>
+<body class="editor-mode-active">
   <div class="resume-sheet">
     {body_content}
   </div>
+  <script>
+    function enableEditor(active) {{
+      if (active) {{
+        document.body.classList.add("editor-mode-active");
+        document.querySelectorAll("[data-edit]").forEach(function(el) {{
+          el.setAttribute("contenteditable", "true");
+          el.setAttribute("spellcheck", "false");
+        }});
+      }} else {{
+        document.body.classList.remove("editor-mode-active");
+        document.querySelectorAll("[data-edit]").forEach(function(el) {{
+          el.removeAttribute("contenteditable");
+        }});
+      }}
+    }}
+
+    if (!window.matchMedia || !window.matchMedia('print').matches) {{
+      enableEditor(true);
+    }}
+
+    document.addEventListener("input", function() {{
+      if (window.parent && typeof window.parent.onPreviewDocEdited === "function") {{
+        window.parent.onPreviewDocEdited();
+      }}
+    }});
+
+    document.addEventListener("keydown", function(e) {{
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {{
+        e.preventDefault();
+        if (window.parent && typeof window.parent.savePreviewEdits === "function") {{
+          window.parent.savePreviewEdits();
+        }}
+        return;
+      }}
+
+      var activeEl = document.activeElement;
+      if (!activeEl) return;
+
+      if (e.key === "Enter" && !e.shiftKey) {{
+        if (activeEl.classList.contains("bullet-item") || activeEl.tagName === "LI") {{
+          e.preventDefault();
+          var newLi = document.createElement("li");
+          newLi.className = "bullet-item";
+          newLi.setAttribute("data-edit", "bullet");
+          newLi.setAttribute("contenteditable", "true");
+          newLi.setAttribute("spellcheck", "false");
+          activeEl.parentNode.insertBefore(newLi, activeEl.nextSibling);
+          newLi.focus();
+          if (window.parent && typeof window.parent.onPreviewDocEdited === "function") {{
+            window.parent.onPreviewDocEdited();
+          }}
+        }}
+      }} else if (e.key === "Backspace") {{
+        if (activeEl.classList.contains("bullet-item") || activeEl.tagName === "LI") {{
+          if (!activeEl.innerText.trim()) {{
+            var prev = activeEl.previousElementSibling;
+            if (prev) {{
+              e.preventDefault();
+              activeEl.remove();
+              prev.focus();
+              try {{
+                var sel = window.getSelection();
+                var range = document.createRange();
+                range.selectNodeContents(prev);
+                range.collapse(false);
+                sel.removeAllRanges();
+                sel.addRange(range);
+              }} catch (_) {{}}
+              if (window.parent && typeof window.parent.onPreviewDocEdited === "function") {{
+                window.parent.onPreviewDocEdited();
+              }}
+            }}
+          }}
+        }}
+      }}
+    }});
+  </script>
 </body>
 </html>"""
 
@@ -285,9 +384,9 @@ def resume_json_to_html(resume: dict, company: str = "", role: str = "") -> str:
 
     # 1. Header
     body_parts.append('<div class="resume-header">')
-    body_parts.append(f'<div class="candidate-name">{html.escape(name.upper())}</div>')
+    body_parts.append(f'<div class="candidate-name" data-edit="name">{html.escape(name.upper())}</div>')
     if clean_role:
-        body_parts.append(f'<div class="target-role">{html.escape(clean_role)}</div>')
+        body_parts.append(f'<div class="target-role" data-edit="target_role">{html.escape(clean_role)}</div>')
 
     # Contact line
     contact_parts = []
@@ -320,7 +419,7 @@ def resume_json_to_html(resume: dict, company: str = "", role: str = "") -> str:
     # 2. Professional Summary
     if summary:
         body_parts.append('<div class="section-title">Professional Summary</div>')
-        body_parts.append(f'<p class="summary-text">{html.escape(summary)}</p>')
+        body_parts.append(f'<p class="summary-text" data-edit="summary">{html.escape(summary)}</p>')
 
     # 3. Technical Skills
     skills = resume.get("skills", [])
@@ -332,43 +431,43 @@ def resume_json_to_html(resume: dict, company: str = "", role: str = "") -> str:
             if cat_skills:
                 skills_str = ", ".join(cat_skills)
                 body_parts.append(
-                    f'<div class="skill-category"><span class="skill-category-label">{html.escape(cat_name)}:</span> {html.escape(skills_str)}</div>'
+                    f'<div class="skill-category" data-cat="{html.escape(cat_name)}"><span class="skill-category-label">{html.escape(cat_name)}:</span> <span class="skill-category-list" data-edit="skills-list">{html.escape(skills_str)}</span></div>'
                 )
 
     # 4. Professional Experience
     experience = resume.get("experience", [])
     if experience:
         body_parts.append('<div class="section-title">Professional Experience</div>')
-        for exp in experience:
+        for exp_idx, exp in enumerate(experience):
             title = sanitize_text(exp.get("title", ""))
             company_name = sanitize_text(exp.get("company", ""))
             dates = sanitize_text(exp.get("dates", ""))
             loc = sanitize_text(exp.get("location", ""))
             bullets = exp.get("bullets", [])
 
-            body_parts.append('<div class="entry-item">')
+            body_parts.append(f'<div class="entry-item exp-item" data-exp-index="{exp_idx}">')
             # Title on left, Dates on right
             body_parts.append('<div class="two-col-line">')
-            body_parts.append(f'<span class="two-col-left">{html.escape(title)}</span>')
+            body_parts.append(f'<span class="two-col-left role-title" data-edit="exp-title">{html.escape(title)}</span>')
             if dates:
-                body_parts.append(f'<span class="two-col-right">{html.escape(dates)}</span>')
+                body_parts.append(f'<span class="two-col-right role-dates" data-edit="exp-dates">{html.escape(dates)}</span>')
             body_parts.append('</div>')
 
             # Company on left, Location on right
             if company_name or loc:
                 body_parts.append('<div class="sub-line">')
-                body_parts.append(f'<span class="sub-left">{html.escape(company_name)}</span>')
+                body_parts.append(f'<span class="sub-left role-company" data-edit="exp-company">{html.escape(company_name)}</span>')
                 if loc:
-                    body_parts.append(f'<span class="sub-right">{html.escape(loc)}</span>')
+                    body_parts.append(f'<span class="sub-right role-location" data-edit="exp-loc">{html.escape(loc)}</span>')
                 body_parts.append('</div>')
 
             # Bullets
             if bullets:
-                body_parts.append('<ul class="bullet-list">')
+                body_parts.append('<ul class="bullet-list" data-edit="bullet-list">')
                 for b in bullets:
                     b_clean = sanitize_text(b)
                     if b_clean and len(b_clean) > 5:
-                        body_parts.append(f'<li class="bullet-item">{html.escape(b_clean)}</li>')
+                        body_parts.append(f'<li class="bullet-item" data-edit="bullet">{html.escape(b_clean)}</li>')
                 body_parts.append('</ul>')
 
             body_parts.append('</div>')  # /entry-item

@@ -3689,6 +3689,312 @@ function printPreviewFrame() {
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// LIVE PDF / PAPER RESUME WYSIWYG EDITOR
+// ════════════════════════════════════════════════════════════════════════════
+
+window._previewEditState = {
+  active: true,
+  hasUnsaved: false,
+  filePath: "",
+  company: "",
+  role: "",
+  originalHtml: ""
+};
+
+function togglePreviewEditMode() {
+  const state = window._previewEditState;
+  state.active = !state.active;
+
+  const btn = document.getElementById("preview-edit-mode-btn");
+  const label = document.getElementById("preview-edit-mode-label");
+  const editorBar = document.getElementById("preview-editor-bar");
+
+  if (state.active) {
+    if (btn) {
+      btn.style.background = "rgba(56, 189, 248, 0.15)";
+      btn.style.borderColor = "rgba(56, 189, 248, 0.5)";
+      btn.style.color = "var(--cyan)";
+    }
+    if (label) label.textContent = "Edit Mode: ON";
+    if (editorBar) editorBar.style.display = "flex";
+  } else {
+    if (btn) {
+      btn.style.background = "";
+      btn.style.borderColor = "";
+      btn.style.color = "";
+    }
+    if (label) label.textContent = "Edit Mode: OFF";
+    if (editorBar) editorBar.style.display = "none";
+  }
+
+  const frame = document.getElementById("resume-preview-frame");
+  if (frame && frame.contentWindow && typeof frame.contentWindow.enableEditor === "function") {
+    frame.contentWindow.enableEditor(state.active);
+  }
+}
+
+function onPreviewDocEdited() {
+  window._previewEditState.hasUnsaved = true;
+
+  const badge = document.getElementById("preview-unsaved-badge");
+  if (badge) badge.style.display = "inline-block";
+
+  const discardBtn = document.getElementById("preview-discard-btn");
+  if (discardBtn) discardBtn.style.display = "inline-flex";
+
+  const saveBtn = document.getElementById("preview-save-btn");
+  if (saveBtn) saveBtn.style.display = "inline-flex";
+
+  const statusPill = document.getElementById("preview-status-pill");
+  if (statusPill) {
+    statusPill.innerHTML = `<i class="fa-solid fa-pen-nib text-amber" style="color:#f59e0b;"></i> <span style="color:#f59e0b;">Unsaved edits</span>`;
+  }
+}
+
+function togglePreviewAiDrawer(forceState) {
+  const drawer = document.getElementById("preview-ai-drawer");
+  if (!drawer) return;
+  const isHidden = drawer.style.display === "none" || !drawer.style.display;
+  const show = typeof forceState === "boolean" ? forceState : isHidden;
+  drawer.style.display = show ? "block" : "none";
+  if (show) {
+    const inp = document.getElementById("preview-ai-instruction-input");
+    if (inp) {
+      inp.focus();
+      inp.select();
+    }
+  }
+}
+
+function extractResumeFromPreviewDoc() {
+  const frame = document.getElementById("resume-preview-frame");
+  const doc = frame?.contentDocument || frame?.contentWindow?.document;
+  if (!doc) return null;
+
+  // Clone baseline tailored resume or fallback object
+  let base = {};
+  if (window.lastResult && window.lastResult.tailored_resume) {
+    try {
+      base = JSON.parse(JSON.stringify(window.lastResult.tailored_resume));
+    } catch (_) {
+      base = {};
+    }
+  }
+
+  // 1. Candidate Name & Target Role
+  const nameEl = doc.querySelector('.candidate-name[data-edit="name"]') || doc.querySelector(".candidate-name");
+  if (nameEl && nameEl.innerText.trim()) {
+    base.name = nameEl.innerText.trim();
+  }
+
+  const roleEl = doc.querySelector('.target-role[data-edit="target_role"]') || doc.querySelector(".target-role");
+  if (roleEl && roleEl.innerText.trim()) {
+    base.target_role = roleEl.innerText.trim();
+  }
+
+  // 2. Professional Summary
+  const summaryEl = doc.querySelector('.summary-text[data-edit="summary"]') || doc.querySelector(".summary-text");
+  if (summaryEl) {
+    base.summary = summaryEl.innerText.trim();
+  }
+
+  // 3. Technical Skills
+  const catEls = doc.querySelectorAll(".skill-category");
+  if (catEls && catEls.length > 0) {
+    const skillsList = [];
+    catEls.forEach(catEl => {
+      const listEl = catEl.querySelector('.skill-category-list[data-edit="skills-list"]') || catEl.querySelector(".skill-category-list");
+      let rawText = listEl ? listEl.innerText : catEl.innerText;
+      rawText = rawText.replace(/^[^:]+:\s*/, "");
+      const parsed = parseKeywordsList(rawText);
+      parsed.forEach(k => {
+        if (!skillsList.map(s => s.toLowerCase()).includes(k.toLowerCase())) {
+          skillsList.push(k);
+        }
+      });
+    });
+    if (skillsList.length > 0) {
+      base.skills = skillsList;
+    }
+  }
+
+  // 4. Experience Roles & Bullets
+  const expEntries = doc.querySelectorAll('.entry-item.exp-item, .entry-item');
+  const extractedExp = [];
+
+  expEntries.forEach(entry => {
+    const bulletsList = entry.querySelectorAll('.bullet-item[data-edit="bullet"], .bullet-item, li');
+    const titleEl = entry.querySelector('.role-title, .two-col-left');
+    const datesEl = entry.querySelector('.role-dates, .two-col-right');
+    const compEl = entry.querySelector('.role-company, .sub-left');
+    const locEl = entry.querySelector('.role-location, .sub-right');
+
+    if (bulletsList.length > 0 && titleEl) {
+      const expItem = {};
+      if (titleEl) expItem.title = titleEl.innerText.trim();
+      if (datesEl) expItem.dates = datesEl.innerText.trim();
+      if (compEl) expItem.company = compEl.innerText.trim();
+      if (locEl) expItem.location = locEl.innerText.trim();
+
+      const bullets = [];
+      bulletsList.forEach(li => {
+        const text = li.innerText.trim();
+        if (text.length > 2) {
+          bullets.push(text);
+        }
+      });
+      expItem.bullets = bullets;
+      extractedExp.push(expItem);
+    }
+  });
+
+  if (extractedExp.length > 0) {
+    base.experience = extractedExp;
+  }
+
+  return base;
+}
+
+async function savePreviewEdits(optionalInstruction = "") {
+  const saveBtn = document.getElementById("preview-save-btn");
+  const spinner = document.getElementById("preview-save-spinner");
+  const icon = document.getElementById("preview-save-icon");
+  const label = document.getElementById("preview-save-label");
+  const statusPill = document.getElementById("preview-status-pill");
+
+  const updatedResume = extractResumeFromPreviewDoc();
+  if (!updatedResume) {
+    showToast("Could not access document content to save", "warning");
+    return;
+  }
+
+  if (saveBtn) saveBtn.disabled = true;
+  if (spinner) spinner.style.display = "inline-block";
+  if (icon) icon.style.display = "none";
+  if (label) label.textContent = "Saving & Rebuilding...";
+  if (statusPill) {
+    statusPill.innerHTML = `<span class="spinner-small" style="display:inline-block; vertical-align:middle; margin-right:4px;"></span> <span>Rebuilding DOCX &amp; PDF...</span>`;
+  }
+
+  try {
+    const state = window._previewEditState;
+    const res = await fetch("/api/save-preview-edits", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        relative_path: state.filePath,
+        updated_resume: updatedResume,
+        instruction: optionalInstruction,
+        company: state.company,
+        role: state.role
+      })
+    });
+
+    const data = await res.json();
+    if (data.success) {
+      state.hasUnsaved = false;
+
+      // Update baseline tailored resume in client memory
+      if (data.updated_resume) {
+        if (!window.lastResult) window.lastResult = {};
+        window.lastResult.tailored_resume = data.updated_resume;
+        if (data.relative_path) window.lastResult.relative_path = data.relative_path;
+        if (data.relative_pdf) window.lastResult.relative_pdf = data.relative_pdf;
+      }
+
+      // Update download buttons
+      const cacheBuster = `?t=${Date.now()}`;
+      const pdfBtn = document.getElementById("preview-download-pdf-btn");
+      const docxBtn = document.getElementById("preview-download-docx-btn");
+      const extBtn = document.getElementById("preview-external-btn");
+
+      if (data.relative_pdf && pdfBtn) {
+        pdfBtn.href = `/api/download/${encodeURIComponent(data.relative_pdf).replace(/%2F/g, '/')}${cacheBuster}`;
+      }
+      if (data.relative_path && docxBtn) {
+        docxBtn.href = `/api/download/${encodeURIComponent(data.relative_path).replace(/%2F/g, '/')}${cacheBuster}`;
+      }
+      if (data.relative_path && extBtn) {
+        extBtn.href = `/api/preview/${encodeURIComponent(data.relative_path).replace(/%2F/g, '/')}${cacheBuster}`;
+      }
+
+      const badge = document.getElementById("preview-unsaved-badge");
+      if (badge) badge.style.display = "none";
+
+      const discardBtn = document.getElementById("preview-discard-btn");
+      if (discardBtn) discardBtn.style.display = "none";
+
+      if (statusPill) {
+        statusPill.innerHTML = `<i class="fa-solid fa-circle-check text-emerald" style="color:#10b981;"></i> <span style="color:#10b981;">All changes saved &amp; rebuilt</span>`;
+      }
+
+      showToast("🎉 Resume saved! Word (.docx) and PDF rebuilt successfully.", "success");
+
+      // If instruction was used, reload frame to show AI refinements
+      if (optionalInstruction) {
+        const frame = document.getElementById("resume-preview-frame");
+        if (frame) {
+          const currentUrl = new URL(frame.src, window.location.origin);
+          currentUrl.searchParams.set("t", Date.now());
+          frame.src = currentUrl.toString();
+        }
+      }
+    } else {
+      showToast(data.error || "Failed to save edits", "error");
+      if (statusPill) {
+        statusPill.innerHTML = `<i class="fa-solid fa-circle-exclamation text-rose" style="color:#ef4444;"></i> <span style="color:#ef4444;">Save failed</span>`;
+      }
+    }
+  } catch (err) {
+    showToast("Network error while saving edits: " + err.message, "error");
+    if (statusPill) {
+      statusPill.innerHTML = `<i class="fa-solid fa-circle-exclamation text-rose" style="color:#ef4444;"></i> <span style="color:#ef4444;">Network error</span>`;
+    }
+  } finally {
+    if (saveBtn) saveBtn.disabled = false;
+    if (spinner) spinner.style.display = "none";
+    if (icon) icon.style.display = "inline-block";
+    if (label) label.textContent = "Save & Rebuild";
+  }
+}
+
+async function applyPreviewAiInstruction() {
+  const input = document.getElementById("preview-ai-instruction-input");
+  const instruction = input ? input.value.trim() : "";
+  if (!instruction) {
+    showToast("Please enter an instruction for the AI (e.g. 'Add metrics to Strive Health')", "info");
+    return;
+  }
+  togglePreviewAiDrawer(false);
+  if (input) input.value = "";
+  await savePreviewEdits(instruction);
+}
+
+function discardPreviewEdits() {
+  const state = window._previewEditState;
+  const frame = document.getElementById("resume-preview-frame");
+  if (!frame) return;
+
+  const currentUrl = new URL(frame.src, window.location.origin);
+  currentUrl.searchParams.set("t", Date.now());
+  frame.src = currentUrl.toString();
+
+  state.hasUnsaved = false;
+  const badge = document.getElementById("preview-unsaved-badge");
+  if (badge) badge.style.display = "none";
+  const discardBtn = document.getElementById("preview-discard-btn");
+  if (discardBtn) discardBtn.style.display = "none";
+  const statusPill = document.getElementById("preview-status-pill");
+  if (statusPill) {
+    statusPill.innerHTML = `<i class="fa-solid fa-rotate-left"></i> <span>Changes discarded</span>`;
+    setTimeout(() => {
+      statusPill.innerHTML = `<i class="fa-solid fa-circle-check"></i> <span>Ready to edit</span>`;
+    }, 2000);
+  }
+  showToast("Reverted edits back to saved document.", "info");
+}
+
 function openPreviewModal(filePath, company = "Tailored Resume", role = "Document Preview") {
   if (!filePath) {
     showToast("No resume document file available for preview", "warning");
@@ -3706,10 +4012,31 @@ function openPreviewModal(filePath, company = "Tailored Resume", role = "Documen
   if (!modal || !frame) return;
 
   if (title) title.textContent = company || "Resume Document";
-  if (subtitle) subtitle.textContent = role ? `${role} · In-Browser Inspector` : "In-Browser Document Inspector";
+  if (subtitle) subtitle.textContent = role ? `${role} · Live PDF/Paper Editor` : "Live PDF/Paper Editor";
 
   // Normalize path
   let cleanPath = (filePath || '').replace(/\\/g, '/');
+  window._previewEditState.filePath = cleanPath;
+  window._previewEditState.company = company || "";
+  window._previewEditState.role = role || "";
+  window._previewEditState.hasUnsaved = false;
+
+  // Reset UI status
+  const badge = document.getElementById("preview-unsaved-badge");
+  if (badge) badge.style.display = "none";
+  const discardBtn = document.getElementById("preview-discard-btn");
+  if (discardBtn) discardBtn.style.display = "none";
+  const saveBtn = document.getElementById("preview-save-btn");
+  if (saveBtn) saveBtn.style.display = "inline-flex";
+  const aiBtn = document.getElementById("preview-ai-polish-btn");
+  if (aiBtn) aiBtn.style.display = "inline-flex";
+  const editorBar = document.getElementById("preview-editor-bar");
+  if (editorBar) editorBar.style.display = window._previewEditState.active ? "flex" : "none";
+  const statusPill = document.getElementById("preview-status-pill");
+  if (statusPill) {
+    statusPill.innerHTML = `<i class="fa-solid fa-circle-check text-emerald" style="color:#10b981;"></i> <span>Ready to edit</span>`;
+  }
+
   const cacheBuster = `?t=${Date.now()}`;
   const previewUrl = `/api/preview/${encodeURIComponent(cleanPath).replace(/%2F/g, '/')}${cacheBuster}`;
   const pdfDownloadUrl = `/api/download/${encodeURIComponent(cleanPath.replace(/\.(docx|pdf|json)$/i, '.pdf')).replace(/%2F/g, '/')}${cacheBuster}`;
@@ -3727,7 +4054,14 @@ function openPreviewModal(filePath, company = "Tailored Resume", role = "Documen
     }, 3500);
   }
 
-  frame.onload = hidePreviewLoader;
+  frame.onload = function() {
+    hidePreviewLoader();
+    try {
+      if (frame.contentWindow && typeof frame.contentWindow.enableEditor === "function") {
+        frame.contentWindow.enableEditor(window._previewEditState.active);
+      }
+    } catch (_) {}
+  };
   frame.onerror = hidePreviewLoader;
   frame.src = previewUrl;
 
@@ -3758,7 +4092,7 @@ function previewMasterResume() {
   openPreviewModal("master_resume", "Master Resume Profile", "Authentic Candidate Base Profile");
 }
 
-// Close preview or password modal on ESC
+// Close preview or password modal on ESC, Save preview edits on Ctrl+S
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     const pModal = document.getElementById("resume-preview-modal");
@@ -3768,6 +4102,12 @@ document.addEventListener("keydown", (e) => {
     const pwModal = document.getElementById("change-password-modal");
     if (pwModal && pwModal.style.display === "flex") {
       closePasswordModal();
+    }
+  } else if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+    const pModal = document.getElementById("resume-preview-modal");
+    if (pModal && pModal.style.display === "flex") {
+      e.preventDefault();
+      savePreviewEdits();
     }
   }
 });

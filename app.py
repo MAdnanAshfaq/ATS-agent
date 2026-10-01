@@ -1934,25 +1934,8 @@ def preview_file(filepath):
         )
         return Response(error_html, mimetype="text/html")
 
-    # 3. If DOCX file, convert the actual document to HTML (100% faithful to download)
-    if target_path.suffix.lower() == ".docx" and target_path.exists():
-        try:
-            html_view = docx_to_html(str(target_path))
-            return Response(html_view, mimetype="text/html")
-        except Exception as e:
-            print(f"[Preview] Error converting docx to html: {e}")
-
-    # 4. If PDF file and exists, send inline
-    if target_path.suffix.lower() == ".pdf" and target_path.exists():
-        return send_file(
-            str(target_path),
-            as_attachment=False,
-            download_name=target_path.name,
-            mimetype="application/pdf",
-        )
-
-    # 5. Check for tailored_resume.json in the same folder as fallback
-    json_cand = target_path.parent / "tailored_resume.json"
+    # 3. Check for tailored_resume.json in the target folder for rich, editable HTML preview
+    json_cand = (target_path.parent / "tailored_resume.json") if target_path.is_file() else (target_path / "tailored_resume.json")
     if json_cand.exists():
         try:
             with open(json_cand, "r", encoding="utf-8") as jf:
@@ -1961,6 +1944,23 @@ def preview_file(filepath):
             return Response(html_view, mimetype="text/html")
         except Exception as e:
             print(f"[Preview] Failed reading tailored_resume.json: {e}")
+
+    # 4. If DOCX file, convert the actual document to HTML (100% faithful to download)
+    if target_path.suffix.lower() == ".docx" and target_path.exists():
+        try:
+            html_view = docx_to_html(str(target_path))
+            return Response(html_view, mimetype="text/html")
+        except Exception as e:
+            print(f"[Preview] Error converting docx to html: {e}")
+
+    # 5. If PDF file and exists, send inline
+    if target_path.suffix.lower() == ".pdf" and target_path.exists():
+        return send_file(
+            str(target_path),
+            as_attachment=False,
+            download_name=target_path.name,
+            mimetype="application/pdf",
+        )
 
     # 6. If JSON file, render as resume HTML
     if target_path.suffix.lower() == ".json":
@@ -2832,6 +2832,181 @@ def refine_resume_api():
         import traceback
         traceback.print_exc()
         return jsonify({"success": False, "error": f"Refinement failed: {str(e)}"}), 500
+
+
+
+@app.route("/api/save-preview-edits", methods=["POST"])
+@login_required
+def save_preview_edits():
+    """
+    Save direct in-browser edits made on the visual preview document.
+    Updates tailored_resume.json (or base_resume.json for master), repatches
+    the authentic Word .docx document, converts to PDF, and persists to DB.
+    """
+    data = request.get_json() or {}
+    rel_path = data.get("relative_path", "").strip()
+    updated_resume = data.get("updated_resume") or {}
+    instruction = data.get("instruction", "").strip()
+    company = data.get("company", "").strip()
+    role = data.get("role", "").strip()
+    url = data.get("url", "").strip()
+
+    if not updated_resume or not isinstance(updated_resume, dict):
+        return jsonify({"success": False, "error": "No resume data received to save."}), 400
+
+    user_output_dir = get_user_output_dir()
+    user_data_dir = current_user.data_dir if current_user.is_authenticated else BASE_DIR
+    user_resume_path = get_user_resume_path()
+    user_username = current_user.username if current_user.is_authenticated else ""
+
+    try:
+        from rewriter import sanitize_keywords_list
+        from resume_builder import build_resume_docx, convert_to_pdf
+        from slugify import slugify
+
+        # Ensure skills are cleanly decomposed
+        if isinstance(updated_resume.get("skills"), list):
+            updated_resume["skills"] = sanitize_keywords_list(updated_resume["skills"])
+
+        change_summary = "Applied direct visual paper edits and rebuilt document."
+
+        # Optional AI Polish
+        if instruction:
+            from resume_refiner import refine_tailored_resume
+            base_resume = {}
+            if user_resume_path.exists():
+                try:
+                    with open(user_resume_path, "r", encoding="utf-8") as f:
+                        base_resume = json.load(f)
+                except Exception:
+                    pass
+            refined, summary_msg = refine_tailored_resume(
+                current_resume=updated_resume,
+                instruction=instruction,
+                base_resume=base_resume,
+                company=company,
+                role=role,
+            )
+            updated_resume = refined
+            change_summary = summary_msg
+
+        # 1. Master resume edits
+        clean_rel = rel_path.replace("\\", "/").strip("/")
+        if clean_rel in ("master", "master_resume", "master_resume.docx", "master.docx", "master.pdf"):
+            with open(user_resume_path, "w", encoding="utf-8") as f:
+                json.dump(updated_resume, f, indent=2, ensure_ascii=False)
+
+            doc_path = build_resume_docx(
+                updated_resume,
+                company or "Master",
+                role or "Profile",
+                output_dir=str(user_data_dir)
+            )
+            pdf_path = convert_to_pdf(doc_path)
+            return jsonify({
+                "success": True,
+                "message": "Master resume profile updated & rebuilt successfully!",
+                "updated_resume": updated_resume,
+                "change_summary": change_summary,
+                "output_file": doc_path,
+                "relative_path": "master",
+                "relative_pdf": "master.pdf",
+            })
+
+        # 2. Tailored resume edits: locate target folder
+        target_dir = None
+        if clean_rel:
+            cand = (user_output_dir / clean_rel).resolve()
+            if cand.is_file():
+                target_dir = cand.parent
+            elif cand.is_dir():
+                target_dir = cand
+
+        if not target_dir or not target_dir.exists():
+            if company and role:
+                target_dir = user_output_dir / f"{slugify(company)}_{slugify(role)}"[:80]
+                target_dir.mkdir(parents=True, exist_ok=True)
+            else:
+                # Try finding most recent subfolder in output dir
+                subfolders = [p for p in user_output_dir.iterdir() if p.is_dir()]
+                if subfolders:
+                    subfolders.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                    target_dir = subfolders[0]
+                else:
+                    return jsonify({"success": False, "error": "Could not determine target document folder."}), 400
+
+        # Save tailored_resume.json
+        tailored_json_path = target_dir / "tailored_resume.json"
+        with open(tailored_json_path, "w", encoding="utf-8") as f:
+            json.dump(updated_resume, f, indent=2, ensure_ascii=False)
+
+        # Rebuild Word .docx document using template
+        user_orig_docx = user_data_dir / "master_resume_original.docx"
+        orig_docx_path = user_orig_docx if user_orig_docx.exists() else (BASE_DIR / "master_resume_original.docx")
+        effective_role = updated_resume.get("target_role") or role or "Resume"
+        effective_comp = company or target_dir.name.split("_")[0]
+
+        doc_path = None
+        if orig_docx_path.exists():
+            try:
+                from docx_patcher import patch_docx_with_rewritten_resume
+                doc_path = patch_docx_with_rewritten_resume(
+                    original_docx_path=str(orig_docx_path),
+                    rewritten_resume=updated_resume,
+                    company=effective_comp,
+                    role=effective_role,
+                    output_dir=str(target_dir),
+                )
+            except Exception as pe:
+                print(f"[SavePreviewEdits] Patch error: {pe}, using build_resume_docx")
+                doc_path = build_resume_docx(updated_resume, effective_comp, effective_role, output_dir=str(target_dir))
+        else:
+            doc_path = build_resume_docx(updated_resume, effective_comp, effective_role, output_dir=str(target_dir))
+
+        # Convert to PDF
+        pdf_path = None
+        try:
+            pdf_path = convert_to_pdf(doc_path)
+        except Exception as pe:
+            print(f"[SavePreviewEdits] PDF conversion error: {pe}")
+
+        rel_doc = os.path.relpath(doc_path, str(user_output_dir)).replace("\\", "/")
+        rel_pdf = os.path.relpath(pdf_path, str(user_output_dir)).replace("\\", "/") if pdf_path else ""
+
+        # Persist in Neon DB
+        if db_layer.is_db_available() and user_username:
+            try:
+                db_layer.db_save_run_log(
+                    user_username,
+                    f"preview_edit_{int(time.time()*1000)}",
+                    {
+                        "timestamp": datetime.now().isoformat(),
+                        "company": effective_comp,
+                        "role": effective_role,
+                        "output_file": doc_path,
+                        "tailored_resume": updated_resume,
+                        "change_summary": change_summary,
+                        "relative_path": rel_doc,
+                        "relative_pdf": rel_pdf,
+                    }
+                )
+            except Exception as _db_err:
+                logging.warning(f"[SavePreviewEdits] DB persist note: {_db_err}")
+
+        return jsonify({
+            "success": True,
+            "message": "Resume updated and document rebuilt successfully!",
+            "change_summary": change_summary,
+            "output_file": doc_path,
+            "relative_path": rel_doc,
+            "relative_pdf": rel_pdf,
+            "folder_path": str(target_dir),
+            "updated_resume": updated_resume,
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": f"Failed saving preview edits: {str(e)}"}), 500
 
 
 
