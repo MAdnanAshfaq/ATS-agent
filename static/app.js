@@ -195,71 +195,145 @@ function isAnyModalOpen() {
   return false;
 }
 
+let _scrollTroubleState = {
+  lastScrollY: typeof window !== "undefined" ? (window.scrollY || 0) : 0,
+  lastScrollTime: Date.now(),
+  directionChanges: 0,
+  accumulatedDistance: 0,
+  lastLegDir: 0,
+  lastLegDistance: 0
+};
+
+function resetScrollTrouble() {
+  _scrollTroubleState.directionChanges = 0;
+  _scrollTroubleState.accumulatedDistance = 0;
+  _scrollTroubleState.lastLegDir = 0;
+  _scrollTroubleState.lastLegDistance = 0;
+}
+
 function initScrollCompassDetector() {
-  // Track scroll activity to detect constant searching scrolling
+  // If user scrolls or uses wheel while already at page end, reset immediately
   window.addEventListener("wheel", (e) => {
-    // 1. STRICT RULE: ONLY on first tab! Never on history, setup, or resume tabs
+    const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    const totalHeight = document.documentElement.scrollHeight || document.body.scrollHeight || 0;
+    const maxScroll = Math.max(0, totalHeight - viewportHeight);
+    const distanceFromBottom = maxScroll - scrollY;
+
+    // Scrolling down while already near or at page end -> NO SENSE to show menu, reset immediately
+    if (distanceFromBottom <= 120 && e.deltaY > 0) {
+      resetScrollTrouble();
+      return;
+    }
+    // Scrolling up while already near or at top -> reset immediately
+    if (scrollY <= 120 && e.deltaY < 0) {
+      resetScrollTrouble();
+      return;
+    }
+  }, { passive: true });
+
+  // Track actual scroll movements to identify when user is having trouble navigating to a point
+  window.addEventListener("scroll", () => {
+    // 1. STRICT RULE: ONLY on first tab!
     if (!isFirstTabActive()) {
-      _scrollCompassState.recentScrolls = [];
-      _scrollCompassState.accumulatedDistance = 0;
-      _scrollCompassState.directionChanges = 0;
+      resetScrollTrouble();
       return;
     }
 
-    // 2. STRICT RULE: ONLY after the new resume has been created! Never during or after analyzing ends.
+    // 2. STRICT RULE: ONLY after the new resume has been created!
     if (!isNewResumeReady()) {
-      _scrollCompassState.recentScrolls = [];
-      _scrollCompassState.accumulatedDistance = 0;
-      _scrollCompassState.directionChanges = 0;
+      resetScrollTrouble();
       return;
     }
 
-    // Do not trigger if already open, muted, or in cooldown
+    // 3. Do not trigger if already open, muted, or in cooldown
     if (_scrollCompassState.isOpen) return;
 
     const now = Date.now();
     if (now < _scrollCompassState.mutedUntil) return;
-    if (now - _scrollCompassState.lastTriggerTime < 25000) return; // 25s cooldown after show
-    if (now - _scrollCompassState.lastDismissTime < 35000) return; // 35s cooldown if user dismissed
+    if (now - _scrollCompassState.lastTriggerTime < 30000) return; // 30s cooldown after trigger
+    if (now - _scrollCompassState.lastDismissTime < 45000) return; // 45s cooldown after user dismiss
 
-    // Do not trigger if typing or inside modal
+    // 4. Do not trigger if typing or inside modal
     if (isAnyModalOpen()) return;
     const activeEl = document.activeElement;
     if (activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA" || activeEl.isContentEditable)) {
       return;
     }
 
-    // Ensure page is long enough to justify navigation
-    const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
-    if (maxScroll < 500) return;
+    // 5. Boundary guards: Check distance from page end and page top
+    const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    const totalHeight = document.documentElement.scrollHeight || document.body.scrollHeight || 0;
+    const maxScroll = Math.max(0, totalHeight - viewportHeight);
+    const distanceFromBottom = maxScroll - scrollY;
 
-    const deltaY = e.deltaY;
-    if (Math.abs(deltaY) < 8) return; // ignore micro-jitter
-
-    const dir = Math.sign(deltaY);
-    if (dir !== 0) {
-      if (_scrollCompassState.lastDirection !== 0 && dir !== _scrollCompassState.lastDirection) {
-        _scrollCompassState.directionChanges++;
-      }
-      _scrollCompassState.lastDirection = dir;
+    // Ensure page is actually long enough (> 800px scrollable area)
+    if (maxScroll < 800) {
+      resetScrollTrouble();
+      return;
     }
 
-    _scrollCompassState.accumulatedDistance += Math.abs(deltaY);
+    // CRITICAL: If user is at or near page end (within 120px), scrolling down has no sense to show menu
+    if (distanceFromBottom <= 120) {
+      resetScrollTrouble();
+      _scrollTroubleState.lastScrollY = scrollY;
+      _scrollTroubleState.lastScrollTime = now;
+      return;
+    }
 
-    // Keep rolling window of 2.8 seconds
-    _scrollCompassState.recentScrolls = _scrollCompassState.recentScrolls.filter(s => now - s.time < 2800);
-    _scrollCompassState.recentScrolls.push({ time: now, deltaY: deltaY, dir: dir });
+    // CRITICAL: If user is at or near page top (within 120px), reset
+    if (scrollY <= 120) {
+      resetScrollTrouble();
+      _scrollTroubleState.lastScrollY = scrollY;
+      _scrollTroubleState.lastScrollTime = now;
+      return;
+    }
 
-    // Condition A: User reversed scroll direction >= 2 times (down-up-down searching) and scrolled > 500px
-    const isDirectionHunting = _scrollCompassState.directionChanges >= 2 && _scrollCompassState.accumulatedDistance >= 500;
+    // Calculate actual pixel movement since last scroll event
+    const deltaY = scrollY - _scrollTroubleState.lastScrollY;
+    const timeDelta = now - _scrollTroubleState.lastScrollTime;
+    _scrollTroubleState.lastScrollY = scrollY;
+    _scrollTroubleState.lastScrollTime = now;
 
-    // Condition B: User sustained heavy continuous scroll (>1500px across >= 14 wheel notches within 2.8s)
-    const isSustainedDeepScroll = _scrollCompassState.accumulatedDistance >= 1500 && _scrollCompassState.recentScrolls.length >= 14;
+    // If user stopped scrolling for > 1.2s, reset leg tracking (actions were not part of a continuous search)
+    if (timeDelta > 1200) {
+      resetScrollTrouble();
+    }
 
-    if (isDirectionHunting || isSustainedDeepScroll) {
-      _scrollCompassState.recentScrolls = [];
-      _scrollCompassState.accumulatedDistance = 0;
-      _scrollCompassState.directionChanges = 0;
+    if (Math.abs(deltaY) < 10) return;
+
+    const currentDir = Math.sign(deltaY); // 1 = down, -1 = up
+
+    if (_scrollTroubleState.lastLegDir === 0) {
+      _scrollTroubleState.lastLegDir = currentDir;
+      _scrollTroubleState.lastLegDistance = Math.abs(deltaY);
+    } else if (_scrollTroubleState.lastLegDir === currentDir) {
+      _scrollTroubleState.lastLegDistance += Math.abs(deltaY);
+    } else {
+      // User reversed direction! (e.g. was scrolling down looking for something, then reversed up)
+      // Only count as a reversal if the previous leg was a real scroll (>= 120px)
+      if (_scrollTroubleState.lastLegDistance >= 120) {
+        _scrollTroubleState.directionChanges++;
+      }
+      _scrollTroubleState.lastLegDir = currentDir;
+      _scrollTroubleState.lastLegDistance = Math.abs(deltaY);
+    }
+
+    _scrollTroubleState.accumulatedDistance += Math.abs(deltaY);
+
+    // Having trouble navigating condition:
+    // User is oscillating back and forth across content (>= 2 direction reversals within content,
+    // e.g. down -> up -> down or up -> down -> up, with >= 700px of actual travel and current leg >= 120px).
+    // Must be in the body of the page (> 150px away from top and bottom boundaries).
+    const isHuntingForSection = _scrollTroubleState.directionChanges >= 2 &&
+                                _scrollTroubleState.accumulatedDistance >= 700 &&
+                                _scrollTroubleState.lastLegDistance >= 120 &&
+                                distanceFromBottom > 150 &&
+                                scrollY > 150;
+
+    if (isHuntingForSection) {
+      resetScrollTrouble();
       _scrollCompassState.lastTriggerTime = now;
       openScrollCompass(window._lastMouseX, window._lastMouseY);
     }
@@ -437,6 +511,7 @@ function closeScrollCompass(userDismissed = false) {
     compass.style.display = "none";
   }, 180);
   _scrollCompassState.isOpen = false;
+  if (typeof resetScrollTrouble === "function") resetScrollTrouble();
   if (userDismissed) {
     _scrollCompassState.lastDismissTime = Date.now();
   }
