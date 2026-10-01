@@ -58,6 +58,16 @@ function switchTab(tabId, updateHash = true) {
   if (targetTab) targetTab.classList.add("active");
   if (targetContent) targetContent.classList.add("active");
 
+  // Always close Quick Navigator on tab switch & reset accumulator
+  if (typeof closeScrollCompass === "function") {
+    closeScrollCompass();
+  }
+  if (typeof _scrollCompassState !== "undefined") {
+    _scrollCompassState.accumulatedDistance = 0;
+    _scrollCompassState.directionChanges = 0;
+    _scrollCompassState.recentScrolls = [];
+  }
+
   // Smoothly scroll to top so user lands cleanly on the new tab view
   window.scrollTo({ top: 0, behavior: "smooth" });
 
@@ -79,7 +89,6 @@ function scrollToTop() {
 
 function initScrollNavigation() {
   const backToTopBtn = document.getElementById("back-to-top-btn");
-  const compassTriggerBtn = document.getElementById("compass-nav-trigger-btn");
   const progressCircle = document.getElementById("scroll-progress-circle");
   const appHeader = document.querySelector(".app-header");
   const circumference = 106.81; // 2 * pi * 17
@@ -88,14 +97,12 @@ function initScrollNavigation() {
     const scrollY = window.scrollY || document.documentElement.scrollTop;
     const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
 
-    // Toggle Back to Top & Compass Buttons
+    // Toggle Back to Top Button
     if (backToTopBtn) {
       if (scrollY > 260) {
         backToTopBtn.classList.add("visible");
-        if (compassTriggerBtn) compassTriggerBtn.classList.add("visible");
       } else {
         backToTopBtn.classList.remove("visible");
-        if (compassTriggerBtn) compassTriggerBtn.classList.remove("visible");
       }
 
       // Update circular SVG progress indicator
@@ -125,10 +132,17 @@ function initScrollNavigation() {
 // SMART CURSOR SCROLL COMPASS / QUICK NAVIGATOR CONTROLLER
 // ════════════════════════════════════════════════════════════════════════════
 
-let _scrollWheelTicks = [];
-let _lastCompassTrigger = 0;
-let _compassMutedUntil = 0;
-let _compassIsOpen = false;
+let _scrollCompassState = {
+  isOpen: false,
+  mutedUntil: 0,
+  lastTriggerTime: 0,
+  lastDismissTime: 0,
+  recentScrolls: [],
+  lastDirection: 0,
+  directionChanges: 0,
+  accumulatedDistance: 0,
+  activeItems: []
+};
 
 window._lastMouseX = window.innerWidth / 2;
 window._lastMouseY = window.innerHeight / 2;
@@ -137,6 +151,33 @@ window.addEventListener("mousemove", (e) => {
   window._lastMouseX = e.clientX;
   window._lastMouseY = e.clientY;
 }, { passive: true });
+
+function isFirstTabActive() {
+  const firstTab = document.getElementById("tab-new-app");
+  return firstTab && firstTab.classList.contains("active");
+}
+
+function hasActiveResults() {
+  // Only valid if user is currently on the first tab
+  if (!isFirstTabActive()) return false;
+
+  // Check if a tailored resume result exists
+  if (window.lastResult && window.lastResult.relative_path) return true;
+
+  // Check if results dashboard is visible
+  const resDash = document.getElementById("results-dashboard");
+  if (resDash && !resDash.classList.contains("hidden") && resDash.style.display !== "none") {
+    return true;
+  }
+
+  // Check if refine copilot card is visible
+  const refCard = document.getElementById("refine-copilot-card");
+  if (refCard && !refCard.classList.contains("hidden") && refCard.style.display !== "none") {
+    return true;
+  }
+
+  return false;
+}
 
 function isAnyModalOpen() {
   const previewModal = document.getElementById("resume-preview-modal");
@@ -158,47 +199,214 @@ function isAnyModalOpen() {
 }
 
 function initScrollCompassDetector() {
-  function recordScrollTick() {
-    if (_compassIsOpen) return;
+  // Track scroll activity to detect constant searching scrolling
+  window.addEventListener("wheel", (e) => {
+    // 1. STRICT RULE: ONLY on first tab! Never on history, setup, or resume tabs
+    if (!isFirstTabActive()) {
+      _scrollCompassState.recentScrolls = [];
+      _scrollCompassState.accumulatedDistance = 0;
+      _scrollCompassState.directionChanges = 0;
+      return;
+    }
+
+    // 2. STRICT RULE: ONLY when results exist on page (after analyze)
+    if (!hasActiveResults()) {
+      _scrollCompassState.recentScrolls = [];
+      _scrollCompassState.accumulatedDistance = 0;
+      _scrollCompassState.directionChanges = 0;
+      return;
+    }
+
+    // Do not trigger if already open, muted, or in cooldown
+    if (_scrollCompassState.isOpen) return;
 
     const now = Date.now();
-    if (now < _compassMutedUntil) return;
-    if (now - _lastCompassTrigger < 9000) return;
+    if (now < _scrollCompassState.mutedUntil) return;
+    if (now - _scrollCompassState.lastTriggerTime < 25000) return; // 25s cooldown after show
+    if (now - _scrollCompassState.lastDismissTime < 35000) return; // 35s cooldown if user dismissed
 
+    // Do not trigger if typing or inside modal
     if (isAnyModalOpen()) return;
     const activeEl = document.activeElement;
     if (activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA" || activeEl.isContentEditable)) {
       return;
     }
 
-    _scrollWheelTicks = _scrollWheelTicks.filter(t => now - t < 1800);
-    _scrollWheelTicks.push(now);
+    // Ensure page is long enough to justify navigation
+    const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+    if (maxScroll < 500) return;
 
-    // If user scrolled 6 times within 1.8 seconds
-    if (_scrollWheelTicks.length >= 6) {
-      _scrollWheelTicks = [];
-      _lastCompassTrigger = now;
-      openScrollCompass(window._lastMouseX, window._lastMouseY);
+    const deltaY = e.deltaY;
+    if (Math.abs(deltaY) < 8) return; // ignore micro-jitter
+
+    const dir = Math.sign(deltaY);
+    if (dir !== 0) {
+      if (_scrollCompassState.lastDirection !== 0 && dir !== _scrollCompassState.lastDirection) {
+        _scrollCompassState.directionChanges++;
+      }
+      _scrollCompassState.lastDirection = dir;
     }
-  }
 
-  // Wheel scroll notches / trackpad gestures
-  window.addEventListener("wheel", (e) => {
-    if (Math.abs(e.deltaY) >= 6) {
-      recordScrollTick();
+    _scrollCompassState.accumulatedDistance += Math.abs(deltaY);
+
+    // Keep rolling window of 2.8 seconds
+    _scrollCompassState.recentScrolls = _scrollCompassState.recentScrolls.filter(s => now - s.time < 2800);
+    _scrollCompassState.recentScrolls.push({ time: now, deltaY: deltaY, dir: dir });
+
+    // Condition A: User reversed scroll direction >= 2 times (down-up-down searching) and scrolled > 500px
+    const isDirectionHunting = _scrollCompassState.directionChanges >= 2 && _scrollCompassState.accumulatedDistance >= 500;
+
+    // Condition B: User sustained heavy continuous scroll (>1500px across >= 14 wheel notches within 2.8s)
+    const isSustainedDeepScroll = _scrollCompassState.accumulatedDistance >= 1500 && _scrollCompassState.recentScrolls.length >= 14;
+
+    if (isDirectionHunting || isSustainedDeepScroll) {
+      _scrollCompassState.recentScrolls = [];
+      _scrollCompassState.accumulatedDistance = 0;
+      _scrollCompassState.directionChanges = 0;
+      _scrollCompassState.lastTriggerTime = now;
+      openScrollCompass(window._lastMouseX, window._lastMouseY);
     }
   }, { passive: true });
 }
 
+function getAvailableCompassItems() {
+  const items = [];
+
+  // 1. Job Input & URL
+  items.push({
+    id: "job-inputs",
+    icon: "fa-bullseye",
+    color: "#38bdf8",
+    label: "Job Input & URL",
+    hint: "Target role & JD",
+    action: () => {
+      const urlInp = document.getElementById("url-input");
+      const jdCard = document.getElementById("jd-input-container") || document.querySelector(".job-input-card") || urlInp;
+      highlightAndScroll(jdCard, urlInp);
+    }
+  });
+
+  // 2. ATS Match Score (only if results dashboard is visible)
+  const resDash = document.getElementById("results-dashboard");
+  if (resDash && !resDash.classList.contains("hidden") && resDash.style.display !== "none") {
+    items.push({
+      id: "results",
+      icon: "fa-chart-pie",
+      color: "#f43f5e",
+      label: "ATS Match Score",
+      hint: "Score & diagnostics",
+      action: () => {
+        highlightAndScroll(resDash);
+      }
+    });
+  }
+
+  // 3. Refine Copilot (only if refine card exists and is visible)
+  const refCard = document.getElementById("refine-copilot-card");
+  if (refCard && !refCard.classList.contains("hidden") && refCard.style.display !== "none") {
+    items.push({
+      id: "refine",
+      icon: "fa-wand-magic-sparkles",
+      color: "#f59e0b",
+      label: "Refine Copilot",
+      hint: "Targeted section chips",
+      action: () => {
+        const refInp = document.getElementById("refine-instruction-input");
+        highlightAndScroll(refCard, refInp);
+      }
+    });
+  }
+
+  // 4. Resume Preview & Live Editor (only if tailored resume exists)
+  if (window.lastResult && window.lastResult.relative_path) {
+    items.push({
+      id: "preview",
+      icon: "fa-file-pdf",
+      color: "#a855f7",
+      label: "Resume Preview",
+      hint: "In-browser live editor",
+      action: () => {
+        previewCurrentResume();
+      }
+    });
+
+    // 5. Cover Letter (only if application exists)
+    items.push({
+      id: "cover-letter",
+      icon: "fa-envelope-open-text",
+      color: "#10b981",
+      label: "Cover Letter",
+      hint: "Generate & download",
+      action: () => {
+        if (typeof openCurrentCoverLetter === "function") {
+          openCurrentCoverLetter();
+        } else if (typeof openCoverLetterModal === "function") {
+          openCoverLetterModal();
+        }
+      }
+    });
+  }
+
+  // 6. Top of Page
+  items.push({
+    id: "top",
+    icon: "fa-arrow-up",
+    color: "#0284c7",
+    label: "Top of Page",
+    hint: "Scroll to top",
+    action: () => {
+      scrollToTop();
+    }
+  });
+
+  // 7. Bottom / Live Console
+  items.push({
+    id: "bottom",
+    icon: "fa-terminal",
+    color: "#6366f1",
+    label: "Bottom / Console",
+    hint: "Scroll to bottom",
+    action: () => {
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
+    }
+  });
+
+  return items;
+}
+
 function openScrollCompass(x, y) {
+  // STRICT RULE: Only on first tab!
+  if (!isFirstTabActive()) return;
+
   const compass = document.getElementById("quick-scroll-compass");
   const card = document.getElementById("compass-card");
-  if (!compass || !card) return;
+  const grid = document.getElementById("compass-grid");
+  if (!compass || !card || !grid) return;
+
+  const items = getAvailableCompassItems();
+  _scrollCompassState.activeItems = items;
+
+  // Build grid HTML dynamically based on what actually exists
+  grid.innerHTML = items.map((item, index) => `
+    <button type="button" class="compass-item" onclick="triggerCompassItemIndex(${index})">
+      <div class="compass-item-icon" style="color: ${item.color};"><i class="fa-solid ${item.icon}"></i></div>
+      <div class="compass-item-text">
+        <span class="compass-item-label">${item.label}</span>
+        <span class="compass-item-hint">${item.hint}</span>
+      </div>
+      <span class="compass-item-key">${index + 1}</span>
+    </button>
+  `).join("");
+
+  const hintEl = document.getElementById("compass-footer-hint");
+  if (hintEl) {
+    hintEl.innerHTML = `<i class="fa-solid fa-keyboard"></i> Press <strong>1–${items.length}</strong> • <strong>Esc</strong> to close`;
+  }
 
   const mouseX = (typeof x === "number" && x > 0) ? x : window._lastMouseX || window.innerWidth / 2;
   const mouseY = (typeof y === "number" && y > 0) ? y : window._lastMouseY || window.innerHeight / 2;
 
-  const cardW = 330;
+  const cardW = 390;
   const cardH = 340;
   const pad = 16;
 
@@ -221,84 +429,45 @@ function openScrollCompass(x, y) {
 
   compass.style.display = "block";
   compass.classList.remove("hidden");
-  _compassIsOpen = true;
+  _scrollCompassState.isOpen = true;
 }
 
-function closeScrollCompass() {
+function closeScrollCompass(userDismissed = false) {
   const compass = document.getElementById("quick-scroll-compass");
   if (!compass) return;
   compass.classList.add("hidden");
   setTimeout(() => {
     compass.style.display = "none";
   }, 180);
-  _compassIsOpen = false;
+  _scrollCompassState.isOpen = false;
+  if (userDismissed) {
+    _scrollCompassState.lastDismissTime = Date.now();
+  }
 }
 
 function muteScrollCompass(seconds = 300) {
-  _compassMutedUntil = Date.now() + (seconds * 1000);
-  closeScrollCompass();
+  _scrollCompassState.mutedUntil = Date.now() + (seconds * 1000);
+  closeScrollCompass(true);
   showToast(`Quick Navigator muted for ${Math.round(seconds / 60)} minutes`, "info");
 }
 
-function compassNavigate(destination) {
-  closeScrollCompass();
-
-  function highlightAndScroll(el, focusEl) {
-    if (!el) return;
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    el.classList.add("section-highlight-pulse");
-    setTimeout(() => el.classList.remove("section-highlight-pulse"), 1800);
-    if (focusEl && typeof focusEl.focus === "function") {
-      setTimeout(() => focusEl.focus(), 350);
-    }
+function triggerCompassItemIndex(index) {
+  const item = _scrollCompassState.activeItems[index];
+  if (!item) return;
+  closeScrollCompass(false);
+  _scrollCompassState.lastTriggerTime = Date.now();
+  if (typeof item.action === "function") {
+    item.action();
   }
+}
 
-  switch (destination) {
-    case "job-inputs":
-      switchTab("new-app", true);
-      const urlInp = document.getElementById("url-input");
-      const jdCard = document.getElementById("jd-input-container") || document.querySelector(".job-input-card") || urlInp;
-      highlightAndScroll(jdCard, urlInp);
-      break;
-
-    case "preview":
-      previewCurrentResume();
-      break;
-
-    case "refine":
-      switchTab("new-app", true);
-      const refCard = document.getElementById("refine-copilot-card");
-      const refInp = document.getElementById("refine-instruction-input");
-      highlightAndScroll(refCard, refInp);
-      break;
-
-    case "cover-letter":
-      if (typeof openCurrentCoverLetter === "function") {
-        openCurrentCoverLetter();
-      } else if (typeof openCoverLetterModal === "function") {
-        openCoverLetterModal();
-      }
-      break;
-
-    case "history":
-      switchTab("history", true);
-      const histGrid = document.getElementById("history-grid");
-      highlightAndScroll(histGrid);
-      break;
-
-    case "results":
-      switchTab("new-app", true);
-      const resDash = document.getElementById("results-dashboard") || document.querySelector(".results-dashboard");
-      highlightAndScroll(resDash);
-      break;
-
-    case "top":
-      scrollToTop();
-      break;
-
-    case "bottom":
-      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
-      break;
+function highlightAndScroll(el, focusEl) {
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.classList.add("section-highlight-pulse");
+  setTimeout(() => el.classList.remove("section-highlight-pulse"), 1800);
+  if (focusEl && typeof focusEl.focus === "function") {
+    setTimeout(() => focusEl.focus(), 350);
   }
 }
 
@@ -4280,38 +4449,28 @@ function previewMasterResume() {
 // Close preview or password modal or compass on ESC, Save preview edits on Ctrl+S, Open Compass on Ctrl+G
 document.addEventListener("keydown", (e) => {
   // If Quick Scroll Compass is open
-  if (_compassIsOpen) {
+  if (typeof _scrollCompassState !== "undefined" && _scrollCompassState.isOpen) {
     if (e.key === "Escape") {
       e.preventDefault();
-      closeScrollCompass();
+      closeScrollCompass(true);
       return;
     }
     const num = parseInt(e.key, 10);
-    if (!isNaN(num) && num >= 1 && num <= 8) {
+    if (!isNaN(num) && num >= 1 && num <= _scrollCompassState.activeItems.length) {
       e.preventDefault();
-      const destinations = [
-        "job-inputs",
-        "preview",
-        "refine",
-        "cover-letter",
-        "history",
-        "results",
-        "top",
-        "bottom"
-      ];
-      compassNavigate(destinations[num - 1]);
+      triggerCompassItemIndex(num - 1);
       return;
     }
   }
 
-  // Ctrl+G / Cmd+G to open Quick Navigator manually
+  // Ctrl+G / Cmd+G to open Quick Navigator manually (STRICT: First tab only)
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "g" && !e.shiftKey) {
     const activeEl = document.activeElement;
     const isTyping = activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA" || activeEl.isContentEditable);
-    if (!isTyping && !isAnyModalOpen()) {
+    if (!isTyping && !isAnyModalOpen() && typeof isFirstTabActive === "function" && isFirstTabActive()) {
       e.preventDefault();
-      if (_compassIsOpen) {
-        closeScrollCompass();
+      if (_scrollCompassState && _scrollCompassState.isOpen) {
+        closeScrollCompass(true);
       } else {
         openScrollCompass(window._lastMouseX, window._lastMouseY);
       }
