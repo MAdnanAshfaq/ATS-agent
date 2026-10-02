@@ -232,16 +232,19 @@ def build_resume_docx(
         run_li = li_para.add_run(contact["linkedin"])
         set_font(run_li, size=9.5, color=(40, 40, 40))
     
+    # ─── Dynamic Section Headings ─────────────────────────────────────────────
+    headings = resume.get("section_headings", {}) or {}
+
     # ─── SUMMARY ─────────────────────────────────────────────────────────────
     summary = resume.get("summary", "")
     if summary:
-        add_section_header("Professional Summary")
+        add_section_header(headings.get("summary") or "Professional Summary")
         add_normal_text(sanitize_text(summary), size=10)
     
     # ─── SKILLS ──────────────────────────────────────────────────────────────
     skills = resume.get("skills", [])
     if skills:
-        add_section_header("Technical Skills")
+        add_section_header(headings.get("skills") or "Technical Skills")
         
         # Group skills into rows of ~6 per line for clean layout
         clean_skills = [sanitize_text(s) for s in skills if s]
@@ -264,7 +267,7 @@ def build_resume_docx(
     # ─── EXPERIENCE ──────────────────────────────────────────────────────────
     experience = resume.get("experience", [])
     if experience:
-        add_section_header("Professional Experience")
+        add_section_header(headings.get("experience") or "Professional Experience")
         
         for role_entry in experience:
             title = sanitize_text(role_entry.get("title") or role_entry.get("role", ""))
@@ -292,7 +295,7 @@ def build_resume_docx(
     # ─── PROJECTS ────────────────────────────────────────────────────
     projects = resume.get("projects", [])
     if projects:
-        add_section_header("Projects")
+        add_section_header(headings.get("projects") or "Projects")
         
         for project in projects:
             proj_name = sanitize_text(project.get("name", ""))
@@ -318,7 +321,7 @@ def build_resume_docx(
     # ─── EDUCATION ───────────────────────────────────────────────────
     education = resume.get("education", [])
     if education:
-        add_section_header("Education")
+        add_section_header(headings.get("education") or "Education")
         
         for edu in education:
             institution = sanitize_text(edu.get("institution", ""))
@@ -342,7 +345,7 @@ def build_resume_docx(
     # ─── CERTIFICATIONS ──────────────────────────────────────────────────────
     certifications = resume.get("certifications", [])
     if certifications:
-        add_section_header("Certifications")
+        add_section_header(headings.get("certifications") or "Certifications")
         for cert in certifications:
             if cert:
                 add_bullet(sanitize_text(cert))

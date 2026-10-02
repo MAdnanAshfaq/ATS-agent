@@ -282,15 +282,16 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
   </div>
   <script>
     function enableEditor(active) {{
+      var selector = "[data-edit], .section-title, .candidate-name, .target-role, .two-col-left, .two-col-right, .sub-left, .sub-right, .bullet-item, .summary-text, .skill-category-list";
       if (active) {{
         document.body.classList.add("editor-mode-active");
-        document.querySelectorAll("[data-edit]").forEach(function(el) {{
+        document.querySelectorAll(selector).forEach(function(el) {{
           el.setAttribute("contenteditable", "true");
           el.setAttribute("spellcheck", "false");
         }});
       }} else {{
         document.body.classList.remove("editor-mode-active");
-        document.querySelectorAll("[data-edit]").forEach(function(el) {{
+        document.querySelectorAll(selector).forEach(function(el) {{
           el.removeAttribute("contenteditable");
         }});
       }}
@@ -331,6 +332,9 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
           if (window.parent && typeof window.parent.onPreviewDocEdited === "function") {{
             window.parent.onPreviewDocEdited();
           }}
+        }} else if (activeEl.classList.contains("section-title") || activeEl.classList.contains("candidate-name") || activeEl.classList.contains("target-role") || activeEl.classList.contains("two-col-left") || activeEl.classList.contains("two-col-right") || activeEl.classList.contains("sub-left") || activeEl.classList.contains("sub-right")) {{
+          e.preventDefault();
+          activeEl.blur();
         }}
       }} else if (e.key === "Backspace") {{
         if (activeEl.classList.contains("bullet-item") || activeEl.tagName === "LI") {{
@@ -416,15 +420,23 @@ def resume_json_to_html(resume: dict, company: str = "", role: str = "") -> str:
         body_parts.append(f'<div class="contact-line">{sep.join(contact_parts)}</div>')
     body_parts.append('</div>')  # /resume-header
 
+    headings = resume.get("section_headings", {})
+    summary_title = sanitize_text(headings.get("summary", "Professional Summary")) or "Professional Summary"
+    skills_title = sanitize_text(headings.get("skills", "Technical Skills")) or "Technical Skills"
+    exp_title = sanitize_text(headings.get("experience", "Professional Experience")) or "Professional Experience"
+    edu_title = sanitize_text(headings.get("education", "Education")) or "Education"
+    cert_title = sanitize_text(headings.get("certifications", "Certifications")) or "Certifications"
+    proj_title = sanitize_text(headings.get("projects", "Key Projects")) or "Key Projects"
+
     # 2. Professional Summary
     if summary:
-        body_parts.append('<div class="section-title">Professional Summary</div>')
+        body_parts.append(f'<div class="section-title" data-edit="section-heading" data-section="summary">{html.escape(summary_title)}</div>')
         body_parts.append(f'<p class="summary-text" data-edit="summary">{html.escape(summary)}</p>')
 
     # 3. Technical Skills
     skills = resume.get("skills", [])
     if skills:
-        body_parts.append('<div class="section-title">Technical Skills</div>')
+        body_parts.append(f'<div class="section-title" data-edit="section-heading" data-section="skills">{html.escape(skills_title)}</div>')
         from resume_builder import _categorize_skills
         categorized = _categorize_skills(skills)
         for cat_name, cat_skills in categorized.items():
@@ -437,7 +449,7 @@ def resume_json_to_html(resume: dict, company: str = "", role: str = "") -> str:
     # 4. Professional Experience
     experience = resume.get("experience", [])
     if experience:
-        body_parts.append('<div class="section-title">Professional Experience</div>')
+        body_parts.append(f'<div class="section-title" data-edit="section-heading" data-section="experience">{html.escape(exp_title)}</div>')
         for exp_idx, exp in enumerate(experience):
             title = sanitize_text(exp.get("title", ""))
             company_name = sanitize_text(exp.get("company", ""))
@@ -475,7 +487,7 @@ def resume_json_to_html(resume: dict, company: str = "", role: str = "") -> str:
     # 5. Education
     education = resume.get("education", [])
     if education:
-        body_parts.append('<div class="section-title">Education</div>')
+        body_parts.append(f'<div class="section-title" data-edit="section-heading" data-section="education">{html.escape(edu_title)}</div>')
         for edu in education:
             inst = sanitize_text(edu.get("institution", ""))
             deg = sanitize_text(edu.get("degree", ""))
@@ -486,13 +498,13 @@ def resume_json_to_html(resume: dict, company: str = "", role: str = "") -> str:
             deg_title = f"{deg} in {fld}" if (deg and fld and not deg.lower().endswith("in")) else (deg or fld or inst)
             body_parts.append('<div class="entry-item">')
             body_parts.append('<div class="two-col-line">')
-            body_parts.append(f'<span class="two-col-left">{html.escape(deg_title)}</span>')
+            body_parts.append(f'<span class="two-col-left" data-edit="edu-degree">{html.escape(deg_title)}</span>')
             if gdate:
-                body_parts.append(f'<span class="two-col-right">{html.escape(gdate)}</span>')
+                body_parts.append(f'<span class="two-col-right" data-edit="edu-date">{html.escape(gdate)}</span>')
             body_parts.append('</div>')
 
             if inst and deg_title != inst:
-                body_parts.append(f'<div class="sub-line"><span class="sub-left">{html.escape(inst)}</span></div>')
+                body_parts.append(f'<div class="sub-line"><span class="sub-left" data-edit="edu-school">{html.escape(inst)}</span></div>')
             if gpa:
                 body_parts.append(f'<div style="font-size: 9.5pt; color: #374151;">GPA: {html.escape(gpa)}</div>')
             body_parts.append('</div>')
@@ -500,32 +512,32 @@ def resume_json_to_html(resume: dict, company: str = "", role: str = "") -> str:
     # 6. Certifications
     certs = resume.get("certifications", [])
     if certs:
-        body_parts.append('<div class="section-title">Certifications</div>')
+        body_parts.append(f'<div class="section-title" data-edit="section-heading" data-section="certifications">{html.escape(cert_title)}</div>')
         body_parts.append('<ul class="bullet-list">')
         for c in certs:
             c_clean = sanitize_text(c)
             if c_clean:
-                body_parts.append(f'<li class="bullet-item">{html.escape(c_clean)}</li>')
+                body_parts.append(f'<li class="bullet-item" data-edit="bullet">{html.escape(c_clean)}</li>')
         body_parts.append('</ul>')
 
     # 7. Projects (if present)
     projects = resume.get("projects", [])
     if projects:
-        body_parts.append('<div class="section-title">Key Projects</div>')
+        body_parts.append(f'<div class="section-title" data-edit="section-heading" data-section="projects">{html.escape(proj_title)}</div>')
         for p in projects:
             pname = sanitize_text(p.get("name", ""))
             pdesc = sanitize_text(p.get("description", ""))
             pbullets = p.get("bullets", [])
             body_parts.append('<div class="entry-item">')
-            body_parts.append(f'<div class="two-col-left">{html.escape(pname)}</div>')
+            body_parts.append(f'<div class="two-col-left" data-edit="proj-name">{html.escape(pname)}</div>')
             if pdesc:
-                body_parts.append(f'<p class="summary-text" style="margin-bottom:2px;">{html.escape(pdesc)}</p>')
+                body_parts.append(f'<p class="summary-text" data-edit="proj-desc" style="margin-bottom:2px;">{html.escape(pdesc)}</p>')
             if pbullets:
                 body_parts.append('<ul class="bullet-list">')
                 for b in pbullets:
                     b_clean = sanitize_text(b)
                     if b_clean:
-                        body_parts.append(f'<li class="bullet-item">{html.escape(b_clean)}</li>')
+                        body_parts.append(f'<li class="bullet-item" data-edit="bullet">{html.escape(b_clean)}</li>')
                 body_parts.append('</ul>')
             body_parts.append('</div>')
 
@@ -614,7 +626,7 @@ def docx_to_html(docx_path: str, company: str = "", role: str = "") -> str:
         # 1. The very first non-empty paragraph of the document is ALWAYS the Candidate Name
         if not candidate_name_done:
             body_parts.append('<div class="resume-header">')
-            body_parts.append(f'<div class="candidate-name">{html.escape(raw_text)}</div>')
+            body_parts.append(f'<div class="candidate-name" data-edit="name">{html.escape(raw_text)}</div>')
             header_open = True
             candidate_name_done = True
             continue
@@ -656,7 +668,7 @@ def docx_to_html(docx_path: str, company: str = "", role: str = "") -> str:
                     from scraper import clean_role_title
                     clean_role = clean_role_title(raw_text)
                     if clean_role.upper() not in ("UNKNOWN", "NONE", "RESUME", ""):
-                        body_parts.append(f'<div class="target-role">{html.escape(clean_role)}</div>')
+                        body_parts.append(f'<div class="target-role" data-edit="target_role">{html.escape(clean_role)}</div>')
                     continue
                 else:
                     if header_open:
@@ -672,7 +684,7 @@ def docx_to_html(docx_path: str, company: str = "", role: str = "") -> str:
             if in_bullet_list:
                 body_parts.append("</ul>")
                 in_bullet_list = False
-            body_parts.append(f'<div class="section-title">{html.escape(raw_text)}</div>')
+            body_parts.append(f'<div class="section-title" data-edit="section-heading">{html.escape(raw_text)}</div>')
             continue
 
         # Handle bullets (strictly inside <ul><li class="bullet-item">, NEVER as two-col-line!)
@@ -684,7 +696,7 @@ def docx_to_html(docx_path: str, company: str = "", role: str = "") -> str:
             clean_b = re.sub(r'^[•·▪▸►\*\-]\s*', '', clean_b).strip()
             clean_b = clean_b.replace('\t', ' ')
             if clean_b:
-                body_parts.append(f'<li class="bullet-item">{html.escape(clean_b)}</li>')
+                body_parts.append(f'<li class="bullet-item" data-edit="bullet">{html.escape(clean_b)}</li>')
             continue
 
         # If we reach here and was in bullet list, close it
@@ -703,15 +715,15 @@ def docx_to_html(docx_path: str, company: str = "", role: str = "") -> str:
 
             if has_bold or not has_italic:
                 body_parts.append('<div class="two-col-line">')
-                body_parts.append(f'<span class="two-col-left">{html.escape(left)}</span>')
+                body_parts.append(f'<span class="two-col-left" data-edit="text">{html.escape(left)}</span>')
                 if right:
-                    body_parts.append(f'<span class="two-col-right">{html.escape(right)}</span>')
+                    body_parts.append(f'<span class="two-col-right" data-edit="text">{html.escape(right)}</span>')
                 body_parts.append('</div>')
             else:
                 body_parts.append('<div class="sub-line">')
-                body_parts.append(f'<span class="sub-left">{html.escape(left)}</span>')
+                body_parts.append(f'<span class="sub-left" data-edit="text">{html.escape(left)}</span>')
                 if right:
-                    body_parts.append(f'<span class="sub-right">{html.escape(right)}</span>')
+                    body_parts.append(f'<span class="sub-right" data-edit="text">{html.escape(right)}</span>')
                 body_parts.append('</div>')
             continue
         elif "\t" in raw_text:
@@ -720,7 +732,7 @@ def docx_to_html(docx_path: str, company: str = "", role: str = "") -> str:
         # Sub-line check (e.g. italic institution or company line without tab)
         has_italic = any(r.italic for r in para.runs if r.italic)
         if has_italic and len(raw_text) < 80:
-            body_parts.append(f'<div class="sub-line"><span class="sub-left">{html.escape(raw_text)}</span></div>')
+            body_parts.append(f'<div class="sub-line"><span class="sub-left" data-edit="text">{html.escape(raw_text)}</span></div>')
             continue
 
         # Category line check (e.g. "Languages: Python, Java...")

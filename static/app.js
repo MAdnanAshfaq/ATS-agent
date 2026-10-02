@@ -4460,17 +4460,58 @@ function onPreviewDocEdited() {
 }
 
 function togglePreviewAiDrawer(forceState) {
-  const drawer = document.getElementById("preview-ai-drawer");
-  if (!drawer) return;
-  const isHidden = drawer.style.display === "none" || !drawer.style.display;
+  const sidebar = document.getElementById("preview-ai-sidebar");
+  const aiBtn = document.getElementById("preview-ai-polish-btn");
+  if (!sidebar) return;
+  const isHidden = sidebar.style.display === "none" || !sidebar.style.display;
   const show = typeof forceState === "boolean" ? forceState : isHidden;
-  drawer.style.display = show ? "block" : "none";
+  sidebar.style.display = show ? "flex" : "none";
+  if (aiBtn) {
+    if (show) {
+      aiBtn.style.background = "rgba(245,158,11,0.2)";
+      aiBtn.style.borderColor = "#f59e0b";
+      aiBtn.style.boxShadow = "0 0 10px rgba(245,158,11,0.25)";
+    } else {
+      aiBtn.style.background = "";
+      aiBtn.style.borderColor = "rgba(245,158,11,0.35)";
+      aiBtn.style.boxShadow = "";
+    }
+  }
   if (show) {
     const inp = document.getElementById("preview-ai-instruction-input");
     if (inp) {
-      inp.focus();
-      inp.select();
+      setTimeout(() => {
+        inp.focus();
+      }, 50);
     }
+  }
+}
+
+function insertSidebarTag(tag) {
+  const input = document.getElementById("preview-ai-instruction-input");
+  if (!input) return;
+  const start = input.selectionStart || 0;
+  const end = input.selectionEnd || 0;
+  const val = input.value;
+  input.value = val.substring(0, start) + tag + val.substring(end);
+  input.focus();
+  input.selectionStart = input.selectionEnd = start + tag.length;
+}
+
+function clearSidebarInstruction() {
+  const input = document.getElementById("preview-ai-instruction-input");
+  if (input) {
+    input.value = "";
+    input.focus();
+  }
+  const statusBox = document.getElementById("preview-ai-status-box");
+  if (statusBox) statusBox.style.display = "none";
+}
+
+function handleSidebarInstructionKeydown(event) {
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    applyPreviewAiInstruction();
   }
 }
 
@@ -4500,13 +4541,34 @@ function extractResumeFromPreviewDoc() {
     base.target_role = roleEl.innerText.trim();
   }
 
-  // 2. Professional Summary
+  // 2. Section Headings
+  const headings = {};
+  doc.querySelectorAll('.section-title').forEach(el => {
+    const text = el.innerText.trim();
+    const sec = el.getAttribute('data-section');
+    if (sec && text) {
+      headings[sec] = text;
+    } else if (text) {
+      const low = text.toLowerCase();
+      if (low.includes("summary") || low.includes("profile")) headings.summary = text;
+      else if (low.includes("skill") || low.includes("competenc") || low.includes("technolog")) headings.skills = text;
+      else if (low.includes("experience") || low.includes("employment") || low.includes("work")) headings.experience = text;
+      else if (low.includes("education") || low.includes("academic")) headings.education = text;
+      else if (low.includes("project")) headings.projects = text;
+      else if (low.includes("certif")) headings.certifications = text;
+    }
+  });
+  if (Object.keys(headings).length > 0) {
+    base.section_headings = Object.assign(base.section_headings || {}, headings);
+  }
+
+  // 3. Professional Summary
   const summaryEl = doc.querySelector('.summary-text[data-edit="summary"]') || doc.querySelector(".summary-text");
   if (summaryEl) {
     base.summary = summaryEl.innerText.trim();
   }
 
-  // 3. Technical Skills
+  // 4. Technical Skills
   const catEls = doc.querySelectorAll(".skill-category");
   if (catEls && catEls.length > 0) {
     const skillsList = [];
@@ -4526,7 +4588,7 @@ function extractResumeFromPreviewDoc() {
     }
   }
 
-  // 4. Experience Roles & Bullets
+  // 5. Experience Roles & Bullets
   const expEntries = doc.querySelectorAll('.entry-item.exp-item, .entry-item');
   const extractedExp = [];
 
@@ -4556,6 +4618,34 @@ function extractResumeFromPreviewDoc() {
     }
   });
 
+  // Fallback for docx_to_html layouts without .entry-item
+  if (extractedExp.length === 0) {
+    const twoCols = doc.querySelectorAll('.two-col-line');
+    if (twoCols.length > 0) {
+      let currentItem = null;
+      doc.querySelectorAll('.two-col-line, .bullet-list').forEach(el => {
+        if (el.classList.contains('two-col-line')) {
+          const tEl = el.querySelector('.two-col-left');
+          const dEl = el.querySelector('.two-col-right');
+          if (tEl && tEl.innerText.trim()) {
+            if (currentItem && currentItem.title) extractedExp.push(currentItem);
+            currentItem = {
+              title: tEl.innerText.trim(),
+              dates: dEl ? dEl.innerText.trim() : "",
+              bullets: []
+            };
+          }
+        } else if (el.classList.contains('bullet-list') && currentItem) {
+          el.querySelectorAll('li').forEach(li => {
+            const bText = li.innerText.trim();
+            if (bText.length > 2) currentItem.bullets.push(bText);
+          });
+        }
+      });
+      if (currentItem && currentItem.title) extractedExp.push(currentItem);
+    }
+  }
+
   if (extractedExp.length > 0) {
     base.experience = extractedExp;
   }
@@ -4573,7 +4663,7 @@ async function savePreviewEdits(optionalInstruction = "") {
   const updatedResume = extractResumeFromPreviewDoc();
   if (!updatedResume) {
     showToast("Could not access document content to save", "warning");
-    return;
+    return false;
   }
 
   if (saveBtn) saveBtn.disabled = true;
@@ -4638,26 +4728,29 @@ async function savePreviewEdits(optionalInstruction = "") {
 
       showToast("🎉 Resume saved! Word (.docx) and PDF rebuilt successfully.", "success");
 
-      // If instruction was used, reload frame to show AI refinements
-      if (optionalInstruction) {
-        const frame = document.getElementById("resume-preview-frame");
-        if (frame) {
-          const currentUrl = new URL(frame.src, window.location.origin);
-          currentUrl.searchParams.set("t", Date.now());
-          frame.src = currentUrl.toString();
-        }
+      // Reload frame to show visual updates
+      const frame = document.getElementById("resume-preview-frame");
+      if (frame) {
+        const loader = document.getElementById("preview-loader");
+        if (loader) loader.style.display = "flex";
+        const currentUrl = new URL(frame.src, window.location.origin);
+        currentUrl.searchParams.set("t", Date.now());
+        frame.src = currentUrl.toString();
       }
+      return true;
     } else {
       showToast(data.error || "Failed to save edits", "error");
       if (statusPill) {
         statusPill.innerHTML = `<i class="fa-solid fa-circle-exclamation text-rose" style="color:#ef4444;"></i> <span style="color:#ef4444;">Save failed</span>`;
       }
+      return false;
     }
   } catch (err) {
     showToast("Network error while saving edits: " + err.message, "error");
     if (statusPill) {
       statusPill.innerHTML = `<i class="fa-solid fa-circle-exclamation text-rose" style="color:#ef4444;"></i> <span style="color:#ef4444;">Network error</span>`;
     }
+    return false;
   } finally {
     if (saveBtn) saveBtn.disabled = false;
     if (spinner) spinner.style.display = "none";
@@ -4670,12 +4763,64 @@ async function applyPreviewAiInstruction() {
   const input = document.getElementById("preview-ai-instruction-input");
   const instruction = input ? input.value.trim() : "";
   if (!instruction) {
-    showToast("Please enter an instruction for the AI (e.g. 'Add metrics to Strive Health')", "info");
+    showToast("Please paste or type recommendations or instructions for the AI", "info");
+    if (input) input.focus();
     return;
   }
-  togglePreviewAiDrawer(false);
-  if (input) input.value = "";
-  await savePreviewEdits(instruction);
+
+  const applyBtn = document.getElementById("preview-ai-apply-btn");
+  const spinner = document.getElementById("preview-ai-apply-spinner");
+  const icon = document.getElementById("preview-ai-apply-icon");
+  const label = document.getElementById("preview-ai-apply-label");
+  const statusBox = document.getElementById("preview-ai-status-box");
+  const statusContent = document.getElementById("preview-ai-status-content");
+
+  // Keep sidebar OPEN so user sees active progress!
+  togglePreviewAiDrawer(true);
+
+  if (applyBtn) applyBtn.disabled = true;
+  if (spinner) spinner.style.display = "inline-block";
+  if (icon) icon.style.display = "none";
+  if (label) label.textContent = "Polishing & Rebuilding...";
+
+  if (statusBox && statusContent) {
+    statusBox.style.display = "block";
+    statusBox.style.background = "rgba(245, 158, 11, 0.12)";
+    statusBox.style.borderColor = "rgba(245, 158, 11, 0.35)";
+    statusBox.style.color = "#fbbf24";
+    statusContent.innerHTML = `<span class="spinner-small" style="display:inline-block; vertical-align:middle; margin-right:6px;"></span> <span>AI is analyzing &amp; rewriting your resume...</span>`;
+  }
+
+  try {
+    const success = await savePreviewEdits(instruction);
+    if (success) {
+      if (statusBox && statusContent) {
+        statusBox.style.background = "rgba(16, 185, 129, 0.12)";
+        statusBox.style.borderColor = "rgba(16, 185, 129, 0.35)";
+        statusBox.style.color = "#34d399";
+        statusContent.innerHTML = `<i class="fa-solid fa-circle-check"></i> <span>Polish applied successfully! Document rebuilt.</span>`;
+      }
+    } else {
+      if (statusBox && statusContent) {
+        statusBox.style.background = "rgba(239, 68, 68, 0.12)";
+        statusBox.style.borderColor = "rgba(239, 68, 68, 0.35)";
+        statusBox.style.color = "#f87171";
+        statusContent.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> <span>Could not apply polish. Check connection or reload.</span>`;
+      }
+    }
+  } catch (err) {
+    if (statusBox && statusContent) {
+      statusBox.style.background = "rgba(239, 68, 68, 0.12)";
+      statusBox.style.borderColor = "rgba(239, 68, 68, 0.35)";
+      statusBox.style.color = "#f87171";
+      statusContent.innerHTML = `<i class="fa-solid fa-circle-exclamation"></i> <span>Error: ${escapeHtml(err.message)}</span>`;
+    }
+  } finally {
+    if (applyBtn) applyBtn.disabled = false;
+    if (spinner) spinner.style.display = "none";
+    if (icon) icon.style.display = "inline-block";
+    if (label) label.textContent = "Polish & Rebuild Document";
+  }
 }
 
 function discardPreviewEdits() {
@@ -4772,6 +4917,11 @@ function openPreviewModal(filePath, company = "Tailored Resume", role = "Documen
   frame.onerror = hidePreviewLoader;
   frame.src = previewUrl;
 
+  // Reset AI Polish sidebar
+  togglePreviewAiDrawer(false);
+  const statusBox = document.getElementById("preview-ai-status-box");
+  if (statusBox) statusBox.style.display = "none";
+
   modal.style.display = "flex";
   document.body.style.overflow = "hidden";
 }
@@ -4780,6 +4930,7 @@ function closePreviewModal() {
   const modal = document.getElementById("resume-preview-modal");
   const frame = document.getElementById("resume-preview-frame");
   hidePreviewLoader();
+  togglePreviewAiDrawer(false);
   if (modal) modal.style.display = "none";
   if (frame) frame.src = "about:blank";
   document.body.style.overflow = "";

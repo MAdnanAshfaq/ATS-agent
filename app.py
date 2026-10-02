@@ -2869,30 +2869,33 @@ def save_preview_edits():
             updated_resume["skills"] = sanitize_keywords_list(updated_resume["skills"])
 
         change_summary = "Applied direct visual paper edits and rebuilt document."
+        clean_rel = rel_path.replace("\\", "/").strip("/")
 
-        # Optional AI Polish
-        if instruction:
-            from resume_refiner import refine_tailored_resume
-            base_resume = {}
+        # 1. Master resume edits
+        if clean_rel in ("master", "master_resume", "master_resume.docx", "master.docx", "master.pdf"):
+            disk_master = {}
             if user_resume_path.exists():
                 try:
                     with open(user_resume_path, "r", encoding="utf-8") as f:
-                        base_resume = json.load(f)
+                        disk_master = json.load(f)
                 except Exception:
                     pass
-            refined, summary_msg = refine_tailored_resume(
-                current_resume=updated_resume,
-                instruction=instruction,
-                base_resume=base_resume,
-                company=company,
-                role=role,
-            )
-            updated_resume = refined
-            change_summary = summary_msg
+            full_master = dict(disk_master)
+            full_master.update({k: v for k, v in updated_resume.items() if v is not None and v != ""})
+            updated_resume = full_master
 
-        # 1. Master resume edits
-        clean_rel = rel_path.replace("\\", "/").strip("/")
-        if clean_rel in ("master", "master_resume", "master_resume.docx", "master.docx", "master.pdf"):
+            if instruction:
+                from resume_refiner import refine_tailored_resume
+                refined, summary_msg = refine_tailored_resume(
+                    current_resume=updated_resume,
+                    instruction=instruction,
+                    base_resume=disk_master,
+                    company=company or "Master Profile",
+                    role=role or "Profile",
+                )
+                updated_resume = refined
+                change_summary = summary_msg
+
             with open(user_resume_path, "w", encoding="utf-8") as f:
                 json.dump(updated_resume, f, indent=2, ensure_ascii=False)
 
@@ -2935,8 +2938,50 @@ def save_preview_edits():
                 else:
                     return jsonify({"success": False, "error": "Could not determine target document folder."}), 400
 
-        # Save tailored_resume.json
+        # Load existing tailored_resume.json from disk to prevent data loss
+        disk_tailored = {}
         tailored_json_path = target_dir / "tailored_resume.json"
+        if tailored_json_path.exists():
+            try:
+                with open(tailored_json_path, "r", encoding="utf-8") as f:
+                    disk_tailored = json.load(f)
+            except Exception as e:
+                print(f"[SavePreviewEdits] Read disk tailored error: {e}")
+
+        # Merge client edits onto existing disk resume
+        merged_resume = dict(disk_tailored)
+        for k, v in updated_resume.items():
+            if v is not None and v != "" and v != []:
+                merged_resume[k] = v
+        # Preserve section headings
+        if "section_headings" in updated_resume:
+            cur_hd = merged_resume.get("section_headings", {})
+            cur_hd.update(updated_resume["section_headings"])
+            merged_resume["section_headings"] = cur_hd
+
+        updated_resume = merged_resume
+
+        # Optional AI Polish
+        if instruction:
+            from resume_refiner import refine_tailored_resume
+            base_resume = {}
+            if user_resume_path.exists():
+                try:
+                    with open(user_resume_path, "r", encoding="utf-8") as f:
+                        base_resume = json.load(f)
+                except Exception:
+                    pass
+            refined, summary_msg = refine_tailored_resume(
+                current_resume=updated_resume,
+                instruction=instruction,
+                base_resume=base_resume,
+                company=company or target_dir.name.split("_")[0],
+                role=role or updated_resume.get("target_role", ""),
+            )
+            updated_resume = refined
+            change_summary = summary_msg
+
+        # Save tailored_resume.json
         with open(tailored_json_path, "w", encoding="utf-8") as f:
             json.dump(updated_resume, f, indent=2, ensure_ascii=False)
 
