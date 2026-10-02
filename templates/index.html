@@ -1942,17 +1942,17 @@
           <iframe id="resume-preview-frame" style="width: 100%; height: 100%; border: none; background: #262935;" onload="if(typeof hidePreviewLoader==='function')hidePreviewLoader();" onerror="if(typeof hidePreviewLoader==='function')hidePreviewLoader();"></iframe>
         </div>
 
-        <!-- Right: AI Polish Side Panel (Full Pastable Box) -->
-        <div id="preview-ai-sidebar" style="display: none; width: 400px; min-width: 340px; max-width: 460px; border-left: 1px solid var(--border-base); background: rgba(16, 20, 30, 0.98); flex-direction: column; flex-shrink: 0; height: 100%; overflow-y: auto;">
+        <!-- Right: AI Polish Side Panel (Full Pastable Box with @-mention Targeting) -->
+        <div id="preview-ai-sidebar" class="preview-ai-sidebar" style="display: none; width: 420px; min-width: 340px; max-width: 480px; flex-direction: column; flex-shrink: 0; height: 100%; overflow-y: auto;">
           <!-- Sidebar Header -->
-          <div style="padding: 14px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.25);">
+          <div id="preview-ai-sidebar-header" class="preview-ai-sidebar-header" style="padding: 14px 18px; display: flex; align-items: center; justify-content: space-between;">
             <div style="display: flex; align-items: center; gap: 9px;">
               <span style="width: 30px; height: 30px; border-radius: 6px; background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.35); display: flex; align-items: center; justify-content: center; color: #fbbf24;">
                 <i class="fa-solid fa-wand-magic-sparkles" style="font-size: 13px;"></i>
               </span>
               <div>
                 <h4 style="margin: 0; font-size: 13.5px; font-weight: 700; color: #fbbf24;">AI Resume Polish</h4>
-                <p style="margin: 1px 0 0; font-size: 11px; color: var(--t2);">Paste recommendations to rewrite</p>
+                <p style="margin: 1px 0 0; font-size: 11px; color: var(--t2);">Target sections with <strong style="color:#fbbf24;">@section</strong></p>
               </div>
             </div>
             <button type="button" class="btn-icon-subtle" onclick="togglePreviewAiDrawer(false)" title="Close Polish panel" style="color: var(--t2); font-size: 14px; cursor: pointer;">
@@ -1961,33 +1961,48 @@
           </div>
 
           <!-- Sidebar Body -->
-          <div style="padding: 16px 18px; flex: 1; display: flex; flex-direction: column; gap: 13px;">
+          <div style="padding: 16px 18px; flex: 1; display: flex; flex-direction: column; gap: 12px;">
             <!-- Target Section Chips -->
             <div>
-              <div style="font-size: 11px; font-weight: 600; color: var(--t2); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;">Target Specific Section:</div>
+              <div style="font-size: 11px; font-weight: 600; color: var(--t2); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; justify-content: space-between; align-items: center;">
+                <span>Target Sections:</span>
+                <span style="font-size: 10px; color: #f59e0b; text-transform: none; font-weight: 600;">Type <strong>@</strong> in text to suggest</span>
+              </div>
               <div style="display: flex; gap: 5px; flex-wrap: wrap;">
-                <button type="button" class="btn-chip" onclick="insertSidebarTag('[SUMMARY] ')" title="Target Professional Summary" style="font-size: 11px; padding: 4px 8px; border-radius: 4px; background: rgba(56,189,248,0.12); border: 1px solid rgba(56,189,248,0.3); color: #38bdf8; cursor: pointer; font-weight: 600;">Summary</button>
-                <button type="button" class="btn-chip" onclick="insertSidebarTag('[SKILLS] ')" title="Target Skills" style="font-size: 11px; padding: 4px 8px; border-radius: 4px; background: rgba(168,85,247,0.12); border: 1px solid rgba(168,85,247,0.3); color: #c084fc; cursor: pointer; font-weight: 600;">Skills</button>
-                <button type="button" class="btn-chip" onclick="insertSidebarTag('[EXPERIENCE] ')" title="Target Experience Bullets" style="font-size: 11px; padding: 4px 8px; border-radius: 4px; background: rgba(16,185,129,0.12); border: 1px solid rgba(16,185,129,0.3); color: #34d399; cursor: pointer; font-weight: 600;">Experience</button>
-                <button type="button" class="btn-chip" onclick="insertSidebarTag('[ALL BULLETS] ')" title="Enhance all bullet points" style="font-size: 11px; padding: 4px 8px; border-radius: 4px; background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.3); color: #fbbf24; cursor: pointer; font-weight: 600;">All Bullets</button>
+                <button type="button" class="btn-chip" onclick="insertSidebarTag('@summary ')" title="Target Professional Summary" style="font-size: 11px; padding: 4px 8px; border-radius: 4px; background: rgba(56,189,248,0.12); border: 1px solid rgba(56,189,248,0.35); color: #38bdf8; cursor: pointer; font-weight: 700;">@summary</button>
+                <button type="button" class="btn-chip" onclick="insertSidebarTag('@skills ')" title="Target Skills" style="font-size: 11px; padding: 4px 8px; border-radius: 4px; background: rgba(168,85,247,0.12); border: 1px solid rgba(168,85,247,0.35); color: #c084fc; cursor: pointer; font-weight: 700;">@skills</button>
+                <button type="button" class="btn-chip" onclick="insertSidebarTag('@experience ')" title="Target Experience Bullets" style="font-size: 11px; padding: 4px 8px; border-radius: 4px; background: rgba(16,185,129,0.12); border: 1px solid rgba(16,185,129,0.35); color: #34d399; cursor: pointer; font-weight: 700;">@experience</button>
+                <button type="button" class="btn-chip" onclick="insertSidebarTag('@all ')" title="Target everything / global polish" style="font-size: 11px; padding: 4px 8px; border-radius: 4px; background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.35); color: #fbbf24; cursor: pointer; font-weight: 700;">@all</button>
+                <button type="button" class="btn-chip" onclick="insertSidebarTag('@education ')" title="Target Education" style="font-size: 11px; padding: 4px 8px; border-radius: 4px; background: rgba(14,165,233,0.12); border: 1px solid rgba(14,165,233,0.35); color: #38bdf8; cursor: pointer; font-weight: 700;">@education</button>
+                <button type="button" class="btn-chip" onclick="insertSidebarTag('@projects ')" title="Target Projects" style="font-size: 11px; padding: 4px 8px; border-radius: 4px; background: rgba(99,102,241,0.12); border: 1px solid rgba(99,102,241,0.35); color: #818cf8; cursor: pointer; font-weight: 700;">@projects</button>
               </div>
             </div>
 
-            <!-- Full Pastable Textarea -->
-            <div style="flex: 1; display: flex; flex-direction: column;">
+            <!-- Full Pastable Textarea Container with @-Mention Autocomplete -->
+            <div style="flex: 1; display: flex; flex-direction: column; position: relative;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                 <label for="preview-ai-instruction-input" style="font-size: 11.5px; font-weight: 600; color: var(--t1); margin: 0;">
                   Recommendations / Feedback:
                 </label>
                 <span style="font-size: 10.5px; color: var(--t2); font-weight: 400;">Ctrl+Enter to Polish</span>
               </div>
+
+              <!-- @-Mention Autocomplete Popup -->
+              <div id="preview-ai-mention-popup" class="preview-ai-mention-dropdown" style="display: none;"></div>
+
               <textarea
                 id="preview-ai-instruction-input"
+                class="preview-ai-textarea"
                 rows="11"
-                placeholder="Paste your recommendations, review notes, or JD responsibilities here...&#10;&#10;e.g.&#10;• Add metrics and outcomes to recent experience&#10;• Weave in these responsibilities:&#10;  - Built scalable FastAPI microservices&#10;  - Led cloud migration to AWS EKS&#10;• Rewrite summary to emphasize distributed systems"
-                style="width: 100%; flex: 1; min-height: 200px; max-height: 420px; resize: vertical; background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 10px 12px; color: var(--t0); font-size: 12.5px; line-height: 1.5; font-family: inherit; outline: none; box-sizing: border-box;"
+                placeholder="Type @ to target specific sections...&#10;&#10;e.g.&#10;@skills Add FastAPI, Kubernetes, and Docker&#10;@experience Quantify outcomes in my latest role&#10;@summary Rewrite to sound more senior &amp; concise&#10;@all Maintain high-impact active verbs throughout"
+                style="min-height: 200px;"
+                oninput="handleSidebarInstructionInput(event)"
                 onkeydown="handleSidebarInstructionKeydown(event)"
               ></textarea>
+              <div style="margin-top: 5px; font-size: 11px; color: var(--t2); display: flex; justify-content: space-between;">
+                <span><i class="fa-solid fa-at text-amber" style="margin-right: 3px; font-size: 11px;"></i> Type <strong>@</strong> anywhere to trigger target suggestions</span>
+                <span>Supports multiple <strong>@sections</strong></span>
+              </div>
             </div>
 
             <!-- Status Indicator Box -->

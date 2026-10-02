@@ -4487,6 +4487,168 @@ function togglePreviewAiDrawer(forceState) {
   }
 }
 
+const AI_MENTION_TARGETS = [
+  { tag: "@summary", name: "Professional Summary", icon: "fa-align-left", color: "#38bdf8", bg: "rgba(56,189,248,0.15)", desc: "Elevator pitch, executive intro & core value" },
+  { tag: "@skills", name: "Technical Skills", icon: "fa-code", color: "#c084fc", bg: "rgba(168,85,247,0.15)", desc: "Add, categorize, replace or remove technical skills" },
+  { tag: "@experience", name: "Work Experience", icon: "fa-briefcase", color: "#34d399", bg: "rgba(16,185,129,0.15)", desc: "Target role achievements, metrics & responsibilities" },
+  { tag: "@all", name: "Everything Else / Global", icon: "fa-wand-magic-sparkles", color: "#fbbf24", bg: "rgba(245,158,11,0.15)", desc: "Holistic tone polish across all sections of document" },
+  { tag: "@education", name: "Education", icon: "fa-graduation-cap", color: "#38bdf8", bg: "rgba(14,165,233,0.15)", desc: "Degree titles, institutions & graduation dates" },
+  { tag: "@projects", name: "Projects", icon: "fa-folder-tree", color: "#818cf8", bg: "rgba(99,102,241,0.15)", desc: "Key project descriptions, links & tech stack" },
+  { tag: "@certifications", name: "Certifications", icon: "fa-certificate", color: "#fb923c", bg: "rgba(251,146,60,0.15)", desc: "Professional credentials & industry licenses" },
+  { tag: "@title", name: "Target Role / Headline", icon: "fa-id-badge", color: "#f472b6", bg: "rgba(244,114,182,0.15)", desc: "Subtitle headline under candidate name" }
+];
+
+let _activeMentionIndex = 0;
+let _currentMentionTargets = [];
+
+function getAvailableMentionTargets() {
+  const targets = [...AI_MENTION_TARGETS];
+  const resume = (window.lastResult && window.lastResult.tailored_resume) ? window.lastResult.tailored_resume : null;
+  if (resume && Array.isArray(resume.experience)) {
+    resume.experience.forEach(exp => {
+      const comp = exp.company || "";
+      if (comp && comp.trim()) {
+        const cleanComp = comp.trim();
+        if (!targets.some(t => t.name === cleanComp)) {
+          targets.push({
+            tag: `@experience/${cleanComp}`,
+            name: cleanComp,
+            icon: "fa-building",
+            color: "#10b981",
+            bg: "rgba(16,185,129,0.15)",
+            desc: `Target bullets specifically for ${cleanComp}`
+          });
+        }
+      }
+    });
+  }
+  return targets;
+}
+
+function renderMentionDropdown(targets, activeIndex = 0) {
+  const popup = document.getElementById("preview-ai-mention-popup");
+  if (!popup) return;
+
+  if (!targets || targets.length === 0) {
+    popup.style.display = "none";
+    _currentMentionTargets = [];
+    return;
+  }
+
+  _currentMentionTargets = targets;
+  _activeMentionIndex = Math.max(0, Math.min(activeIndex, targets.length - 1));
+
+  let html = `
+    <div class="preview-ai-mention-header">
+      <span><i class="fa-solid fa-at" style="margin-right: 4px;"></i> Select Target Section</span>
+      <span style="font-size: 10px; font-weight: 500; opacity: 0.85;">↑↓ navigate · ↵ select</span>
+    </div>
+  `;
+
+  targets.forEach((target, idx) => {
+    const isActive = idx === _activeMentionIndex;
+    html += `
+      <div class="preview-ai-mention-item ${isActive ? 'active' : ''}" data-index="${idx}" onmousedown="event.preventDefault(); selectMentionItem('${target.tag}');">
+        <span class="mention-tag-pill" style="color: ${target.color}; background: ${target.bg}; border: 1px solid ${target.color}40;">
+          <i class="fa-solid ${target.icon}" style="margin-right: 4px; font-size: 10px;"></i>${escapeHtml(target.tag)}
+        </span>
+        <div style="flex: 1; min-width: 0;">
+          <div style="font-size: 12px; font-weight: 600; line-height: 1.2;">${escapeHtml(target.name)}</div>
+          <div class="mention-desc" style="font-size: 10.5px; opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(target.desc)}</div>
+        </div>
+      </div>
+    `;
+  });
+
+  popup.innerHTML = html;
+  popup.style.display = "flex";
+
+  const activeEl = popup.querySelector(`.preview-ai-mention-item[data-index="${_activeMentionIndex}"]`);
+  if (activeEl) {
+    activeEl.scrollIntoView({ block: "nearest" });
+  }
+}
+
+function hideMentionPopup() {
+  const popup = document.getElementById("preview-ai-mention-popup");
+  if (popup) popup.style.display = "none";
+  _currentMentionTargets = [];
+}
+
+function selectMentionItem(tag) {
+  const input = document.getElementById("preview-ai-instruction-input");
+  if (!input) return;
+  const pos = input.selectionStart || 0;
+  const textBefore = input.value.substring(0, pos);
+  const textAfter = input.value.substring(pos);
+  const atIndex = textBefore.lastIndexOf("@");
+  if (atIndex !== -1) {
+    const newTextBefore = textBefore.substring(0, atIndex) + tag + " ";
+    input.value = newTextBefore + textAfter;
+    input.selectionStart = input.selectionEnd = newTextBefore.length;
+  } else {
+    insertSidebarTag(tag + " ");
+  }
+  hideMentionPopup();
+  input.focus();
+}
+
+function handleSidebarInstructionInput(event) {
+  const input = event.target;
+  if (!input) return;
+
+  const pos = input.selectionStart || 0;
+  const textBefore = input.value.substring(0, pos);
+  const match = textBefore.match(/@([a-zA-Z0-9_\-\/]*)$/);
+
+  if (match) {
+    const query = match[1].toLowerCase();
+    const allTargets = getAvailableMentionTargets();
+    const filtered = allTargets.filter(t =>
+      t.tag.toLowerCase().includes('@' + query) ||
+      t.name.toLowerCase().includes(query) ||
+      t.desc.toLowerCase().includes(query)
+    );
+    renderMentionDropdown(filtered, 0);
+  } else {
+    hideMentionPopup();
+  }
+}
+
+function handleSidebarInstructionKeydown(event) {
+  const popup = document.getElementById("preview-ai-mention-popup");
+  const isPopupVisible = popup && popup.style.display !== "none" && _currentMentionTargets.length > 0;
+
+  if (isPopupVisible) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      _activeMentionIndex = (_activeMentionIndex + 1) % _currentMentionTargets.length;
+      renderMentionDropdown(_currentMentionTargets, _activeMentionIndex);
+      return;
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      _activeMentionIndex = (_activeMentionIndex - 1 + _currentMentionTargets.length) % _currentMentionTargets.length;
+      renderMentionDropdown(_currentMentionTargets, _activeMentionIndex);
+      return;
+    } else if (event.key === "Enter" || event.key === "Tab") {
+      event.preventDefault();
+      if (_currentMentionTargets[_activeMentionIndex]) {
+        selectMentionItem(_currentMentionTargets[_activeMentionIndex].tag);
+      }
+      return;
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      hideMentionPopup();
+      return;
+    }
+  }
+
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    applyPreviewAiInstruction();
+  }
+}
+
 function insertSidebarTag(tag) {
   const input = document.getElementById("preview-ai-instruction-input");
   if (!input) return;
@@ -4496,6 +4658,7 @@ function insertSidebarTag(tag) {
   input.value = val.substring(0, start) + tag + val.substring(end);
   input.focus();
   input.selectionStart = input.selectionEnd = start + tag.length;
+  hideMentionPopup();
 }
 
 function clearSidebarInstruction() {
@@ -4504,15 +4667,9 @@ function clearSidebarInstruction() {
     input.value = "";
     input.focus();
   }
+  hideMentionPopup();
   const statusBox = document.getElementById("preview-ai-status-box");
   if (statusBox) statusBox.style.display = "none";
-}
-
-function handleSidebarInstructionKeydown(event) {
-  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-    event.preventDefault();
-    applyPreviewAiInstruction();
-  }
 }
 
 function extractResumeFromPreviewDoc() {

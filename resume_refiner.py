@@ -64,26 +64,29 @@ JD RESPONSIBILITIES WEAVING RULE:
     EVERY responsibility must be represented in a bullet point (may be combined/adapted but not omitted).
   - Integrate naturally as first-person, impact-led bullets with strong action verbs.
 
-SECTION TAG PARSING RULE (CRITICAL — NEW FEATURE):
-  When the instruction contains lines starting with a section tag in square brackets, parse each line
-  independently and apply the instruction ONLY to the targeted section:
+SECTION TAG & @MENTION TARGETING RULE (CRITICAL):
+  When the instruction contains lines or directives starting with an @mention (e.g. @summary, @skills, @experience)
+  or a section tag in square brackets [TAG], parse each directive independently and apply it ONLY to the targeted section:
   
-  Tag Format Examples:
-    [SUMMARY] Rewrite to focus on data engineering     → update ONLY the "summary" field
-    [SKILLS] Replace with: Python, SQL, Spark          → update ONLY the "skills" array
-    [EXPERIENCE/Acme Corp] Add metrics to all bullets  → update ONLY the experience entry where company ≈ "Acme Corp"
-    [EXPERIENCE/Most Recent Role]                      → target the FIRST (index 0) experience entry
-    [TITLE] Change to: Senior Data Engineer            → update ONLY "target_role"
-    [ALL BULLETS] Make more concise                    → update bullets in ALL experience entries
+  Format Examples:
+    @summary (or [SUMMARY]) ...                         → update ONLY the "summary" field
+    @skills (or [SKILLS]) ...                           → update ONLY the "skills" array
+    @experience (or [EXPERIENCE]) ...                   → update experience roles and bullet points
+    @experience/Acme Corp (or [EXPERIENCE/Acme Corp])   → update ONLY the experience entry where company ≈ "Acme Corp"
+    @education (or [EDUCATION]) ...                     → update ONLY the "education" section
+    @projects (or [PROJECTS]) ...                       → update ONLY the "projects" section
+    @certifications (or [CERTIFICATIONS]) ...           → update ONLY the "certifications" section
+    @title (or [TITLE]) ...                             → update ONLY the "target_role" headline
+    @all, @everything, or @general (or [ALL BULLETS])   → apply changes globally / across all sections
   
   Rules:
-  - If a line has a section tag, that line's instruction applies EXCLUSIVELY to that section.
-  - All other sections remain EXACTLY unchanged.
-  - If multiple lines target the same section, apply ALL of them to that section.
-  - If a tag references a company name (e.g. [EXPERIENCE/Acme Corp]), match it case-insensitively
+  - If a directive has an @mention or [TAG], that instruction applies EXCLUSIVELY to that targeted section.
+  - All non-targeted sections MUST remain EXACTLY unchanged (preserved verbatim from current resume).
+  - Multiple @mentions can appear in a single instruction (e.g. "@skills add Python\n@summary make executive\n@all active voice").
+    Apply EACH directive to its respective section without dropping other sections!
+  - @all / @everything applies globally across the entire resume.
+  - If a tag references a company name (e.g. @experience/Strive Health), match it case-insensitively
     against the "company" field of each experience entry.
-  - [EXPERIENCE/Most Recent Role] always means index 0 (most recent).
-  - Sections NOT mentioned in any tag are PRESERVED EXACTLY as in the current resume.
 
 HUMAN VOICE:
   Front-load business impact and metrics. Plain, strong verbs: built, cut, owned, migrated,
@@ -179,13 +182,15 @@ def refine_tailored_resume(
         "replace the skills", "change the skills to", "change skills to",
         "set skills to", "skills are:", "skills list should be", "new skills:",
         "overwrite skills", "replace skill section",
-        # Section-tag variants — e.g. "[SKILLS] Replace with: ..." or "[SKILLS] Set to:"
+        # Section-tag and @mention variants
         "[skills] replace", "[skills] set", "[skills] overwrite", "[skills] change to",
         "[skills] only", "[skills] use only", "[skills] use these",
+        "@skills replace", "@skills set", "@skills overwrite", "@skills change to",
+        "@skills only", "@skills use only", "@skills use these",
     ])
 
-    # Check whether any section tags are used (for checklist reminder)
-    _has_section_tags = bool(re.search(r'\[(?:SUMMARY|SKILLS|TITLE|ALL BULLETS|EXPERIENCE\/[^\]]+)\]', instruction, re.IGNORECASE))
+    # Check whether any section tags or @mentions are used (for checklist reminder)
+    _has_section_tags = bool(re.search(r'(\[(?:SUMMARY|SKILLS|TITLE|ALL BULLETS|EXPERIENCE\/[^\]]+)\]|@(summary|skills|experience|education|projects|certifications|all|everything|general|title)\b)', instruction, re.IGNORECASE))
 
     # Parse instruction into numbered items so the model sees them clearly
     _instr_lines = [l.strip() for l in re.split(r'[;\n]+', instruction.strip()) if l.strip()]
@@ -202,7 +207,7 @@ CANDIDATE'S EXACT REVISION REQUEST ({len(_instr_lines)} directive(s)):
 
 ⚠️  APPLY EVERY DIRECTIVE ABOVE — nothing is optional or skippable.
 ⚠️  SKILLS MODE: {"OVERWRITE — output ONLY the skills the user specified" if _skills_overwrite else "ADDITIVE — add/remove specific skills as requested, preserve existing"}
-{"⚠️  SECTION TAGS DETECTED — parse each [TAG] prefix and apply that line's instruction ONLY to the named section. Leave ALL other sections exactly as in current resume." if _has_section_tags else ""}
+{"⚠️  SECTION TARGETING (@mentions or [TAGS]) DETECTED — parse each @section or [TAG] prefix and apply that directive ONLY to the targeted section. Leave ALL other sections exactly as in current resume." if _has_section_tags else ""}
 
 TARGET JOB CONTEXT:
 - Company: {company or 'Target Company'}
@@ -220,7 +225,7 @@ CHECKLIST BEFORE RETURNING:
 ☑ Every numbered directive above is addressed
 ☑ If skills overwrite was requested: output ONLY the requested skills
 ☑ If JD responsibilities were listed: EVERY one appears in experience bullets
-{"☑ Section tags used — each [TAG] directive applied ONLY to its target section; ALL others preserved verbatim" if _has_section_tags else ""}
+{"☑ Section targeting used — each @section / [TAG] directive applied ONLY to its target section; ALL non-targeted sections preserved verbatim" if _has_section_tags else ""}
 ☑ No banned clichés used
 ☑ change_summary lists every discrete change made
 ☑ skills_mode is set to "overwrite" or "additive"
