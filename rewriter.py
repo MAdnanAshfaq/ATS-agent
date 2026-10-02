@@ -79,7 +79,16 @@ _KNOWN_MULTI_WORD_PHRASES = [
     "event driven architecture", "message queue", "search engine optimization", "seo",
     "user experience", "user interface", "ui/ux", "ui / ux",
     "project management", "product management", "supply chain", "customer relationship management",
-    "big data", "data warehouse", "data lake", "business analyst", "quality assurance"
+    "big data", "data warehouse", "data lake", "business analyst", "quality assurance",
+    # Modern Data Engineering, Cloud, & Platform Compounds
+    "unity catalog", "data factory", "azure data factory", "direct lake", "delta lake",
+    "delta live tables", "microsoft fabric", "palantir foundry", "power bi",
+    "azure synapse", "azure devops", "adls gen2", "google cloud platform", "cloud storage",
+    "google bigquery", "amazon web services", "aws glue", "aws lambda", "aws emr", "aws athena",
+    "amazon redshift", "amazon s3", "amazon kinesis", "dynamodb", "repository governance",
+    "dataset versioning", "audit readiness", "data governance", "data modeling", "data lineage",
+    "gis platforms", "geospatial data", "spatial analysis", "apache spark", "apache airflow",
+    "apache kafka", "pyspark", "github actions", "gitlab ci", "docker compose"
 ]
 
 
@@ -88,6 +97,7 @@ def sanitize_keywords_list(keywords) -> list[str]:
     Decomposes any bundled/pasted keywords (comma, newline, semicolon, pipe,
     tabs, bullet points, middle dots, numbering, space-separated Gemini outputs,
     copied HTML badges) into clean, distinct, deduplicated individual keywords.
+    Guarantees no broken split compounds, no Frankenstein pairings, and no garbage fragments.
     """
     if not keywords:
         return []
@@ -113,11 +123,22 @@ def sanitize_keywords_list(keywords) -> list[str]:
         # Strip outer JSON brackets
         text = re.sub(r'^\[\s*|\s*\]$', '', text)
 
+        # Fix errant comma splits inside compound terms before parsing
+        text = re.sub(r'\bUnity\s*,\s*Catalog\b', 'Unity Catalog', text, flags=re.I)
+        text = re.sub(r'\bData\s*,\s*Factory\b', 'Data Factory', text, flags=re.I)
+        text = re.sub(r'\bDirect\s*,\s*Lake\b', 'Direct Lake', text, flags=re.I)
+        text = re.sub(r'\bDelta\s*,\s*Lake\b', 'Delta Lake', text, flags=re.I)
+        text = re.sub(r'\bPower\s*,\s*BI\b', 'Power BI', text, flags=re.I)
+        text = re.sub(r'\bPalantir\s*,\s*Foundry\b', 'Palantir Foundry', text, flags=re.I)
+        text = re.sub(r'\bMicrosoft\s*,\s*Fabric\b', 'Microsoft Fabric', text, flags=re.I)
+        text = re.sub(r'\bAudit\s*,\s*Readiness\b', 'Audit Readiness', text, flags=re.I)
+        text = re.sub(r'\bRepository\s*,\s*Governance\b', 'Repository Governance', text, flags=re.I)
+        text = re.sub(r'\bDataset\s*,\s*Versioning\b', 'Dataset Versioning', text, flags=re.I)
+
         # 2. Replace numbered list markers like '1. ', '2) ', '[1]', '(1)' with commas
         text = re.sub(r'(?:^|\s+)(?:\d+[\.\)]|\[\d+\]|\(\d+\))\s+', ', ', text)
 
         # 3. Replace bullets, middle dots, and symbols with commas
-        # Including \u00B7 (·), \u2022 (•), \u25CF (●), etc.
         text = re.sub(r'[\r\n;|•●○▪▫■□◆◇◦∙⁃‣▶✓✔·⋅・\t]+', ', ', text)
 
         # 4. Replace dashes, slashes, pluses, and/& with spaces around them with commas (preserves CI/CD, C++)
@@ -125,14 +146,14 @@ def sanitize_keywords_list(keywords) -> list[str]:
         text = re.sub(r'\s+\+\s+', ', ', text)
         text = re.sub(r'\s+(?:and|&)\s+', ', ', text, flags=re.IGNORECASE)
 
-        # 5. Replace 2 or more whitespace characters with commas
-        text = re.sub(r'\s{2,}', ', ', text)
+        # 5. Replace 2 or more whitespace characters with single space
+        text = re.sub(r'\s{2,}', ' ', text)
 
-        # 6. Check if text is space-separated without commas (e.g. Gemini space-separated list):
-        # "Python FastApi Docker AWS Kubernetes PostgreSQL GraphQL Redis"
+        # 6. Only check space-separated splitting if there are no commas AND text is a long dump (>= 6 words)
+        # Avoid splitting valid 2-4 word skill phrases (e.g. "Microsoft Fabric OneLake", "Azure Data Factory")
         if ',' not in text:
             raw_words = [w for w in text.strip().split() if w]
-            if len(raw_words) >= 3:
+            if len(raw_words) >= 6:
                 transformed = text
                 # Protect quotes
                 transformed = re.sub(r'["\']([^"\']+)["\']', lambda m: m.group(1).replace(' ', '_SPACE_'), transformed)
@@ -151,14 +172,19 @@ def sanitize_keywords_list(keywords) -> list[str]:
             kw = sub.strip()
             # Strip leading bullets, symbols, dashes, quotes
             kw = re.sub(r'^[\s\-\*\•\·\●\▪\▫\◆\–\—\+]+', '', kw)
-            kw = kw.strip(' "\'`;:()[]{}')
+            kw = kw.strip(' "\'`;:[]{}')
             if kw and len(kw) > 1:
                 lower = kw.lower()
                 if lower not in seen:
                     seen.add(lower)
                     cleaned.append(kw)
 
-    return cleaned
+    # Post-process through skills_cleaner for ecosystem integrity, stitching, and deduplication
+    try:
+        from skills_cleaner import clean_technical_skills_list
+        return clean_technical_skills_list(cleaned)
+    except Exception:
+        return cleaned
 
 
 
@@ -318,12 +344,33 @@ You MUST preserve ALL work experience entries present in MASTER_PROFILE.
 If MASTER_PROFILE contains multiple roles, your output "experience" array MUST contain ALL of them with their exact company names and dates.
 Never drop, truncate, or omit past jobs from the candidate's history.
 
-2. HARD SKILLS PRESERVATION & ZERO LOSS OF MAIN SKILLS:
+2. HARD SKILLS PRESERVATION & TECHNICAL ECOSYSTEM INTEGRITY:
 You MUST preserve ALL primary hard technical skills (programming languages, databases, cloud infrastructure, frameworks, technical tools) from MASTER_PROFILE.
 NEVER delete the candidate's core technical stack!
-You may ONLY prune or replace generic/soft skills (e.g. "team player", "communication", "leadership", "problem solving") to make room for new technical keywords from the job description.
-Every hard skill from MASTER_PROFILE must remain in the "skills" array, supplemented by missing technical tools from the job description.
 The "skills" array must ONLY contain concise technical tools (1 to 4 words each). NEVER put full sentences, duties, or descriptions into "skills".
+
+CRITICAL TECHNICAL INTEGRITY & ACCURACY RULES:
+- ZERO FRANKENSTEIN MASHUPS: Never combine distinct vendor ecosystems into hybrid names!
+  • OneLake is Microsoft Fabric (storage engine); Unity Catalog and Delta Lake belong to Databricks. NEVER output "Databricks OneLake"!
+  • Direct Lake is Power BI's semantic model storage mode in Microsoft Fabric, not a Cloud & DevOps platform. NEVER output "Azure (Direct Lake)".
+  • Palantir Foundry is a standalone enterprise data & ontology platform.
+  • AWS tools (S3, Glue, EMR, Athena, Redshift, Lambda) belong to AWS.
+  • GCP tools (BigQuery, Dataflow, Dataproc, GCS, Vertex AI) belong to Google Cloud.
+  • NEVER cross-contaminate vendors (no "AWS BigQuery", "Google Redshift", "Snowflake Unity Catalog").
+- ZERO WORD FRAGMENTS & NEVER SPLIT COMPOUND TOOLS:
+  Compound tools MUST be written as single multi-word items without internal commas:
+  "Unity Catalog" (NEVER "Unity, Catalog")
+  "Data Factory" (NEVER "Data, Factory")
+  "Direct Lake" (NEVER "Direct, Lake")
+  "Power BI" (NEVER "Power, BI")
+  "Palantir Foundry" (NEVER "Palantir, Foundry")
+  "Microsoft Fabric" (NEVER "Microsoft, Fabric")
+  NEVER output single-word fragments like "Direct", "Lake", "Data", "Factory", "HR", "governance".
+- ZERO DUPLICATE ENTRIES:
+  Do NOT list both "Microsoft Azure" and "Azure" — pick "Microsoft Azure".
+  Do NOT duplicate "Data Factory" or any other tool.
+- JOB DESCRIPTION PRIORITY ALIGNMENT:
+  Ensure all primary platforms and tools required by the job posting (e.g. PySpark, Palantir Foundry, Unity Catalog, AWS/GCP, GIS/Geospatial Data, Dataset Versioning, Repository Governance, Audit Readiness) are present in the skills array and demonstrated in experience bullets.
 
 3. QUANTIFIED IMPACT & EVIDENCE-BACKED SENIORITY:
 Every rewritten bullet MUST include concrete numbers, percentages, dollar amounts, scale metrics, or time/cost savings (e.g., "reduced query latency by 45%", "scaled throughput to 5M+ daily requests", "automated CI/CD pipelines saving 8 hours weekly", "cut cloud compute costs by $60K/year").

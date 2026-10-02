@@ -52,12 +52,42 @@ Do NOT:
   ❌ Use banned clichés: "spearheaded", "orchestrated", "leveraged", "synergy", "seamlessly",
      "passionate about", "delving into", "fostered", "testament to"
 
-SKILLS OVERWRITE RULE:
+SKILLS REFINEMENT & OVERWRITE RULES:
   - If user says "replace skills with X,Y,Z" or "my skills should be: ..." or "only these skills: ...",
     output EXACTLY those skills and ONLY those skills in the skills array.
   - If user says "add X to skills", add X to existing list.
   - If user says "remove X from skills", remove only X.
   - Default: preserve existing skills + apply requested additions/removals.
+
+TECHNICAL SKILLS ACCURACY & ECOSYSTEM INTEGRITY (MANDATORY):
+  1. ABSOLUTE ECOSYSTEM PURITY (NO FRANKENSTEIN MASHUPS):
+     - Never combine distinct vendor ecosystems into fake hybrid tools!
+       • OneLake is Microsoft Fabric's storage layer.
+       • Unity Catalog and Delta Lake belong to Databricks.
+         → NEVER output "Databricks OneLake"! Keep them distinct: "Databricks (Unity Catalog)", "Microsoft Fabric (OneLake)".
+       • Direct Lake is Power BI's semantic model storage mode in Microsoft Fabric, NOT a Cloud & DevOps platform.
+         → NEVER output "Azure (Direct Lake)". Use "Power BI (Direct Lake)" or "Direct Lake".
+       • Palantir Foundry is a standalone enterprise data & ontology platform. Keep "Palantir Foundry" clean and intact.
+       • AWS tools (S3, Glue, EMR, Athena, Redshift, Lambda) belong to AWS.
+       • GCP tools (BigQuery, Dataflow, Dataproc, GCS, Vertex AI) belong to Google Cloud.
+       • NEVER cross-contaminate vendors (no "AWS BigQuery", "Google Redshift", "Snowflake Unity Catalog").
+  2. ZERO WORD FRAGMENTS & NEVER SPLIT COMPOUND TOOLS:
+     - Compound tools MUST be written as single multi-word items without internal commas:
+       "Unity Catalog" (NEVER "Unity, Catalog")
+       "Data Factory" (NEVER "Data, Factory")
+       "Direct Lake" (NEVER "Direct, Lake")
+       "Power BI" (NEVER "Power, BI")
+       "Palantir Foundry" (NEVER "Palantir, Foundry")
+       "Microsoft Fabric" (NEVER "Microsoft, Fabric")
+     - NEVER output single-word fragments like "Direct", "Lake", "Data", "Factory", "HR", "governance".
+       Every item in "skills" must be a recognized, standalone technology, framework, tool, or methodology.
+  3. ZERO DUPLICATE ENTRIES:
+     - Do NOT list both "Microsoft Azure" and "Azure" — use "Microsoft Azure".
+     - Do NOT duplicate "Data Factory" or any other tool.
+  4. JOB DESCRIPTION PRIORITY ALIGNMENT:
+     - Ensure all primary platforms and tools required by the job posting
+       (e.g., PySpark, Palantir Foundry, Unity Catalog, AWS/GCP, GIS/Geospatial Data, Dataset Versioning, Repository Governance, Audit Readiness)
+       are explicitly included in the skills array and demonstrated in experience bullets.
 
 JD RESPONSIBILITIES WEAVING RULE:
   - If user provides responsibilities from a job description to add to experience:
@@ -333,12 +363,17 @@ Return ONLY valid JSON now.
         refined["experience"] = ref_exp
 
         # ── SKILLS MERGE / OVERWRITE — respects user instruction ──
-        # If user asked to replace/overwrite skills, honour that (don't add old skills back).
-        # If additive, merge refined skills with base skills so nothing is silently lost.
+        from skills_cleaner import clean_technical_skills_list
         ai_skills_mode = data.get("skills_mode", "additive").lower().strip()
-        # Also detect from instruction text as a fallback
         _il = (instruction or "").lower()
-        _user_wants_overwrite = ai_skills_mode == "overwrite" or any(phrase in _il for phrase in [
+
+        # Check if the instruction explicitly targets the skills section (via @skills, [SKILLS], or skills directives)
+        _skills_targeted = bool(re.search(
+            r'(\[@?SKILLS\]|@\(?skills\)?|\b(?:fix|polish|clean|correct|rewrite|update|remove|replace|change|delete|add|syntax|artifact|error|pairings?|fragments?|tools?\s*(?:&|and)\s*platforms?|technical\s+skills?)\b.*?\bskills?\b|\bskills?\b.*?\b(?:fix|polish|clean|correct|rewrite|update|remove|replace|change|syntax|artifact|error|pairings?|fragments?)\b)',
+            instruction,
+            re.IGNORECASE
+        ))
+        _user_wants_overwrite = _skills_targeted or (ai_skills_mode == "overwrite") or any(phrase in _il for phrase in [
             "replace all skills", "replace my skills", "replace skills with",
             "my skills should be", "only these skills", "skills should only be",
             "replace the skills", "change the skills to", "change skills to",
@@ -346,22 +381,23 @@ Return ONLY valid JSON now.
         ])
 
         ref_skills = refined.get("skills", []) or []
-        from rewriter import sanitize_keywords_list
-        ref_skills_clean = sanitize_keywords_list(ref_skills)
+        ref_skills_clean = clean_technical_skills_list(ref_skills, jd_text=jd_text)
 
         if _user_wants_overwrite:
-            # USER SAID REPLACE — trust AI output exactly; do NOT add base skills back
+            # USER SAID REPLACE OR SPECIFICALLY TARGETED SKILLS:
+            # Trust the AI's cleaned skills output directly — do NOT resurrect old base skills
             refined["skills"] = ref_skills_clean
         else:
-            # ADDITIVE MODE — merge: base first, then any new skills the AI added
-            base_skills = [str(s).strip() for s in base_resume.get("skills", []) if s and str(s).strip()]
+            # ADDITIVE MODE (e.g. user was editing another section like @summary):
+            # Clean both base and refined skills, merge new ones cleanly without resurrected garbage
+            base_skills = clean_technical_skills_list(base_resume.get("skills", []), jd_text=jd_text)
             combined_skills = list(base_skills)
             combined_lower = {s.lower() for s in combined_skills}
             for s in ref_skills_clean:
                 if s.lower() not in combined_lower:
                     combined_skills.append(s)
                     combined_lower.add(s.lower())
-            refined["skills"] = combined_skills
+            refined["skills"] = clean_technical_skills_list(combined_skills, jd_text=jd_text)
 
         return refined, change_summary
 
