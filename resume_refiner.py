@@ -64,6 +64,21 @@ JD RESPONSIBILITIES WEAVING RULE:
     EVERY responsibility must be represented in a bullet point (may be combined/adapted but not omitted).
   - Integrate naturally as first-person, impact-led bullets with strong action verbs.
 
+JOB DESCRIPTION AWARENESS & KEYWORD PRESERVATION (CRITICAL):
+  - You are provided with the TARGET JOB CONTEXT (Company, Role, and full Job Description text).
+  - Use this Job Description as an active ATS compass:
+    1. NEVER ERODE KEYWORDS: When polishing, editing, or shortening bullet points, DO NOT strip out essential
+       technical terms, domain frameworks, cloud platforms, or key methodologies required by the Job Description
+       (e.g., AWS, GCP, Azure, Kubernetes, Docker, ETL, Snowflake, Databricks, CI/CD, Terraform, Python, SQL, Airflow).
+       Retain concrete technical nouns; do not replace them with generic corporate filler.
+    2. CONTEXTUAL DEMONSTRATION OVER SKILLS DUMPING:
+       ATS scanners and hiring managers heavily discount skills that exist ONLY in an unstructured skills list.
+       Whenever refining or adding technologies, actively demonstrate them inside relevant Experience bullets
+       with action verbs and measurable business outcomes whenever applicable.
+    3. MAINTAIN JD RESPONSIBILITY ALIGNMENT:
+       Keep the narrative anchored in the core challenges and responsibilities of the targeted role.
+
+
 SECTION TAG & @MENTION TARGETING RULE (CRITICAL):
   When the instruction contains lines or directives starting with an @mention, an @(...) tag (e.g. @(summary), @(skills), @(experience), @(title), @(all bullets)),
   or a section tag in square brackets [TAG], parse each directive independently and apply it ONLY to the targeted section:
@@ -218,8 +233,8 @@ CANDIDATE'S EXACT REVISION REQUEST ({len(_instr_lines)} directive(s)):
 TARGET JOB CONTEXT:
 - Company: {company or 'Target Company'}
 - Role: {role or 'Target Role'}
-- Job Description (for context when weaving responsibilities):
-{jd_text[:4000] if jd_text else 'Not provided'}
+- Job Description (for context when weaving responsibilities and preserving ATS keywords):
+{jd_text[:12000] if jd_text else 'Not provided'}
 
 CANDIDATE'S MASTER TRUTH (Base Resume — for grounding only, do NOT revert changes):
 {json.dumps(base_resume, indent=2)}
@@ -232,6 +247,8 @@ CHECKLIST BEFORE RETURNING:
 ☑ If skills overwrite was requested: output ONLY the requested skills
 ☑ If JD responsibilities were listed: EVERY one appears in experience bullets
 {"☑ Section targeting used — each @section / [TAG] directive applied ONLY to its target section; ALL non-targeted sections preserved verbatim" if _has_section_tags else ""}
+☑ Core technical keywords and required tools from the Job Description are actively preserved and not eroded into generic filler
+☑ High-value tools and technologies are demonstrated with context and impact in Experience bullets, not just dumped in skills
 ☑ No banned clichés used
 ☑ change_summary lists every discrete change made
 ☑ skills_mode is set to "overwrite" or "additive"

@@ -2733,11 +2733,48 @@ def refine_resume_api():
 
         # 3. Retrieve JD text if available
         jd_text = data.get("jd_text", "").strip()
+        jd_file_path = target_dir / "job_description.txt"
+
+        # Check target_dir for saved job_description.txt if not provided in request
+        if not jd_text and jd_file_path.exists():
+            try:
+                jd_text = jd_file_path.read_text(encoding="utf-8").strip()
+            except Exception as e:
+                print(f"[Refine] Note reading job_description.txt: {e}")
+
+        # Check cached JD by url
         if not jd_text and url:
             from scraper import get_cached_jd
             cached = get_cached_jd(url)
             if cached:
                 jd_text = cached.get("jd_text", "")
+
+        # Check run logs as fallback if still not found
+        if not jd_text and target_dir:
+            try:
+                logs_dir = user_output_dir / "logs"
+                if logs_dir.exists():
+                    for lf in sorted(logs_dir.glob("run_*.json"), reverse=True):
+                        try:
+                            with open(lf, "r", encoding="utf-8") as jf:
+                                ldata = json.load(jf)
+                            out_f = ldata.get("output_file", "")
+                            if (target_dir.name in out_f) or (company and ldata.get("company", "").lower() == company.lower()):
+                                kw_list = ldata.get("missing_keywords", []) + ldata.get("embedded_keywords", [])
+                                if kw_list:
+                                    jd_text = f"Target Role: {role or ldata.get('role', '')}\nTarget Company: {company or ldata.get('company', '')}\nTarget Required Keywords/Skills: {', '.join(dict.fromkeys(kw_list))}"
+                                    break
+                        except Exception:
+                            continue
+            except Exception as le:
+                print(f"[Refine] Note checking run log fallback: {le}")
+
+        # Persist jd_text in target_dir so future refinements always have it
+        if jd_text and not jd_file_path.exists():
+            try:
+                jd_file_path.write_text(jd_text, encoding="utf-8")
+            except Exception as e:
+                print(f"[Refine] Note saving job_description.txt: {e}")
 
         # 4. Call Refinement Engine
         refined_resume, change_summary = refine_tailored_resume(
@@ -2970,10 +3007,19 @@ def save_preview_edits():
                         base_resume = json.load(f)
                 except Exception:
                     pass
+            jd_text = data.get("jd_text", "").strip()
+            jd_file = target_dir / "job_description.txt"
+            if not jd_text and jd_file.exists():
+                try:
+                    jd_text = jd_file.read_text(encoding="utf-8").strip()
+                except Exception:
+                    pass
+
             refined, summary_msg = refine_tailored_resume(
                 current_resume=updated_resume,
                 instruction=instruction,
                 base_resume=base_resume,
+                jd_text=jd_text,
                 company=company or target_dir.name.split("_")[0],
                 role=role or updated_resume.get("target_role", ""),
             )
@@ -3482,6 +3528,11 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                 _target_folder = Path(_doc_path).parent
                 with open(_target_folder / "tailored_resume.json", "w", encoding="utf-8") as rf:
                     json.dump(cleaned_resume, rf, indent=2, ensure_ascii=False)
+                if jd_text:
+                    try:
+                        (_target_folder / "job_description.txt").write_text(jd_text, encoding="utf-8")
+                    except Exception as jde:
+                        print(f"[Pipeline] Note saving job_description.txt: {jde}")
             except Exception as json_err:
                 print(f"[Pipeline] Note saving tailored_resume.json: {json_err}")
 
@@ -3595,7 +3646,8 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
             score_after=score_after_val,
             score_delta=score_delta_val,
             cover_letter_text=cover_letter_text,
-            output_dir=_output_dir
+            output_dir=_output_dir,
+            jd_text=jd_text
         )
 
         # ── Persist run log to NeonDB in background (non-blocking) ──────────────
@@ -3621,6 +3673,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                         "cover_letter_text": cover_letter_text,
                         "output_file": doc_path,
                         "tailored_resume": cleaned_resume,
+                        "jd_text": jd_text,
                         "log_file_name": f"{run_id}.json",
                     }
                     db_layer.db_save_run_log(user_username, run_id, db_log)
@@ -3652,6 +3705,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                     "folder_path": str(Path(doc_path).parent),
                     "tailored_resume": cleaned_resume,
                     "cover_letter_text": cover_letter_text,
+                    "jd_text": jd_text,
                     "next_step": "Upload the .docx to your Simplify profile to verify your new score",
                 }
             })

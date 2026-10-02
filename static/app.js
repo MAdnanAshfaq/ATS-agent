@@ -4213,7 +4213,7 @@ async function submitResumeRefinement() {
         role: role,
         url: url,
         current_resume: currentResume,
-        jd_text: analyzeJdText || "",
+        jd_text: (window.lastResult && window.lastResult.jd_text) ? window.lastResult.jd_text : (analyzeJdText || ""),
       }),
     });
 
@@ -4350,6 +4350,7 @@ async function submitHistoryRefinement() {
         company: company,
         role: role,
         url: url,
+        jd_text: (window.lastResult && window.lastResult.jd_text) ? window.lastResult.jd_text : (window.analyzeJdText || ""),
       }),
     });
 
@@ -4854,7 +4855,8 @@ async function savePreviewEdits(optionalInstruction = "") {
         updated_resume: updatedResume,
         instruction: optionalInstruction,
         company: state.company,
-        role: state.role
+        role: state.role,
+        jd_text: (window.lastResult && window.lastResult.jd_text) ? window.lastResult.jd_text : (window.analyzeJdText || "")
       })
     });
 
@@ -7145,7 +7147,7 @@ async function applyLiveEdits() {
           role: lastRes.role || "",
           url: lastRes.url || "",
           current_resume: updatedResume, // use the directly-edited version as base
-          jd_text: window.analyzeJdText || "",
+          jd_text: (lastRes && lastRes.jd_text) ? lastRes.jd_text : (window.analyzeJdText || ""),
         }),
       });
 

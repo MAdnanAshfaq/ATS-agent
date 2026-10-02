@@ -403,7 +403,7 @@ def _save_run_log(
     url, company, role, missing_keywords, embedded_keywords,
     still_missing, simplify_data, output_path, elapsed,
     score_before=None, score_after=None, score_delta=None,
-    cover_letter_text="", output_dir=None
+    cover_letter_text="", output_dir=None, jd_text=""
 ):
     """Save a JSON log of this run."""
     base_out = Path(output_dir) if output_dir else (Path(__file__).parent / "output")
@@ -442,6 +442,7 @@ def _save_run_log(
         "keyword_coverage_pct": coverage_pct,
         "output_file": output_path,
         "cover_letter_text": cover_letter_text,
+        "jd_text": jd_text,
         "elapsed_seconds": round(elapsed, 2),
     }
 
