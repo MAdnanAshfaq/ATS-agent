@@ -2987,11 +2987,16 @@ def save_preview_edits():
         # Merge client edits onto existing disk resume
         merged_resume = dict(disk_tailored)
         for k, v in updated_resume.items():
-            if v is not None and v != "" and v != []:
+            if k not in ("section_headings", "contact") and v is not None and v != "" and v != []:
                 merged_resume[k] = v
+        # Preserve contact info
+        if "contact" in updated_resume and isinstance(updated_resume["contact"], dict):
+            cur_ct = dict(merged_resume.get("contact") or {})
+            cur_ct.update({ck: cv for ck, cv in updated_resume["contact"].items() if cv})
+            merged_resume["contact"] = cur_ct
         # Preserve section headings
         if "section_headings" in updated_resume:
-            cur_hd = merged_resume.get("section_headings", {})
+            cur_hd = dict(merged_resume.get("section_headings") or {})
             cur_hd.update(updated_resume["section_headings"])
             merged_resume["section_headings"] = cur_hd
 

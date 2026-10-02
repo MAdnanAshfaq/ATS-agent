@@ -4712,6 +4712,33 @@ function extractResumeFromPreviewDoc() {
     base.target_role = roleEl.innerText.trim();
   }
 
+  // 1b. Contact Information
+  const contactLines = doc.querySelectorAll('.contact-line');
+  if (contactLines && contactLines.length > 0) {
+    const contactObj = Object.assign({}, base.contact || {});
+    contactLines.forEach(cl => {
+      const mailto = cl.querySelector('a[href^="mailto:"]');
+      if (mailto && mailto.innerText.trim()) contactObj.email = mailto.innerText.trim();
+      cl.querySelectorAll('a').forEach(a => {
+        const href = (a.getAttribute('href') || '').toLowerCase();
+        const text = a.innerText.trim();
+        if (href.includes('linkedin.com') || text.includes('linkedin.com')) contactObj.linkedin = text;
+        else if (href.includes('github.com') || text.includes('github.com')) contactObj.github = text;
+      });
+      const parts = cl.innerText.split('|').map(s => s.trim()).filter(Boolean);
+      parts.forEach(p => {
+        if (/[\+]?\d[\d\s\-()]{7,}\d/.test(p)) contactObj.phone = p;
+        else if (p.includes('@') && !contactObj.email) contactObj.email = p;
+        else if (!p.includes('linkedin') && !p.includes('github') && !p.includes('http') && p.length > 2 && p.length < 50) {
+          if (!contactObj.location) contactObj.location = p;
+        }
+      });
+    });
+    if (Object.keys(contactObj).length > 0) {
+      base.contact = contactObj;
+    }
+  }
+
   // 2. Section Headings
   const headings = {};
   doc.querySelectorAll('.section-title').forEach(el => {
@@ -4789,32 +4816,55 @@ function extractResumeFromPreviewDoc() {
     }
   });
 
-  // Fallback for docx_to_html layouts without .entry-item
+  // Fallback for docx_to_html layouts without .entry-item wrapper
   if (extractedExp.length === 0) {
-    const twoCols = doc.querySelectorAll('.two-col-line');
-    if (twoCols.length > 0) {
-      let currentItem = null;
-      doc.querySelectorAll('.two-col-line, .bullet-list').forEach(el => {
-        if (el.classList.contains('two-col-line')) {
-          const tEl = el.querySelector('.two-col-left');
-          const dEl = el.querySelector('.two-col-right');
-          if (tEl && tEl.innerText.trim()) {
-            if (currentItem && currentItem.title) extractedExp.push(currentItem);
-            currentItem = {
-              title: tEl.innerText.trim(),
-              dates: dEl ? dEl.innerText.trim() : "",
-              bullets: []
-            };
+    let inExpSection = false;
+    let currentItem = null;
+    const sheet = doc.querySelector('.resume-sheet') || doc.body;
+
+    Array.from(sheet.children).forEach(el => {
+      if (el.classList.contains('section-title')) {
+        const titleText = (el.innerText || '').toLowerCase();
+        if (titleText.includes('experience') || titleText.includes('employment') || titleText.includes('work')) {
+          inExpSection = true;
+        } else {
+          if (inExpSection && currentItem && currentItem.title) {
+            extractedExp.push(currentItem);
+            currentItem = null;
           }
-        } else if (el.classList.contains('bullet-list') && currentItem) {
-          el.querySelectorAll('li').forEach(li => {
-            const bText = li.innerText.trim();
-            if (bText.length > 2) currentItem.bullets.push(bText);
-          });
+          inExpSection = false;
         }
-      });
-      if (currentItem && currentItem.title) extractedExp.push(currentItem);
-    }
+        return;
+      }
+
+      if (!inExpSection) return;
+
+      if (el.classList.contains('two-col-line')) {
+        const tEl = el.querySelector('.two-col-left');
+        const dEl = el.querySelector('.two-col-right');
+        if (tEl && tEl.innerText.trim()) {
+          if (currentItem && currentItem.title) extractedExp.push(currentItem);
+          currentItem = {
+            title: tEl.innerText.trim(),
+            dates: dEl ? dEl.innerText.trim() : "",
+            company: "",
+            location: "",
+            bullets: []
+          };
+        }
+      } else if (el.classList.contains('sub-line') && currentItem) {
+        const cEl = el.querySelector('.sub-left');
+        const lEl = el.querySelector('.sub-right');
+        if (cEl && cEl.innerText.trim()) currentItem.company = cEl.innerText.trim();
+        if (lEl && lEl.innerText.trim()) currentItem.location = lEl.innerText.trim();
+      } else if (el.classList.contains('bullet-list') && currentItem) {
+        el.querySelectorAll('li').forEach(li => {
+          const bText = li.innerText.trim();
+          if (bText.length > 2) currentItem.bullets.push(bText);
+        });
+      }
+    });
+    if (currentItem && currentItem.title) extractedExp.push(currentItem);
   }
 
   if (extractedExp.length > 0) {
@@ -4840,9 +4890,9 @@ async function savePreviewEdits(optionalInstruction = "") {
   if (saveBtn) saveBtn.disabled = true;
   if (spinner) spinner.style.display = "inline-block";
   if (icon) icon.style.display = "none";
-  if (label) label.textContent = "Saving & Rebuilding...";
+  if (label) label.textContent = "Saving...";
   if (statusPill) {
-    statusPill.innerHTML = `<span class="spinner-small" style="display:inline-block; vertical-align:middle; margin-right:4px;"></span> <span>Rebuilding DOCX &amp; PDF...</span>`;
+    statusPill.innerHTML = `<span class="spinner-small" style="display:inline-block; vertical-align:middle; margin-right:4px;"></span> <span>Saving changes...</span>`;
   }
 
   try {
@@ -4895,10 +4945,10 @@ async function savePreviewEdits(optionalInstruction = "") {
       if (discardBtn) discardBtn.style.display = "none";
 
       if (statusPill) {
-        statusPill.innerHTML = `<i class="fa-solid fa-circle-check text-emerald" style="color:#10b981;"></i> <span style="color:#10b981;">All changes saved &amp; rebuilt</span>`;
+        statusPill.innerHTML = `<i class="fa-solid fa-circle-check text-emerald" style="color:#10b981;"></i> <span style="color:#10b981;">Changes saved</span>`;
       }
 
-      showToast("🎉 Resume saved! Word (.docx) and PDF rebuilt successfully.", "success");
+      showToast("Changes saved successfully!", "success");
 
       // Reload frame to show visual updates
       const frame = document.getElementById("resume-preview-frame");
@@ -4932,7 +4982,7 @@ async function savePreviewEdits(optionalInstruction = "") {
     if (saveBtn) saveBtn.disabled = false;
     if (spinner) spinner.style.display = "none";
     if (icon) icon.style.display = "inline-block";
-    if (label) label.textContent = "Save & Rebuild";
+    if (label) label.textContent = "Save";
   }
 }
 

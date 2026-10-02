@@ -1900,10 +1900,10 @@
           <button type="button" id="preview-edit-mode-btn" class="btn btn-secondary btn-sm" onclick="togglePreviewEditMode()" title="Toggle live editing directly on the document sheet" style="border-color: rgba(56,189,248,0.45); color: var(--cyan); font-weight: 700; background: rgba(56,189,248,0.1);">
             <i class="fa-solid fa-pen-to-square"></i> <span id="preview-edit-mode-label">Edit Mode: ON</span>
           </button>
-          <button type="button" id="preview-save-btn" class="btn btn-primary btn-sm" onclick="savePreviewEdits()" style="background: linear-gradient(135deg, #0891b2, #7c3aed); border: none; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 0 12px rgba(8,145,178,0.35);" title="Save your edits and rebuild Word DOCX and PDF (Ctrl+S)">
+          <button type="button" id="preview-save-btn" class="btn btn-primary btn-sm" onclick="savePreviewEdits()" style="background: linear-gradient(135deg, #0891b2, #7c3aed); border: none; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 0 12px rgba(8,145,178,0.35);" title="Save your edits (Ctrl+S)">
             <span id="preview-save-spinner" style="display:none; width:13px; height:13px; border:2px solid rgba(255,255,255,0.3); border-top-color:#fff; border-radius:50%; animation:spin 0.8s linear infinite;"></span>
-            <i class="fa-solid fa-cloud-arrow-up" id="preview-save-icon"></i>
-            <span id="preview-save-label">Save &amp; Rebuild</span>
+            <i class="fa-solid fa-floppy-disk" id="preview-save-icon"></i>
+            <span id="preview-save-label">Save</span>
             <span id="preview-unsaved-badge" style="display:none; background:#f59e0b; color:#000; font-size:10px; font-weight:800; padding:1px 6px; border-radius:10px;">Unsaved</span>
           </button>
           <button type="button" id="preview-ai-polish-btn" class="btn btn-secondary btn-sm" onclick="togglePreviewAiDrawer()" style="color:#fbbf24; border-color:rgba(245,158,11,0.35); font-weight:600; display: inline-flex; align-items: center; gap: 6px;" title="Polish or rewrite your resume with AI">

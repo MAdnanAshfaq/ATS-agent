@@ -361,6 +361,20 @@ def patch_docx_with_rewritten_resume(
     rewritten_exp = rewritten_resume.get("experience", [])
     total_replacements = 0
 
+    # 1. Locate where the Experience section actually starts in the Word document!
+    exp_section_idx = -1
+    for i, para in enumerate(all_paras):
+        p_txt = _get_para_full_text(para).strip()
+        p_norm = _normalize(p_txt)
+        if any(h in p_norm for h in ("experience", "work history", "employment history", "professional experience")) and len(p_norm) < 40 and _is_section_header(p_txt):
+            exp_section_idx = i
+            print(f"[Patcher] Identified Experience section header at paragraph {i}: '{p_txt}'")
+            break
+
+    # If an experience section header was found, role search MUST start strictly after it!
+    # If no header was found, role search MUST NEVER start in the top header/summary/skills zone (at minimum after paragraph 6)
+    search_start_idx = (exp_section_idx + 1) if exp_section_idx != -1 else min(6, len(all_paras))
+
     # Collect indices of role header paragraphs
     role_anchors = []
     for exp_idx, exp in enumerate(rewritten_exp):
@@ -369,7 +383,8 @@ def patch_docx_with_rewritten_resume(
         best_para_idx = None
         best_score = 0.0
 
-        for i, para in enumerate(all_paras):
+        for i in range(search_start_idx, len(all_paras)):
+            para = all_paras[i]
             text = _normalize(_get_para_full_text(para))
             if not text or _is_section_header(text):
                 continue
@@ -387,15 +402,32 @@ def patch_docx_with_rewritten_resume(
             # If the best match is line 2 (e.g. company name) and line 1 above it is the title/date,
             # or vice versa, the true start of this role block is the earlier paragraph.
             start_idx = best_para_idx
-            if best_para_idx > 0:
+            if best_para_idx > search_start_idx:
                 prev_text = _normalize(_get_para_full_text(all_paras[best_para_idx - 1]))
-                if title and title in prev_text:
+                if title and title in prev_text and not _is_section_header(prev_text):
                     start_idx = best_para_idx - 1
-                elif comp and comp in prev_text:
+                elif comp and comp in prev_text and not _is_section_header(prev_text):
                     start_idx = best_para_idx - 1
             
+            if start_idx < search_start_idx:
+                start_idx = search_start_idx
+
             role_anchors.append((exp_idx, start_idx, exp))
             print(f"[Patcher] Located role '{exp.get('company')}' starting at paragraph {start_idx}")
+
+    # Fallback: if no roles matched by company/title, map sequentially to role header paragraphs in experience section
+    if not role_anchors and rewritten_exp and search_start_idx < len(all_paras):
+        print(f"[Patcher] Fallback: mapping {len(rewritten_exp)} roles sequentially starting from paragraph {search_start_idx}")
+        current_exp_idx = 0
+        for i in range(search_start_idx, len(all_paras)):
+            p_txt = _get_para_full_text(all_paras[i]).strip()
+            if _is_section_header(p_txt):
+                break
+            # Detect role header line (tab separated or contains date range)
+            if ("\t" in p_txt or re.search(r'\b(20\d\d|19\d\d)\s*[-–—]\s*(20\d\d|present)\b', p_txt, re.IGNORECASE)) and current_exp_idx < len(rewritten_exp):
+                role_anchors.append((current_exp_idx, i, rewritten_exp[current_exp_idx]))
+                print(f"[Patcher] Fallback located role '{rewritten_exp[current_exp_idx].get('company')}' at paragraph {i}")
+                current_exp_idx += 1
 
     # Sort role anchors by paragraph index
     role_anchors.sort(key=lambda x: x[1])
