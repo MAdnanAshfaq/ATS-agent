@@ -301,18 +301,126 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
       enableEditor(true);
     }}
 
+    var _undoStack = [];
+    var _redoStack = [];
+    var _isRestoring = false;
+    var _lastSnapshot = null;
+    var _snapshotTimer = null;
+
+    function notifyUndoState() {{
+      if (window.parent && typeof window.parent.updateUndoRedoButtons === "function") {{
+        window.parent.updateUndoRedoButtons(_undoStack.length, _redoStack.length);
+      }}
+    }}
+
+    function captureSnapshot(immediate) {{
+      if (_isRestoring) return;
+      var sheet = document.querySelector(".resume-sheet");
+      if (!sheet) return;
+
+      var currentHTML = sheet.innerHTML;
+      if (_lastSnapshot === null) {{
+        _lastSnapshot = currentHTML;
+        return;
+      }}
+      if (currentHTML === _lastSnapshot) return;
+
+      var doPush = function() {{
+        if (_lastSnapshot !== null && currentHTML !== _lastSnapshot) {{
+          _undoStack.push(_lastSnapshot);
+          if (_undoStack.length > 50) _undoStack.shift();
+          _redoStack = [];
+          _lastSnapshot = currentHTML;
+          notifyUndoState();
+        }}
+      }};
+
+      if (immediate) {{
+        if (_snapshotTimer) clearTimeout(_snapshotTimer);
+        doPush();
+      }} else {{
+        if (_snapshotTimer) clearTimeout(_snapshotTimer);
+        _snapshotTimer = setTimeout(doPush, 350);
+      }}
+    }}
+
+    function docUndo() {{
+      if (_undoStack.length === 0) return false;
+      var sheet = document.querySelector(".resume-sheet");
+      if (!sheet) return false;
+
+      var currentHTML = sheet.innerHTML;
+      _redoStack.push(currentHTML);
+      var prev = _undoStack.pop();
+      _isRestoring = true;
+      sheet.innerHTML = prev;
+      _lastSnapshot = prev;
+      enableEditor(true);
+      _isRestoring = false;
+      notifyUndoState();
+      if (window.parent && typeof window.parent.onPreviewDocEdited === "function") {{
+        window.parent.onPreviewDocEdited();
+      }}
+      return true;
+    }}
+
+    function docRedo() {{
+      if (_redoStack.length === 0) return false;
+      var sheet = document.querySelector(".resume-sheet");
+      if (!sheet) return false;
+
+      var currentHTML = sheet.innerHTML;
+      _undoStack.push(currentHTML);
+      var next = _redoStack.pop();
+      _isRestoring = true;
+      sheet.innerHTML = next;
+      _lastSnapshot = next;
+      enableEditor(true);
+      _isRestoring = false;
+      notifyUndoState();
+      if (window.parent && typeof window.parent.onPreviewDocEdited === "function") {{
+        window.parent.onPreviewDocEdited();
+      }}
+      return true;
+    }}
+
+    window.docUndo = docUndo;
+    window.docRedo = docRedo;
+
+    setTimeout(function() {{
+      var sheet = document.querySelector(".resume-sheet");
+      if (sheet) _lastSnapshot = sheet.innerHTML;
+      notifyUndoState();
+    }}, 120);
+
     document.addEventListener("input", function() {{
+      captureSnapshot(false);
       if (window.parent && typeof window.parent.onPreviewDocEdited === "function") {{
         window.parent.onPreviewDocEdited();
       }}
     }});
 
     document.addEventListener("keydown", function(e) {{
+      // Ctrl+S / Cmd+S: Save
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {{
         e.preventDefault();
         if (window.parent && typeof window.parent.savePreviewEdits === "function") {{
           window.parent.savePreviewEdits();
         }}
+        return;
+      }}
+
+      // Ctrl+Z / Cmd+Z: Undo
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === "z" || e.key === "Z")) {{
+        e.preventDefault();
+        docUndo();
+        return;
+      }}
+
+      // Ctrl+Y / Cmd+Y / Ctrl+Shift+Z: Redo
+      if ((e.ctrlKey || e.metaKey) && (e.key === "y" || e.key === "Y" || (e.shiftKey && (e.key === "z" || e.key === "Z")))) {{
+        e.preventDefault();
+        docRedo();
         return;
       }}
 
@@ -322,6 +430,7 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
       if (e.key === "Enter" && !e.shiftKey) {{
         if (activeEl.classList.contains("bullet-item") || activeEl.tagName === "LI") {{
           e.preventDefault();
+          captureSnapshot(true);
           var newLi = document.createElement("li");
           newLi.className = "bullet-item";
           newLi.setAttribute("data-edit", "bullet");
@@ -329,6 +438,7 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
           newLi.setAttribute("spellcheck", "false");
           activeEl.parentNode.insertBefore(newLi, activeEl.nextSibling);
           newLi.focus();
+          captureSnapshot(true);
           if (window.parent && typeof window.parent.onPreviewDocEdited === "function") {{
             window.parent.onPreviewDocEdited();
           }}
@@ -342,6 +452,7 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
             var prev = activeEl.previousElementSibling;
             if (prev) {{
               e.preventDefault();
+              captureSnapshot(true);
               activeEl.remove();
               prev.focus();
               try {{
@@ -352,6 +463,7 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
                 sel.removeAllRanges();
                 sel.addRange(range);
               }} catch (_) {{}}
+              captureSnapshot(true);
               if (window.parent && typeof window.parent.onPreviewDocEdited === "function") {{
                 window.parent.onPreviewDocEdited();
               }}

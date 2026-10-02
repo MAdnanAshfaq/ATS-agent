@@ -1900,17 +1900,41 @@
           <button type="button" id="preview-edit-mode-btn" class="btn btn-secondary btn-sm" onclick="togglePreviewEditMode()" title="Toggle live editing directly on the document sheet" style="border-color: rgba(56,189,248,0.45); color: var(--cyan); font-weight: 700; background: rgba(56,189,248,0.1);">
             <i class="fa-solid fa-pen-to-square"></i> <span id="preview-edit-mode-label">Edit Mode: ON</span>
           </button>
+
+          <!-- In-Editor Live Undo / Redo for Typing & Deletions -->
+          <div style="display: inline-flex; align-items: center; border: 1px solid var(--border-base); border-radius: var(--r-md); overflow: hidden; background: rgba(255,255,255,0.03);">
+            <button type="button" id="preview-undo-btn" class="btn btn-secondary btn-sm" onclick="triggerPreviewUndo()" disabled title="Undo typing or edit (Ctrl+Z)" style="border:none; border-radius:0; padding:5px 10px; color:var(--t2);">
+              <i class="fa-solid fa-rotate-left"></i> <span style="font-size:11px; margin-left:3px;">Undo</span>
+            </button>
+            <button type="button" id="preview-redo-btn" class="btn btn-secondary btn-sm" onclick="triggerPreviewRedo()" disabled title="Redo typing or edit (Ctrl+Y)" style="border:none; border-radius:0; padding:5px 10px; border-left: 1px solid var(--border-base); color:var(--t2);">
+              <i class="fa-solid fa-rotate-right"></i> <span style="font-size:11px; margin-left:3px;">Redo</span>
+            </button>
+          </div>
+
+          <!-- Save Button -->
           <button type="button" id="preview-save-btn" class="btn btn-primary btn-sm" onclick="savePreviewEdits()" style="background: linear-gradient(135deg, #0891b2, #7c3aed); border: none; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 0 12px rgba(8,145,178,0.35);" title="Save your edits (Ctrl+S)">
             <span id="preview-save-spinner" style="display:none; width:13px; height:13px; border:2px solid rgba(255,255,255,0.3); border-top-color:#fff; border-radius:50%; animation:spin 0.8s linear infinite;"></span>
             <i class="fa-solid fa-floppy-disk" id="preview-save-icon"></i>
             <span id="preview-save-label">Save</span>
             <span id="preview-unsaved-badge" style="display:none; background:#f59e0b; color:#000; font-size:10px; font-weight:800; padding:1px 6px; border-radius:10px;">Unsaved</span>
           </button>
+
+          <!-- Undo Save / Version Rollback Dropdown -->
+          <div class="dropdown-wrapper" style="position: relative; display: inline-block;">
+            <button type="button" id="preview-undo-save-btn" class="btn btn-secondary btn-sm" onclick="toggleSaveHistoryDropdown(event)" style="display:none; color: #a78bfa; border-color: rgba(167,139,250,0.4); font-weight:600; align-items: center; gap: 6px; background: rgba(167,139,250,0.08);" title="Undo save or restore previous saved versions">
+              <i class="fa-solid fa-clock-rotate-left"></i> <span id="preview-undo-save-label">Undo Save</span>
+              <i class="fa-solid fa-chevron-down" style="font-size: 9px; margin-left: 2px;"></i>
+            </button>
+            <div id="preview-save-history-menu" class="dropdown-menu" style="display: none; position: absolute; top: calc(100% + 6px); left: 0; min-width: 280px; max-height: 350px; overflow-y: auto; background: #151823; border: 1px solid rgba(255,255,255,0.14); border-radius: var(--r-md); box-shadow: 0 18px 40px rgba(0,0,0,0.75); z-index: 10001; padding: 6px;">
+              <!-- History items populated dynamically -->
+            </div>
+          </div>
+
           <button type="button" id="preview-ai-polish-btn" class="btn btn-secondary btn-sm" onclick="togglePreviewAiDrawer()" style="color:#fbbf24; border-color:rgba(245,158,11,0.35); font-weight:600; display: inline-flex; align-items: center; gap: 6px;" title="Polish or rewrite your resume with AI">
             <i class="fa-solid fa-wand-magic-sparkles"></i> <span id="preview-ai-polish-btn-label">AI Polish</span>
           </button>
-          <button type="button" id="preview-discard-btn" class="btn btn-secondary btn-sm" onclick="discardPreviewEdits()" style="display:none; color:#ef4444; border-color:rgba(239,68,68,0.3);" title="Discard edits and reload original document">
-            <i class="fa-solid fa-rotate-left"></i> Discard
+          <button type="button" id="preview-discard-btn" class="btn btn-secondary btn-sm" onclick="discardPreviewEdits()" style="display:none; color:#ef4444; border-color:rgba(239,68,68,0.3);" title="Discard unsaved edits and reload saved document">
+            <i class="fa-solid fa-xmark"></i> Discard
           </button>
 
           <!-- Standard Document Actions -->
@@ -1940,8 +1964,9 @@
             Live PDF/Paper Editor Active
           </span>
           <span style="color: var(--t2);"><i class="fa-solid fa-arrow-pointer" style="margin-right:3px; font-size:11px;"></i> Click any heading or text to edit directly</span>
-          <span style="color: var(--t2);"><i class="fa-solid fa-keyboard" style="margin-right:3px; font-size:11px;"></i> <strong>Enter</strong> in bullets = new line</span>
+          <span style="color: var(--t2);"><i class="fa-solid fa-rotate-left" style="margin-right:3px; font-size:11px;"></i> <strong>Ctrl+Z</strong> = Undo &bull; <strong>Ctrl+Y</strong> = Redo</span>
           <span style="color: var(--t2);"><i class="fa-solid fa-floppy-disk" style="margin-right:3px; font-size:11px;"></i> <strong>Ctrl+S</strong> = Save &amp; Rebuild</span>
+          <span style="color: var(--t2);"><i class="fa-solid fa-clock-rotate-left" style="margin-right:3px; font-size:11px;"></i> <strong>Undo Save</strong> = Rollback saved version</span>
         </div>
         <div id="preview-status-pill" style="font-size: 11.5px; color: #10b981; font-weight: 600; display: flex; align-items: center; gap: 5px;">
           <i class="fa-solid fa-circle-check"></i> <span>Ready to edit</span>

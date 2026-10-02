@@ -4455,6 +4455,39 @@ function togglePreviewEditMode() {
   }
 }
 
+function updateUndoRedoButtons(undoCount, redoCount) {
+  const undoBtn = document.getElementById("preview-undo-btn");
+  const redoBtn = document.getElementById("preview-redo-btn");
+
+  if (undoBtn) {
+    undoBtn.disabled = undoCount <= 0;
+    undoBtn.style.opacity = undoCount > 0 ? "1" : "0.45";
+    undoBtn.style.color = undoCount > 0 ? "var(--cyan)" : "var(--t2)";
+    undoBtn.title = undoCount > 0 ? `Undo typing or edit (Ctrl+Z) [${undoCount} steps]` : "Undo typing or edit (Ctrl+Z)";
+  }
+
+  if (redoBtn) {
+    redoBtn.disabled = redoCount <= 0;
+    redoBtn.style.opacity = redoCount > 0 ? "1" : "0.45";
+    redoBtn.style.color = redoCount > 0 ? "var(--cyan)" : "var(--t2)";
+    redoBtn.title = redoCount > 0 ? `Redo typing or edit (Ctrl+Y) [${redoCount} steps]` : "Redo typing or edit (Ctrl+Y)";
+  }
+}
+
+function triggerPreviewUndo() {
+  const frame = document.getElementById("resume-preview-frame");
+  if (frame && frame.contentWindow && typeof frame.contentWindow.docUndo === "function") {
+    frame.contentWindow.docUndo();
+  }
+}
+
+function triggerPreviewRedo() {
+  const frame = document.getElementById("resume-preview-frame");
+  if (frame && frame.contentWindow && typeof frame.contentWindow.docRedo === "function") {
+    frame.contentWindow.docRedo();
+  }
+}
+
 function onPreviewDocEdited() {
   window._previewEditState.hasUnsaved = true;
 
@@ -4950,6 +4983,9 @@ async function savePreviewEdits(optionalInstruction = "") {
 
       showToast("Changes saved successfully!", "success");
 
+      // Refresh save history status & rollback button
+      refreshPreviewSaveHistory();
+
       // Reload frame to show visual updates
       const frame = document.getElementById("resume-preview-frame");
       if (frame) {
@@ -5117,6 +5153,12 @@ function openPreviewModal(filePath, company = "Tailored Resume", role = "Documen
     statusPill.innerHTML = `<i class="fa-solid fa-circle-check text-emerald" style="color:#10b981;"></i> <span>Ready to edit</span>`;
   }
 
+  // Reset in-editor undo/redo buttons
+  updateUndoRedoButtons(0, 0);
+
+  // Refresh saved version rollback history
+  refreshPreviewSaveHistory();
+
   const cacheBuster = `?t=${Date.now()}`;
   const previewUrl = `/api/preview/${encodeURIComponent(cleanPath).replace(/%2F/g, '/')}${cacheBuster}`;
   const pdfDownloadUrl = `/api/download/${encodeURIComponent(cleanPath.replace(/\.(docx|pdf|json)$/i, '.pdf')).replace(/%2F/g, '/')}${cacheBuster}`;
@@ -5159,9 +5201,269 @@ function closePreviewModal() {
   const frame = document.getElementById("resume-preview-frame");
   hidePreviewLoader();
   togglePreviewAiDrawer(false);
+  closeSaveHistoryDropdown();
   if (modal) modal.style.display = "none";
   if (frame) frame.src = "about:blank";
   document.body.style.overflow = "";
+}
+
+let _previewSaveHistory = [];
+
+function triggerPreviewUndo() {
+  const frame = document.getElementById("resume-preview-frame");
+  if (frame && frame.contentWindow && typeof frame.contentWindow.docUndo === "function") {
+    frame.contentWindow.docUndo();
+  }
+}
+
+function triggerPreviewRedo() {
+  const frame = document.getElementById("resume-preview-frame");
+  if (frame && frame.contentWindow && typeof frame.contentWindow.docRedo === "function") {
+    frame.contentWindow.docRedo();
+  }
+}
+
+const triggerIframeUndo = triggerPreviewUndo;
+const triggerIframeRedo = triggerPreviewRedo;
+window.triggerPreviewUndo = triggerPreviewUndo;
+window.triggerPreviewRedo = triggerPreviewRedo;
+window.triggerIframeUndo = triggerIframeUndo;
+window.triggerIframeRedo = triggerIframeRedo;
+
+function updateUndoRedoButtons(undoCount, redoCount) {
+  const undoBtn = document.getElementById("preview-undo-btn");
+  const redoBtn = document.getElementById("preview-redo-btn");
+  if (undoBtn) {
+    const canUndo = typeof undoCount === "number" && undoCount > 0;
+    undoBtn.disabled = !canUndo;
+    undoBtn.style.opacity = canUndo ? "1" : "0.45";
+    undoBtn.title = canUndo ? `Undo typing / edit (${undoCount} available) (Ctrl+Z)` : "No typing edits to undo (Ctrl+Z)";
+  }
+  if (redoBtn) {
+    const canRedo = typeof redoCount === "number" && redoCount > 0;
+    redoBtn.disabled = !canRedo;
+    redoBtn.style.opacity = canRedo ? "1" : "0.45";
+    redoBtn.title = canRedo ? `Redo typing / edit (${redoCount} available) (Ctrl+Y)` : "No typing edits to redo (Ctrl+Y)";
+  }
+}
+window.updateUndoRedoButtons = updateUndoRedoButtons;
+
+async function refreshPreviewSaveHistory() {
+  const filePath = window._previewEditState ? window._previewEditState.filePath : null;
+  const company = window._previewEditState ? window._previewEditState.company : "";
+  const role = window._previewEditState ? window._previewEditState.role : "";
+  const undoSaveBtn = document.getElementById("preview-undo-save-btn");
+  const historyMenu = document.getElementById("preview-save-history-menu");
+
+  if (!filePath) {
+    if (undoSaveBtn) undoSaveBtn.style.display = "none";
+    return;
+  }
+
+  try {
+    const params = new URLSearchParams({ relative_path: filePath, company: company || "", role: role || "" });
+    const res = await fetch(`/api/preview-history?${params.toString()}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    _previewSaveHistory = data.history || [];
+
+    if (undoSaveBtn) {
+      if (data.can_undo && _previewSaveHistory.length > 0) {
+        undoSaveBtn.style.display = "inline-flex";
+        const latest = _previewSaveHistory[0];
+        const label = latest.label ? ` (${latest.label})` : "";
+        undoSaveBtn.title = `Undo save & rollback to: ${latest.display_time || latest.timestamp}${label}`;
+      } else {
+        undoSaveBtn.style.display = "none";
+      }
+    }
+
+    if (historyMenu) {
+      if (_previewSaveHistory.length === 0) {
+        historyMenu.innerHTML = `
+          <div style="padding:16px 12px; text-align:center; color:var(--t3); font-size:11px;">
+            <i class="fa-solid fa-clock-rotate-left" style="font-size:16px; margin-bottom:6px; opacity:0.5; display:block;"></i>
+            No saved versions yet.<br>Every time you click Save, a timestamped snapshot is created.
+          </div>`;
+      } else {
+        let itemsHtml = `
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 10px 8px; border-bottom:1px solid rgba(255,255,255,0.08); margin-bottom:4px;">
+            <span style="font-size:11px; font-weight:700; color:var(--t1);"><i class="fa-solid fa-clock-rotate-left" style="margin-right:5px; color:#a78bfa;"></i> Saved Versions</span>
+            <button type="button" class="btn btn-secondary btn-xs" onclick="undoLastSavedPreview()" style="font-size:10.5px; padding:2px 8px; color:#a78bfa; border-color:rgba(167,139,250,0.3); background:rgba(167,139,250,0.1);">
+              <i class="fa-solid fa-rotate-left"></i> Revert Latest
+            </button>
+          </div>
+        `;
+        itemsHtml += _previewSaveHistory.map((item, idx) => {
+          const dateStr = item.display_time || item.timestamp || ("Snapshot " + (idx + 1));
+          const labelStr = item.label ? `<div style="font-weight:600; color:var(--t1); font-size:11.5px; margin-bottom:1px;">${escapeHtml(item.label)}</div>` : "";
+          const isLatest = idx === 0 ? `<span style="font-size:9px; background:rgba(16,185,129,0.2); color:#34d399; padding:1px 5px; border-radius:4px; font-weight:600; margin-left:4px;">Latest Backup</span>` : "";
+          return `
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:7px 10px; border-radius:6px; margin-bottom:2px; transition:background 0.15s ease;"
+                 onmouseover="this.style.background='rgba(255,255,255,0.05)'"
+                 onmouseout="this.style.background='transparent'">
+              <div style="flex:1; min-width:0; padding-right:8px;">
+                ${labelStr}
+                <div style="font-size:10px; color:var(--t3); display:flex; align-items:center; gap:4px;">
+                  <i class="fa-regular fa-clock" style="font-size:9px;"></i>
+                  <span>${dateStr}</span>
+                  ${isLatest}
+                </div>
+              </div>
+              <button type="button" class="btn btn-secondary btn-xs"
+                      onclick="restoreSavedVersion('${escapeHtml(item.id)}')"
+                      style="font-size:10.5px; padding:3px 8px; border-radius:5px; background:rgba(99,102,241,0.15); border:1px solid rgba(99,102,241,0.3); color:#818cf8; white-space:nowrap;">
+                <i class="fa-solid fa-arrow-rotate-left" style="margin-right:3px;"></i> Restore
+              </button>
+            </div>
+          `;
+        }).join("");
+        historyMenu.innerHTML = itemsHtml;
+      }
+    }
+  } catch (err) {
+    console.warn("Could not fetch preview save history:", err);
+  }
+}
+
+function toggleSaveHistoryDropdown(event) {
+  if (event) event.stopPropagation();
+  const menu = document.getElementById("preview-save-history-menu");
+  if (!menu) return;
+  const isShown = menu.style.display === "block";
+  if (isShown) {
+    closeSaveHistoryDropdown();
+  } else {
+    menu.style.display = "block";
+    refreshPreviewSaveHistory();
+  }
+}
+
+function closeSaveHistoryDropdown() {
+  const menu = document.getElementById("preview-save-history-menu");
+  if (menu) menu.style.display = "none";
+}
+
+// Close dropdown on outside click
+document.addEventListener("click", (e) => {
+  const menu = document.getElementById("preview-save-history-menu");
+  const undoSaveBtn = document.getElementById("preview-undo-save-btn");
+  if (menu && menu.style.display === "block") {
+    if (!menu.contains(e.target) && e.target !== undoSaveBtn && !undoSaveBtn?.contains(e.target)) {
+      closeSaveHistoryDropdown();
+    }
+  }
+});
+
+async function undoLastSavedPreview() {
+  const filePath = window._previewEditState ? window._previewEditState.filePath : null;
+  const company = window._previewEditState ? window._previewEditState.company : "";
+  const role = window._previewEditState ? window._previewEditState.role : "";
+
+  if (!_previewSaveHistory || _previewSaveHistory.length === 0) {
+    showToast("No saved versions available to roll back to", "info");
+    return;
+  }
+  const target = _previewSaveHistory[0];
+  const confirmMsg = `Roll back resume to previous saved snapshot from ${target.display_time || target.timestamp}${target.label ? ' (' + target.label + ')' : ''}? Current unsaved edits will be replaced.`;
+  if (typeof showSystemConfirm === "function") {
+    const ok = await showSystemConfirm("Roll Back to Saved Snapshot", confirmMsg, "Roll Back", "Cancel");
+    if (!ok) return;
+  } else if (!confirm(confirmMsg)) {
+    return;
+  }
+
+  const statusPill = document.getElementById("preview-status-pill");
+  if (statusPill) {
+    statusPill.innerHTML = `<span class="spinner-small" style="display:inline-block; vertical-align:middle; margin-right:4px;"></span> <span>Rolling back...</span>`;
+  }
+
+  try {
+    const res = await fetch("/api/preview-undo-save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ relative_path: filePath, company, role })
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast(data.message || "Reverted to previous saved snapshot!", "success");
+      if (statusPill) {
+        statusPill.innerHTML = `<i class="fa-solid fa-circle-check text-emerald" style="color:#10b981;"></i> <span style="color:#10b981;">Reverted snapshot</span>`;
+      }
+      if (data.updated_resume && window.lastResult) {
+        window.lastResult.tailored_resume = data.updated_resume;
+      }
+      // Reload iframe
+      const frame = document.getElementById("resume-preview-frame");
+      if (frame) {
+        const loader = document.getElementById("preview-loader");
+        if (loader) loader.style.display = "flex";
+        const currentUrl = new URL(frame.src, window.location.origin);
+        currentUrl.searchParams.set("t", Date.now());
+        frame.src = currentUrl.toString();
+      }
+      refreshPreviewSaveHistory();
+    } else {
+      showToast(data.error || "Failed to revert saved edit", "error");
+      if (statusPill) {
+        statusPill.innerHTML = `<i class="fa-solid fa-circle-exclamation text-rose" style="color:#ef4444;"></i> <span style="color:#ef4444;">Revert failed</span>`;
+      }
+    }
+  } catch (err) {
+    showToast("Error rolling back save: " + err.message, "error");
+  }
+}
+
+async function restoreSavedVersion(versionId) {
+  const filePath = window._previewEditState ? window._previewEditState.filePath : null;
+  const company = window._previewEditState ? window._previewEditState.company : "";
+  const role = window._previewEditState ? window._previewEditState.role : "";
+
+  if (!filePath) {
+    showToast("No active document to restore", "warning");
+    return;
+  }
+
+  closeSaveHistoryDropdown();
+  const statusPill = document.getElementById("preview-status-pill");
+  if (statusPill) {
+    statusPill.innerHTML = `<span class="spinner-small" style="display:inline-block; vertical-align:middle; margin-right:4px;"></span> <span>Restoring version...</span>`;
+  }
+
+  try {
+    const res = await fetch("/api/preview-restore-version", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version_id: versionId, relative_path: filePath, company, role })
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast(data.message || "Restored version successfully!", "success");
+      if (statusPill) {
+        statusPill.innerHTML = `<i class="fa-solid fa-circle-check text-emerald" style="color:#10b981;"></i> <span style="color:#10b981;">Restored snapshot</span>`;
+      }
+      if (data.updated_resume && window.lastResult) {
+        window.lastResult.tailored_resume = data.updated_resume;
+      }
+      // Reload iframe
+      const frame = document.getElementById("resume-preview-frame");
+      if (frame) {
+        const loader = document.getElementById("preview-loader");
+        if (loader) loader.style.display = "flex";
+        const currentUrl = new URL(frame.src, window.location.origin);
+        currentUrl.searchParams.set("t", Date.now());
+        frame.src = currentUrl.toString();
+      }
+      refreshPreviewSaveHistory();
+    } else {
+      showToast(data.error || "Failed to restore version", "error");
+      if (statusPill) {
+        statusPill.innerHTML = `<i class="fa-solid fa-circle-exclamation text-rose" style="color:#ef4444;"></i> <span style="color:#ef4444;">Restore failed</span>`;
+      }
+    }
+  } catch (err) {
+    showToast("Error restoring snapshot: " + err.message, "error");
+  }
 }
 
 function previewCurrentResume() {
@@ -5247,11 +5549,31 @@ document.addEventListener("keydown", (e) => {
     if (pwModal && pwModal.style.display === "flex") {
       closePasswordModal();
     }
-  } else if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+  } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
     const pModal = document.getElementById("resume-preview-modal");
     if (pModal && pModal.style.display === "flex") {
       e.preventDefault();
       savePreviewEdits();
+    }
+  } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
+    const pModal = document.getElementById("resume-preview-modal");
+    if (pModal && pModal.style.display === "flex") {
+      const activeEl = document.activeElement;
+      const isInput = activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA" || activeEl.isContentEditable);
+      if (!isInput) {
+        e.preventDefault();
+        triggerIframeUndo();
+      }
+    }
+  } else if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") || ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "z")) {
+    const pModal = document.getElementById("resume-preview-modal");
+    if (pModal && pModal.style.display === "flex") {
+      const activeEl = document.activeElement;
+      const isInput = activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA" || activeEl.isContentEditable);
+      if (!isInput) {
+        e.preventDefault();
+        triggerIframeRedo();
+      }
     }
   }
 });

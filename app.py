@@ -2872,6 +2872,74 @@ def refine_resume_api():
 
 
 
+def _rebuild_document_and_pdf(target_dir, updated_resume, company="", role="", user_data_dir=None):
+    from resume_builder import build_resume_docx, convert_to_pdf
+    user_data_dir = user_data_dir or (current_user.data_dir if current_user.is_authenticated else BASE_DIR)
+    user_orig_docx = user_data_dir / "master_resume_original.docx"
+    orig_docx_path = user_orig_docx if user_orig_docx.exists() else (BASE_DIR / "master_resume_original.docx")
+    effective_role = updated_resume.get("target_role") or role or "Resume"
+    effective_comp = company or (target_dir.name.split("_")[0] if hasattr(target_dir, 'name') else "Tailored")
+
+    doc_path = None
+    if orig_docx_path.exists():
+        try:
+            from docx_patcher import patch_docx_with_rewritten_resume
+            doc_path = patch_docx_with_rewritten_resume(
+                original_docx_path=str(orig_docx_path),
+                rewritten_resume=updated_resume,
+                company=effective_comp,
+                role=effective_role,
+                output_dir=str(target_dir),
+            )
+        except Exception as pe:
+            print(f"[_rebuild_document] Patch error: {pe}, using build_resume_docx")
+            doc_path = build_resume_docx(updated_resume, effective_comp, effective_role, output_dir=str(target_dir))
+    else:
+        doc_path = build_resume_docx(updated_resume, effective_comp, effective_role, output_dir=str(target_dir))
+
+    pdf_path = None
+    try:
+        pdf_path = convert_to_pdf(doc_path)
+    except Exception as pe:
+        print(f"[_rebuild_document] PDF conversion error: {pe}")
+
+    return doc_path, pdf_path
+
+
+def _resolve_target_dir_from_request(data):
+    rel_path = (data.get("relative_path") or "").strip()
+    company = (data.get("company") or "").strip()
+    role = (data.get("role") or "").strip()
+    user_output_dir = get_user_output_dir()
+    user_data_dir = current_user.data_dir if current_user.is_authenticated else BASE_DIR
+    clean_rel = rel_path.replace("\\", "/").strip("/")
+
+    if clean_rel in ("master", "master_resume", "master_resume.docx", "master.docx", "master.pdf"):
+        return user_data_dir, "base_resume.json", True
+
+    target_dir = None
+    if clean_rel:
+        cand = (user_output_dir / clean_rel).resolve()
+        if cand.is_file():
+            target_dir = cand.parent
+        elif cand.is_dir():
+            target_dir = cand
+
+    if not target_dir or not target_dir.exists():
+        if company and role:
+            from resume_builder import slugify
+            cand = user_output_dir / f"{slugify(company)}_{slugify(role)}"[:80]
+            if cand.exists():
+                target_dir = cand
+        if not target_dir:
+            subfolders = [p for p in user_output_dir.iterdir() if p.is_dir()]
+            if subfolders:
+                subfolders.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                target_dir = subfolders[0]
+
+    return target_dir, "tailored_resume.json", False
+
+
 @app.route("/api/save-preview-edits", methods=["POST"])
 @login_required
 def save_preview_edits():
@@ -2932,6 +3000,9 @@ def save_preview_edits():
                 updated_resume = refined
                 change_summary = summary_msg
 
+            from save_history import record_pre_save_snapshot, get_history_summary
+            record_pre_save_snapshot(user_data_dir, "base_resume.json", summary=change_summary)
+
             with open(user_resume_path, "w", encoding="utf-8") as f:
                 json.dump(updated_resume, f, indent=2, ensure_ascii=False)
 
@@ -2942,6 +3013,7 @@ def save_preview_edits():
                 output_dir=str(user_data_dir)
             )
             pdf_path = convert_to_pdf(doc_path)
+            hist_sum = get_history_summary(user_data_dir)
             return jsonify({
                 "success": True,
                 "message": "Master resume profile updated & rebuilt successfully!",
@@ -2950,6 +3022,8 @@ def save_preview_edits():
                 "output_file": doc_path,
                 "relative_path": "master",
                 "relative_pdf": "master.pdf",
+                "can_undo_save": hist_sum["can_undo"],
+                "can_redo_save": hist_sum["can_redo"],
             })
 
         # 2. Tailored resume edits: locate target folder
@@ -3031,39 +3105,25 @@ def save_preview_edits():
             updated_resume = refined
             change_summary = summary_msg
 
+        # Snapshot current file to history before overwriting
+        from save_history import record_pre_save_snapshot, get_history_summary
+        record_pre_save_snapshot(target_dir, "tailored_resume.json", summary=change_summary)
+
         # Save tailored_resume.json
         with open(tailored_json_path, "w", encoding="utf-8") as f:
             json.dump(updated_resume, f, indent=2, ensure_ascii=False)
 
-        # Rebuild Word .docx document using template
-        user_orig_docx = user_data_dir / "master_resume_original.docx"
-        orig_docx_path = user_orig_docx if user_orig_docx.exists() else (BASE_DIR / "master_resume_original.docx")
+        # Rebuild Word .docx document using template and PDF
+        doc_path, pdf_path = _rebuild_document_and_pdf(
+            target_dir=target_dir,
+            updated_resume=updated_resume,
+            company=company,
+            role=role,
+            user_data_dir=user_data_dir
+        )
+
         effective_role = updated_resume.get("target_role") or role or "Resume"
         effective_comp = company or target_dir.name.split("_")[0]
-
-        doc_path = None
-        if orig_docx_path.exists():
-            try:
-                from docx_patcher import patch_docx_with_rewritten_resume
-                doc_path = patch_docx_with_rewritten_resume(
-                    original_docx_path=str(orig_docx_path),
-                    rewritten_resume=updated_resume,
-                    company=effective_comp,
-                    role=effective_role,
-                    output_dir=str(target_dir),
-                )
-            except Exception as pe:
-                print(f"[SavePreviewEdits] Patch error: {pe}, using build_resume_docx")
-                doc_path = build_resume_docx(updated_resume, effective_comp, effective_role, output_dir=str(target_dir))
-        else:
-            doc_path = build_resume_docx(updated_resume, effective_comp, effective_role, output_dir=str(target_dir))
-
-        # Convert to PDF
-        pdf_path = None
-        try:
-            pdf_path = convert_to_pdf(doc_path)
-        except Exception as pe:
-            print(f"[SavePreviewEdits] PDF conversion error: {pe}")
 
         rel_doc = os.path.relpath(doc_path, str(user_output_dir)).replace("\\", "/")
         rel_pdf = os.path.relpath(pdf_path, str(user_output_dir)).replace("\\", "/") if pdf_path else ""
@@ -3088,6 +3148,8 @@ def save_preview_edits():
             except Exception as _db_err:
                 logging.warning(f"[SavePreviewEdits] DB persist note: {_db_err}")
 
+        hist_sum = get_history_summary(target_dir)
+
         return jsonify({
             "success": True,
             "message": "Resume updated and document rebuilt successfully!",
@@ -3097,11 +3159,186 @@ def save_preview_edits():
             "relative_pdf": rel_pdf,
             "folder_path": str(target_dir),
             "updated_resume": updated_resume,
+            "can_undo_save": hist_sum["can_undo"],
+            "can_redo_save": hist_sum["can_redo"],
         })
     except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({"success": False, "error": f"Failed saving preview edits: {str(e)}"}), 500
+
+
+
+@app.route("/api/preview-history", methods=["GET"])
+@login_required
+def get_preview_history():
+    """Retrieve saved version snapshots for the current resume document."""
+    rel_path = request.args.get("relative_path", "").strip()
+    company = request.args.get("company", "").strip()
+    role = request.args.get("role", "").strip()
+    target_dir, json_filename, is_master = _resolve_target_dir_from_request({
+        "relative_path": rel_path,
+        "company": company,
+        "role": role
+    })
+
+    if not target_dir or not target_dir.exists():
+        return jsonify({"success": False, "history": [], "can_undo": False, "can_redo": False})
+
+    from save_history import get_history_summary
+    summary = get_history_summary(target_dir)
+    return jsonify(summary)
+
+
+@app.route("/api/preview-undo-save", methods=["POST"])
+@login_required
+def preview_undo_save():
+    """Undo the last saved preview edit, rolling back to previous saved version."""
+    data = request.get_json() or {}
+    target_dir, json_filename, is_master = _resolve_target_dir_from_request(data)
+    if not target_dir or not target_dir.exists():
+        return jsonify({"success": False, "error": "Target document directory not found."}), 404
+
+    from save_history import undo_last_save
+    result = undo_last_save(target_dir, json_filename=json_filename)
+    if not result:
+        return jsonify({"success": False, "error": "No previous saved versions available to undo."}), 400
+
+    restored_resume, label, can_undo, can_redo = result
+    user_data_dir = current_user.data_dir if current_user.is_authenticated else BASE_DIR
+    user_output_dir = get_user_output_dir()
+    company = data.get("company", "")
+    role = data.get("role", "")
+
+    if is_master:
+        from resume_builder import build_resume_docx, convert_to_pdf
+        doc_path = build_resume_docx(restored_resume, company or "Master", role or "Profile", output_dir=str(user_data_dir))
+        pdf_path = convert_to_pdf(doc_path)
+        rel_doc = "master"
+        rel_pdf = "master.pdf"
+    else:
+        doc_path, pdf_path = _rebuild_document_and_pdf(
+            target_dir=target_dir,
+            updated_resume=restored_resume,
+            company=company,
+            role=role,
+            user_data_dir=user_data_dir
+        )
+        rel_doc = os.path.relpath(doc_path, str(user_output_dir)).replace("\\", "/")
+        rel_pdf = os.path.relpath(pdf_path, str(user_output_dir)).replace("\\", "/") if pdf_path else ""
+
+    return jsonify({
+        "success": True,
+        "message": f"Successfully reverted to {label}!",
+        "updated_resume": restored_resume,
+        "can_undo": can_undo,
+        "can_redo": can_redo,
+        "relative_path": rel_doc,
+        "relative_pdf": rel_pdf,
+        "folder_path": str(target_dir)
+    })
+
+
+@app.route("/api/preview-redo-save", methods=["POST"])
+@login_required
+def preview_redo_save():
+    """Redo an undone save edit."""
+    data = request.get_json() or {}
+    target_dir, json_filename, is_master = _resolve_target_dir_from_request(data)
+    if not target_dir or not target_dir.exists():
+        return jsonify({"success": False, "error": "Target document directory not found."}), 404
+
+    from save_history import redo_last_save
+    result = redo_last_save(target_dir, json_filename=json_filename)
+    if not result:
+        return jsonify({"success": False, "error": "No undone versions available to redo."}), 400
+
+    redo_resume, label, can_undo, can_redo = result
+    user_data_dir = current_user.data_dir if current_user.is_authenticated else BASE_DIR
+    user_output_dir = get_user_output_dir()
+    company = data.get("company", "")
+    role = data.get("role", "")
+
+    if is_master:
+        from resume_builder import build_resume_docx, convert_to_pdf
+        doc_path = build_resume_docx(redo_resume, company or "Master", role or "Profile", output_dir=str(user_data_dir))
+        pdf_path = convert_to_pdf(doc_path)
+        rel_doc = "master"
+        rel_pdf = "master.pdf"
+    else:
+        doc_path, pdf_path = _rebuild_document_and_pdf(
+            target_dir=target_dir,
+            updated_resume=redo_resume,
+            company=company,
+            role=role,
+            user_data_dir=user_data_dir
+        )
+        rel_doc = os.path.relpath(doc_path, str(user_output_dir)).replace("\\", "/")
+        rel_pdf = os.path.relpath(pdf_path, str(user_output_dir)).replace("\\", "/") if pdf_path else ""
+
+    return jsonify({
+        "success": True,
+        "message": "Redone saved edit successfully!",
+        "updated_resume": redo_resume,
+        "can_undo": can_undo,
+        "can_redo": can_redo,
+        "relative_path": rel_doc,
+        "relative_pdf": rel_pdf,
+        "folder_path": str(target_dir)
+    })
+
+
+@app.route("/api/preview-restore-version", methods=["POST"])
+@login_required
+def preview_restore_version():
+    """Restore a specific version from history."""
+    data = request.get_json() or {}
+    version_id = data.get("version_id", "").strip()
+    if not version_id:
+        return jsonify({"success": False, "error": "Version ID required."}), 400
+
+    target_dir, json_filename, is_master = _resolve_target_dir_from_request(data)
+    if not target_dir or not target_dir.exists():
+        return jsonify({"success": False, "error": "Target document directory not found."}), 404
+
+    from save_history import restore_specific_version
+    result = restore_specific_version(target_dir, version_id, json_filename=json_filename)
+    if not result:
+        return jsonify({"success": False, "error": "Selected version could not be found or restored."}), 400
+
+    restored_resume, label, can_undo, can_redo = result
+    user_data_dir = current_user.data_dir if current_user.is_authenticated else BASE_DIR
+    user_output_dir = get_user_output_dir()
+    company = data.get("company", "")
+    role = data.get("role", "")
+
+    if is_master:
+        from resume_builder import build_resume_docx, convert_to_pdf
+        doc_path = build_resume_docx(restored_resume, company or "Master", role or "Profile", output_dir=str(user_data_dir))
+        pdf_path = convert_to_pdf(doc_path)
+        rel_doc = "master"
+        rel_pdf = "master.pdf"
+    else:
+        doc_path, pdf_path = _rebuild_document_and_pdf(
+            target_dir=target_dir,
+            updated_resume=restored_resume,
+            company=company,
+            role=role,
+            user_data_dir=user_data_dir
+        )
+        rel_doc = os.path.relpath(doc_path, str(user_output_dir)).replace("\\", "/")
+        rel_pdf = os.path.relpath(pdf_path, str(user_output_dir)).replace("\\", "/") if pdf_path else ""
+
+    return jsonify({
+        "success": True,
+        "message": f"Successfully restored {label}!",
+        "updated_resume": restored_resume,
+        "can_undo": can_undo,
+        "can_redo": can_redo,
+        "relative_path": rel_doc,
+        "relative_pdf": rel_pdf,
+        "folder_path": str(target_dir)
+    })
 
 
 
