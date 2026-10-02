@@ -4234,11 +4234,19 @@ async function submitResumeRefinement() {
 
     // Show change summary in UI
     if (statusBox && statusText) {
-      statusText.textContent = data.change_summary || "Revisions applied and Word (.docx) & PDF documents rebuilt!";
+      statusText.innerHTML = `<strong><i class="fa-solid fa-circle-check text-emerald"></i> Fix Applied:</strong> ${escHtml(data.change_summary || "Revisions applied and Word (.docx) & PDF documents rebuilt!")}<div style="margin-top:5px; font-size:11.5px; color:var(--cyan); display:flex; align-items:center; gap:6px;"><i class="fa-solid fa-arrow-rotate-left"></i> Textbox cleared — ready for your next instruction!</div>`;
       statusBox.classList.remove("hidden");
     }
 
-    showToast("Resume revised & documents rebuilt in ~2s!", "success");
+    // Clear instruction textarea so user can start doing the next fix
+    if (input) {
+      input.value = "";
+    }
+    if (typeof updateRefineReviewBar === "function") {
+      updateRefineReviewBar();
+    }
+
+    showToast("Resume revised & documents rebuilt! Textbox cleared for next fix.", "success");
 
     // Refresh history list silently in background
     loadHistory();
@@ -4351,11 +4359,16 @@ async function submitHistoryRefinement() {
     }
 
     if (statusBox && statusText) {
-      statusText.textContent = data.change_summary || "Revisions applied and Word (.docx) & PDF documents rebuilt!";
+      statusText.innerHTML = `<strong><i class="fa-solid fa-circle-check text-emerald"></i> Fix Applied:</strong> ${escHtml(data.change_summary || "Revisions applied and Word (.docx) & PDF documents rebuilt!")}<div style="margin-top:5px; font-size:11.5px; color:var(--cyan); display:flex; align-items:center; gap:6px;"><i class="fa-solid fa-arrow-rotate-left"></i> Textbox cleared — ready for your next instruction!</div>`;
       statusBox.classList.remove("hidden");
     }
 
-    showToast("Resume revised and documents rebuilt!", "success");
+    // Clear instruction textarea so user can start doing the next fix
+    if (input) {
+      input.value = "";
+    }
+
+    showToast("Resume revised and documents rebuilt! Textbox cleared.", "success");
 
     // Refresh history cards so download links point to newly rebuilt files
     await loadHistory();
@@ -6818,7 +6831,7 @@ window.togglePasswordVisibility = togglePasswordVisibility;
 window.submitChangePassword = submitChangePassword;
 
 
-/* ── SECTION COMMENT APPENDER ──────────────────────────────────────────────── */
+/* ── SECTION COMMENT APPENDER & LIVE REVIEW BAR ───────────────────────────── */
 
 function appendSectionComment(sectionTag) {
   const input = document.getElementById("refine-instruction-input");
@@ -6833,7 +6846,90 @@ function appendSectionComment(sectionTag) {
   input.focus();
   // Move cursor to end
   input.setSelectionRange(input.value.length, input.value.length);
+  updateRefineReviewBar();
 }
+
+function clearRefineInstruction() {
+  const input = document.getElementById("refine-instruction-input");
+  if (input) {
+    input.value = "";
+    input.focus();
+  }
+  updateRefineReviewBar();
+}
+
+function updateRefineReviewBar() {
+  const input = document.getElementById("refine-instruction-input");
+  const detectedGroup = document.getElementById("refine-detected-tags");
+  const remainingGroup = document.getElementById("refine-remaining-tags");
+  if (!detectedGroup || !remainingGroup) return;
+
+  const val = (input ? input.value : "").trim();
+
+  // Canonical list of sections with corresponding tags and colors
+  const canonicalSections = [
+    { id: "summary", tag: "@(Summary)", label: "Summary", colorClass: "badge-summary", icon: "fa-id-badge", regex: /(@\(summary\)|\@summary|\[summary\])/i },
+    { id: "skills", tag: "@(Skills)", label: "Skills", colorClass: "badge-skills", icon: "fa-code", regex: /(@\(skills\)|\@skills|\[skills\])/i },
+    { id: "experience", tag: "@(Experience)", label: "Experience", colorClass: "badge-experience", icon: "fa-briefcase", regex: /(@\(experience(?:[^\)]*)\)|\@experience|\[experience[^\]]*\])/i },
+    { id: "title", tag: "@(Title)", label: "Headline", colorClass: "badge-title", icon: "fa-signature", regex: /(@\(title\)|\@title|\[title\])/i },
+    { id: "bullets", tag: "@(All Bullets)", label: "All Bullets", colorClass: "badge-bullets", icon: "fa-list-ul", regex: /(@\(all(?:[^\)]*)\)|\@all|\[all bullets\])/i },
+  ];
+
+  const detected = [];
+  const remaining = [];
+
+  canonicalSections.forEach(sec => {
+    if (sec.regex.test(val)) {
+      detected.push(sec);
+    } else {
+      remaining.push(sec);
+    }
+  });
+
+  // Render detected tags
+  if (detected.length === 0) {
+    detectedGroup.innerHTML = `
+      <span class="refine-review-label"><i class="fa-solid fa-list-check text-cyan"></i> Active Targets:</span>
+      <span style="color:var(--t3); font-size:11.5px;" id="refine-no-tags-hint">${val ? "No @() section tags detected — applies globally." : "No @() section tags detected yet. Click chips above or type @(Section)."}</span>
+    `;
+  } else {
+    let badgesHtml = detected.map(sec => `
+      <span class="refine-review-badge ${sec.colorClass}">
+        <i class="fa-solid ${sec.icon}"></i> ${sec.tag} <i class="fa-solid fa-check" style="font-size:10px; margin-left:2px;"></i>
+      </span>
+    `).join("");
+
+    detectedGroup.innerHTML = `
+      <span class="refine-review-label"><i class="fa-solid fa-list-check text-cyan"></i> Active Targets (${detected.length}):</span>
+      ${badgesHtml}
+    `;
+  }
+
+  // Render remaining tags
+  if (remaining.length === 0) {
+    remainingGroup.innerHTML = `
+      <span class="refine-review-label" style="color:#10b981;"><i class="fa-solid fa-circle-check"></i> All 5 key sections targeted!</span>
+      <button type="button" class="btn-micro" onclick="clearRefineInstruction()" style="margin-left:6px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); border-radius:4px; padding:2px 8px; color:var(--t2); cursor:pointer;"><i class="fa-solid fa-xmark"></i> Clear</button>
+    `;
+  } else {
+    let remainingHtml = remaining.map(sec => `
+      <button type="button" class="refine-review-badge badge-unselected" onclick="appendSectionComment('${sec.tag}')" title="Click to add ${sec.tag}">
+        + ${sec.tag}
+      </button>
+    `).join("");
+
+    remainingGroup.innerHTML = `
+      <span class="refine-review-label" style="color:var(--t3);">Check &amp; add left:</span>
+      ${remainingHtml}
+      ${val ? '<button type="button" class="btn-micro" onclick="clearRefineInstruction()" style="margin-left:6px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); border-radius:4px; padding:2px 8px; color:var(--t2); cursor:pointer;" title="Clear instruction box"><i class="fa-solid fa-xmark"></i> Clear</button>' : ''}
+    `;
+  }
+}
+
+// Make available globally for inline HTML events
+window.appendSectionComment = appendSectionComment;
+window.clearRefineInstruction = clearRefineInstruction;
+window.updateRefineReviewBar = updateRefineReviewBar;
 
 /* ── JD RESPONSIBILITIES PASTE DRAWER ─────────────────────────────────────── */
 
@@ -6909,52 +7005,60 @@ function _renderLiveEditSections(resume) {
   const container = document.getElementById("live-edit-sections");
   if (!container) return;
 
-  const sectionStyle = "background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:16px; display:flex; flex-direction:column; gap:10px;";
-  const labelStyle = "font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--cyan); margin-bottom:2px;";
   const editableStyle = "width:100%; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:10px 12px; font-size:13px; color:var(--t0); resize:vertical; outline:none; font-family:inherit; box-sizing:border-box; line-height:1.6;";
-  const commentStyle = "width:100%; background:rgba(245,158,11,0.05); border:1px solid rgba(245,158,11,0.25); border-radius:8px; padding:8px 12px; font-size:12px; color:#fbbf24; resize:vertical; outline:none; font-family:inherit; box-sizing:border-box; line-height:1.5;";
-  const commentLabelStyle = "font-size:11px; color:#f59e0b; display:flex; align-items:center; gap:5px; margin-bottom:3px;";
 
   let html = "";
 
-  // ── Summary ──
-  html += `<div style="${sectionStyle}" data-section="summary">
-    <div style="${labelStyle}"><i class="fa-solid fa-id-badge" style="margin-right:4px;"></i>Professional Summary</div>
+  // ── Summary (Cyan / Sky) ──
+  html += `<div style="background:rgba(56,189,248,0.03); border:1px solid rgba(56,189,248,0.25); border-radius:12px; padding:16px; display:flex; flex-direction:column; gap:10px;" data-section="summary">
+    <div style="font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#38bdf8; display:flex; align-items:center; justify-content:space-between;">
+      <span><i class="fa-solid fa-id-badge" style="margin-right:6px;"></i>Professional Summary</span>
+      <span class="refine-review-badge badge-summary">@(Summary)</span>
+    </div>
     <textarea class="le-field" data-key="summary" style="${editableStyle}" rows="3" placeholder="Your professional summary...">${escHtml(resume.summary || "")}</textarea>
-    <div style="${commentLabelStyle}"><i class="fa-solid fa-comment-dots"></i> Tell AI how to rewrite this summary (leave blank to use direct edit above)</div>
-    <textarea class="le-ai-comment" data-target="[SUMMARY]" style="${commentStyle}" rows="2" placeholder="e.g. Focus on data engineering and pipeline automation, remove cloud buzzwords, keep to 2 sentences max"></textarea>
+    <div style="font-size:11.5px; color:#38bdf8; display:flex; align-items:center; gap:5px;"><i class="fa-solid fa-comment-dots"></i> Tell AI how to rewrite summary (leave blank to keep direct edit above):</div>
+    <textarea class="le-ai-comment" data-target="@(Summary)" style="width:100%; background:rgba(56,189,248,0.06); border:1px solid rgba(56,189,248,0.3); border-radius:8px; padding:8px 12px; font-size:12px; color:#7dd3fc; resize:vertical; outline:none; font-family:inherit; box-sizing:border-box; line-height:1.5;" rows="2" placeholder="e.g. Focus on data engineering and pipeline automation, cut corporate jargon, keep to 2 sentences"></textarea>
   </div>`;
 
-  // ── Skills ──
+  // ── Skills (Emerald) ──
   const skillsStr = Array.isArray(resume.skills) ? resume.skills.join(", ") : (resume.skills || "");
-  html += `<div style="${sectionStyle}" data-section="skills">
-    <div style="${labelStyle}"><i class="fa-solid fa-code" style="margin-right:4px;"></i>Skills</div>
+  html += `<div style="background:rgba(52,211,153,0.03); border:1px solid rgba(52,211,153,0.25); border-radius:12px; padding:16px; display:flex; flex-direction:column; gap:10px;" data-section="skills">
+    <div style="font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#34d399; display:flex; align-items:center; justify-content:space-between;">
+      <span><i class="fa-solid fa-code" style="margin-right:6px;"></i>Skills</span>
+      <span class="refine-review-badge badge-skills">@(Skills)</span>
+    </div>
     <textarea class="le-field" data-key="skills" style="${editableStyle}" rows="3" placeholder="Comma-separated skills...">${escHtml(skillsStr)}</textarea>
-    <div style="${commentLabelStyle}"><i class="fa-solid fa-comment-dots"></i> Tell AI what to do with skills (leave blank to use direct edit above)</div>
-    <textarea class="le-ai-comment" data-target="[SKILLS]" style="${commentStyle}" rows="2" placeholder="e.g. Replace all skills with: Python, SQL, Spark, Kafka, Airflow, AWS, Docker, Kubernetes"></textarea>
+    <div style="font-size:11.5px; color:#34d399; display:flex; align-items:center; gap:5px;"><i class="fa-solid fa-comment-dots"></i> Tell AI what to do with skills (leave blank to keep direct edit above):</div>
+    <textarea class="le-ai-comment" data-target="@(Skills)" style="width:100%; background:rgba(52,211,153,0.06); border:1px solid rgba(52,211,153,0.3); border-radius:8px; padding:8px 12px; font-size:12px; color:#6ee7b7; resize:vertical; outline:none; font-family:inherit; box-sizing:border-box; line-height:1.5;" rows="2" placeholder="e.g. Replace all skills with: Python, SQL, Spark, Kafka, Airflow, AWS, Docker, Kubernetes"></textarea>
   </div>`;
 
-  // ── Experience ──
+  // ── Experience (Amber) ──
   const experiences = resume.experience || [];
   experiences.forEach((exp, idx) => {
     const company = exp.company || `Role ${idx + 1}`;
     const title = exp.title || exp.role || "";
     const dates = exp.dates || "";
     const bullets = Array.isArray(exp.bullets) ? exp.bullets.join("\n") : "";
-    html += `<div style="${sectionStyle}" data-section="exp-${idx}">
-      <div style="${labelStyle}"><i class="fa-solid fa-briefcase" style="margin-right:4px;"></i>${escHtml(company)} — ${escHtml(title)} <span style="font-weight:400; color:var(--t2); text-transform:none;">${escHtml(dates)}</span></div>
+    html += `<div style="background:rgba(251,191,36,0.03); border:1px solid rgba(251,191,36,0.25); border-radius:12px; padding:16px; display:flex; flex-direction:column; gap:10px;" data-section="exp-${idx}">
+      <div style="font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#fbbf24; display:flex; align-items:center; justify-content:space-between;">
+        <span><i class="fa-solid fa-briefcase" style="margin-right:6px;"></i>${escHtml(company)} — ${escHtml(title)} <span style="font-weight:400; color:var(--t2); text-transform:none;">${escHtml(dates)}</span></span>
+        <span class="refine-review-badge badge-experience">@(Experience/${escHtml(company)})</span>
+      </div>
       <textarea class="le-field" data-key="experience.${idx}.bullets" style="${editableStyle}" rows="5" placeholder="One bullet per line...">${escHtml(bullets)}</textarea>
-      <div style="${commentLabelStyle}"><i class="fa-solid fa-comment-dots"></i> Tell AI what to do with these bullets</div>
-      <textarea class="le-ai-comment" data-target="[EXPERIENCE/${company}]" style="${commentStyle}" rows="2" placeholder="e.g. Add quantified metrics to every bullet and front-load impact statements"></textarea>
+      <div style="font-size:11.5px; color:#fbbf24; display:flex; align-items:center; gap:5px;"><i class="fa-solid fa-comment-dots"></i> Tell AI what to do with these bullets:</div>
+      <textarea class="le-ai-comment" data-target="@(Experience/${company})" style="width:100%; background:rgba(251,191,36,0.06); border:1px solid rgba(251,191,36,0.3); border-radius:8px; padding:8px 12px; font-size:12px; color:#fde68a; resize:vertical; outline:none; font-family:inherit; box-sizing:border-box; line-height:1.5;" rows="2" placeholder="e.g. Add quantified metrics to every bullet and front-load business impact"></textarea>
     </div>`;
   });
 
-  // ── Job Title / Headline ──
-  html += `<div style="${sectionStyle}" data-section="title">
-    <div style="${labelStyle}"><i class="fa-solid fa-signature" style="margin-right:4px;"></i>Job Title / Headline (shown under your name)</div>
+  // ── Job Title / Headline (Violet) ──
+  html += `<div style="background:rgba(192,132,252,0.03); border:1px solid rgba(192,132,252,0.25); border-radius:12px; padding:16px; display:flex; flex-direction:column; gap:10px;" data-section="title">
+    <div style="font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#c084fc; display:flex; align-items:center; justify-content:space-between;">
+      <span><i class="fa-solid fa-signature" style="margin-right:6px;"></i>Headline / Target Role</span>
+      <span class="refine-review-badge badge-title">@(Title)</span>
+    </div>
     <input class="le-field" data-key="target_role" style="${editableStyle.replace('resize:vertical;','')} height:38px;" type="text" value="${escHtml(resume.target_role || "")}" placeholder="e.g. Senior Data Engineer">
-    <div style="${commentLabelStyle}"><i class="fa-solid fa-comment-dots"></i> Tell AI what headline to use</div>
-    <textarea class="le-ai-comment" data-target="[TITLE]" style="${commentStyle}" rows="1" placeholder="e.g. Change to: Senior Cloud Data Engineer"></textarea>
+    <div style="font-size:11.5px; color:#c084fc; display:flex; align-items:center; gap:5px;"><i class="fa-solid fa-comment-dots"></i> Tell AI what headline to use:</div>
+    <textarea class="le-ai-comment" data-target="@(Title)" style="width:100%; background:rgba(192,132,252,0.06); border:1px solid rgba(192,132,252,0.3); border-radius:8px; padding:8px 12px; font-size:12px; color:#e9d5ff; resize:vertical; outline:none; font-family:inherit; box-sizing:border-box; line-height:1.5;" rows="1" placeholder="e.g. Senior Cloud Data Architect"></textarea>
   </div>`;
 
   container.innerHTML = html;

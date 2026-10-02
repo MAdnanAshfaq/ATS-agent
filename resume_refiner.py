@@ -65,27 +65,27 @@ JD RESPONSIBILITIES WEAVING RULE:
   - Integrate naturally as first-person, impact-led bullets with strong action verbs.
 
 SECTION TAG & @MENTION TARGETING RULE (CRITICAL):
-  When the instruction contains lines or directives starting with an @mention (e.g. @summary, @skills, @experience)
+  When the instruction contains lines or directives starting with an @mention, an @(...) tag (e.g. @(summary), @(skills), @(experience), @(title), @(all bullets)),
   or a section tag in square brackets [TAG], parse each directive independently and apply it ONLY to the targeted section:
   
   Format Examples:
-    @summary (or [SUMMARY]) ...                         → update ONLY the "summary" field
-    @skills (or [SKILLS]) ...                           → update ONLY the "skills" array
-    @experience (or [EXPERIENCE]) ...                   → update experience roles and bullet points
-    @experience/Acme Corp (or [EXPERIENCE/Acme Corp])   → update ONLY the experience entry where company ≈ "Acme Corp"
-    @education (or [EDUCATION]) ...                     → update ONLY the "education" section
-    @projects (or [PROJECTS]) ...                       → update ONLY the "projects" section
-    @certifications (or [CERTIFICATIONS]) ...           → update ONLY the "certifications" section
-    @title (or [TITLE]) ...                             → update ONLY the "target_role" headline
-    @all, @everything, or @general (or [ALL BULLETS])   → apply changes globally / across all sections
+    @(summary) (or @summary or [SUMMARY]) ...                         → update ONLY the "summary" field
+    @(skills) (or @skills or [SKILLS]) ...                           → update ONLY the "skills" array
+    @(experience) (or @experience or [EXPERIENCE]) ...               → update experience roles and bullet points
+    @(experience/Acme Corp) (or [EXPERIENCE/Acme Corp])               → update ONLY the experience entry where company ≈ "Acme Corp"
+    @(education) (or [EDUCATION]) ...                                 → update ONLY the "education" section
+    @(projects) (or [PROJECTS]) ...                                   → update ONLY the "projects" section
+    @(certifications) (or [CERTIFICATIONS]) ...                       → update ONLY the "certifications" section
+    @(title) (or @title or [TITLE]) ...                               → update ONLY the "target_role" headline
+    @(all), @(all bullets), or @all (or [ALL BULLETS])               → apply changes globally / across all sections
   
   Rules:
-  - If a directive has an @mention or [TAG], that instruction applies EXCLUSIVELY to that targeted section.
+  - If a directive has an @(...), @mention, or [TAG], that instruction applies EXCLUSIVELY to that targeted section.
   - All non-targeted sections MUST remain EXACTLY unchanged (preserved verbatim from current resume).
-  - Multiple @mentions can appear in a single instruction (e.g. "@skills add Python\n@summary make executive\n@all active voice").
+  - Multiple tags can appear in a single instruction (e.g. "@(skills) add Python\n@(summary) make executive\n@(all) active voice").
     Apply EACH directive to its respective section without dropping other sections!
-  - @all / @everything applies globally across the entire resume.
-  - If a tag references a company name (e.g. @experience/Strive Health), match it case-insensitively
+  - @all / @(all) applies globally across the entire resume.
+  - If a tag references a company name (e.g. @(experience/Strive Health)), match it case-insensitively
     against the "company" field of each experience entry.
 
 HUMAN VOICE:
@@ -182,15 +182,21 @@ def refine_tailored_resume(
         "replace the skills", "change the skills to", "change skills to",
         "set skills to", "skills are:", "skills list should be", "new skills:",
         "overwrite skills", "replace skill section",
-        # Section-tag and @mention variants
+        # Section-tag, @mention, and @(...) variants
         "[skills] replace", "[skills] set", "[skills] overwrite", "[skills] change to",
         "[skills] only", "[skills] use only", "[skills] use these",
         "@skills replace", "@skills set", "@skills overwrite", "@skills change to",
         "@skills only", "@skills use only", "@skills use these",
+        "@(skills) replace", "@(skills) set", "@(skills) overwrite", "@(skills) change to",
+        "@(skills) only", "@(skills) use only", "@(skills) use these",
     ])
 
-    # Check whether any section tags or @mentions are used (for checklist reminder)
-    _has_section_tags = bool(re.search(r'(\[(?:SUMMARY|SKILLS|TITLE|ALL BULLETS|EXPERIENCE\/[^\]]+)\]|@(summary|skills|experience|education|projects|certifications|all|everything|general|title)\b)', instruction, re.IGNORECASE))
+    # Check whether any section tags, @mentions, or @(...) tags are used (for checklist reminder)
+    _has_section_tags = bool(re.search(
+        r'(\[(?:SUMMARY|SKILLS|TITLE|ALL BULLETS|EXPERIENCE\/[^\]]+)\]|@\(?(?:summary|skills|experience|education|projects|certifications|all|all bullets|everything|general|title|bullets)[^\s\)]*\)?|@(summary|skills|experience|education|projects|certifications|all|everything|general|title)\b)',
+        instruction,
+        re.IGNORECASE
+    ))
 
     # Parse instruction into numbered items so the model sees them clearly
     _instr_lines = [l.strip() for l in re.split(r'[;\n]+', instruction.strip()) if l.strip()]
@@ -207,7 +213,7 @@ CANDIDATE'S EXACT REVISION REQUEST ({len(_instr_lines)} directive(s)):
 
 ⚠️  APPLY EVERY DIRECTIVE ABOVE — nothing is optional or skippable.
 ⚠️  SKILLS MODE: {"OVERWRITE — output ONLY the skills the user specified" if _skills_overwrite else "ADDITIVE — add/remove specific skills as requested, preserve existing"}
-{"⚠️  SECTION TARGETING (@mentions or [TAGS]) DETECTED — parse each @section or [TAG] prefix and apply that directive ONLY to the targeted section. Leave ALL other sections exactly as in current resume." if _has_section_tags else ""}
+{"⚠️  SECTION TARGETING (@(...) tags, @mentions, or [TAGS]) DETECTED — parse each @(...) or [TAG] prefix and apply that directive ONLY to the targeted section. Leave ALL other sections exactly as in current resume." if _has_section_tags else ""}
 
 TARGET JOB CONTEXT:
 - Company: {company or 'Target Company'}
