@@ -65,10 +65,29 @@ def _build_resume_text(resume: dict) -> str:
     return " ".join(parts).lower()
 
 
+# Known multi-word tech & ATS skill phrases to preserve when splitting space-separated dumps
+_KNOWN_MULTI_WORD_PHRASES = [
+    "machine learning", "deep learning", "data science", "data engineering", "data analytics",
+    "cloud computing", "rest api", "rest apis", "restful api", "restful apis",
+    "ci/cd", "ci / cd", "unit testing", "integration testing", "system testing",
+    "front end", "back end", "full stack", "frontend development", "backend development",
+    "prompt engineering", "natural language processing", "computer vision", "generative ai",
+    "artificial intelligence", "business intelligence", "agile methodology", "scrum master",
+    "object oriented programming", "software development lifecycle", "sdlc",
+    "version control", "test driven development", "tdd", "continuous integration", "continuous deployment",
+    "relational database", "nosql database", "distributed systems", "microservices architecture",
+    "event driven architecture", "message queue", "search engine optimization", "seo",
+    "user experience", "user interface", "ui/ux", "ui / ux",
+    "project management", "product management", "supply chain", "customer relationship management",
+    "big data", "data warehouse", "data lake", "business analyst", "quality assurance"
+]
+
+
 def sanitize_keywords_list(keywords) -> list[str]:
     """
     Decomposes any bundled/pasted keywords (comma, newline, semicolon, pipe,
-    tabs, bullet points, numbering) into clean, distinct, deduplicated individual keywords.
+    tabs, bullet points, middle dots, numbering, space-separated Gemini outputs,
+    copied HTML badges) into clean, distinct, deduplicated individual keywords.
     """
     if not keywords:
         return []
@@ -82,12 +101,56 @@ def sanitize_keywords_list(keywords) -> list[str]:
     for item in keywords:
         if not item or not isinstance(item, str):
             continue
-        # Split on commas, newlines, semicolons, pipes, tabs, bullet characters
-        sub_items = re.split(r'[\r\n,;|•\t]+', item)
+
+        text = item.strip()
+        # 1. Strip conversational introductory garbage from Gemini, ChatGPT, or Job descriptions
+        text = re.sub(
+            r'^(?:(?:certainly|sure|here\s+(?:are|is)(?:\s+the)?|extracted|suggested|relevant|recommended)?\s*(?:keywords?|skills?|technologies|ats\s+keywords?|key\s+terms?)(?:\s+(?:extracted\s+)?from\s+(?:the\s+)?(?:job|jd|description|posting|role|resume))?(?:\s*\(\d+\))?[:\s-]+)+',
+            '', text, flags=re.IGNORECASE
+        )
+        # Strip markdown formatting like bold **keyword** or *keyword* or `code`
+        text = re.sub(r'[\*`]+', '', text)
+        # Strip outer JSON brackets
+        text = re.sub(r'^\[\s*|\s*\]$', '', text)
+
+        # 2. Replace numbered list markers like '1. ', '2) ', '[1]', '(1)' with commas
+        text = re.sub(r'(?:^|\s+)(?:\d+[\.\)]|\[\d+\]|\(\d+\))\s+', ', ', text)
+
+        # 3. Replace bullets, middle dots, and symbols with commas
+        # Including \u00B7 (·), \u2022 (•), \u25CF (●), etc.
+        text = re.sub(r'[\r\n;|•●○▪▫■□◆◇◦∙⁃‣▶✓✔·⋅・\t]+', ', ', text)
+
+        # 4. Replace dashes, slashes, pluses, and/& with spaces around them with commas (preserves CI/CD, C++)
+        text = re.sub(r'\s+[\-\–\—\‒\―\/\\]\s+', ', ', text)
+        text = re.sub(r'\s+\+\s+', ', ', text)
+        text = re.sub(r'\s+(?:and|&)\s+', ', ', text, flags=re.IGNORECASE)
+
+        # 5. Replace 2 or more whitespace characters with commas
+        text = re.sub(r'\s{2,}', ', ', text)
+
+        # 6. Check if text is space-separated without commas (e.g. Gemini space-separated list):
+        # "Python FastApi Docker AWS Kubernetes PostgreSQL GraphQL Redis"
+        if ',' not in text:
+            raw_words = [w for w in text.strip().split() if w]
+            if len(raw_words) >= 3:
+                transformed = text
+                # Protect quotes
+                transformed = re.sub(r'["\']([^"\']+)["\']', lambda m: m.group(1).replace(' ', '_SPACE_'), transformed)
+                # Protect known multi-word phrases
+                for phrase in _KNOWN_MULTI_WORD_PHRASES:
+                    pattern = r'\b' + re.escape(phrase) + r'\b'
+                    transformed = re.sub(pattern, lambda m: m.group(0).replace(' ', '_SPACE_'), transformed, flags=re.IGNORECASE)
+                # Split remaining spaces to commas
+                transformed = re.sub(r'\s+', ', ', transformed)
+                text = transformed.replace('_SPACE_', ' ')
+
+        # Split on commas
+        sub_items = re.split(r',+', text)
+
         for sub in sub_items:
             kw = sub.strip()
-            # Strip leading bullets, numbered lists (e.g. "1. ", "1) "), dashes, quotes, brackets
-            kw = re.sub(r'^[\s\-\*\•\d\.\)\(\[\]]+', '', kw)
+            # Strip leading bullets, symbols, dashes, quotes
+            kw = re.sub(r'^[\s\-\*\•\·\●\▪\▫\◆\–\—\+]+', '', kw)
             kw = kw.strip(' "\'`;:()[]{}')
             if kw and len(kw) > 1:
                 lower = kw.lower()
@@ -96,6 +159,7 @@ def sanitize_keywords_list(keywords) -> list[str]:
                     cleaned.append(kw)
 
     return cleaned
+
 
 
 def verify_dynamic_keywords(rewritten_json_output: dict, simplify_keywords: list) -> tuple[list, list]:

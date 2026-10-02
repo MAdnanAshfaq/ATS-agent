@@ -297,6 +297,7 @@
                 placeholder="Paste missing keywords from Simplify (e.g. end-to-end, product features, FastAPI, Docker)..."
                 autocomplete="off"
                 onpaste="handleCustomKeywordsPaste(event)"
+                onblur="formatCustomKeywordsOnBlur()"
               >
             </div>
             <div class="form-hint">

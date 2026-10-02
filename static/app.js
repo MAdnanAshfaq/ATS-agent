@@ -3042,22 +3042,90 @@ function _execCopyFallback(text) {
   showToast("📋 Bookmarklet code copied to clipboard!", "success");
 }
 
+// Known multi-word tech & ATS skill phrases to preserve when splitting space-separated dumps
+const _KNOWN_MULTI_WORD_PHRASES = [
+  "machine learning", "deep learning", "data science", "data engineering", "data analytics",
+  "cloud computing", "rest api", "rest apis", "restful api", "restful apis",
+  "ci/cd", "ci / cd", "unit testing", "integration testing", "system testing",
+  "front end", "back end", "full stack", "frontend development", "backend development",
+  "prompt engineering", "natural language processing", "computer vision", "generative ai",
+  "artificial intelligence", "business intelligence", "agile methodology", "scrum master",
+  "object oriented programming", "software development lifecycle", "sdlc",
+  "version control", "test driven development", "tdd", "continuous integration", "continuous deployment",
+  "relational database", "nosql database", "distributed systems", "microservices architecture",
+  "event driven architecture", "message queue", "search engine optimization", "seo",
+  "user experience", "user interface", "ui/ux", "ui / ux",
+  "project management", "product management", "supply chain", "customer relationship management",
+  "big data", "data warehouse", "data lake", "business analyst", "quality assurance"
+];
+
 function parseKeywordsList(rawText) {
   if (!rawText || typeof rawText !== "string") return [];
-  // Split on newlines, carriage returns, commas, semicolons, pipes, tabs, or bullets
-  const rawItems = rawText.split(/[\r\n,;|•\t]+/);
+  let text = rawText.trim();
+
+  // 1. Strip conversational introductory garbage from Gemini or ChatGPT or Job Postings:
+  // e.g. "Here are the keywords from the job posting:", "Keywords extracted from the job description:",
+  // "Certainly! Here is a list of ATS keywords:", "Relevant keywords:"
+  text = text.replace(/^(?:(?:certainly|sure|here\s+(?:are|is)(?:\s+the)?|extracted|suggested|relevant|recommended)?\s*(?:keywords?|skills?|technologies|ats\s+keywords?|key\s+terms?)(?:\s+(?:extracted\s+)?from\s+(?:the\s+)?(?:job|jd|description|posting|role|resume))?(?:\s*\(\d+\))?[:\s-]+)+/i, "");
+
+  // Strip markdown formatting like bold **keyword** or *keyword* or `code`
+  text = text.replace(/[\*`]+/g, "");
+
+  // Strip outer JSON array brackets if present: ['a', 'b'] or [a, b]
+  text = text.replace(/^\[\s*|\s*\]$/g, "");
+
+  // First, replace numbered list markers like '1. ', '2) ', '[1]', '(1)' with commas
+  text = text.replace(/(?:^|\s+)(?:\d+[\.\)]|\[\d+\]|\(\d+\))\s+/g, ", ");
+  
+  // Replace bullets, middle dots, and symbols with commas
+  // \u00B7 is · (middle dot), \u2022 is • (bullet)
+  text = text.replace(/[\r\n;|•●○▪▫■□◆◇◦∙⁃‣▶✓✔·⋅・\t]+/g, ", ");
+  
+  // Replace dashes/slashes/pluses/and/& with spaces around them with commas (preserves CI/CD, TCP/IP, C++)
+  text = text.replace(/\s+[\-\–\—\‒\―\/\\]\s+/g, ", ");
+  text = text.replace(/\s+\+\s+/g, ", ");
+  text = text.replace(/\s+(?:and|&)\s+/gi, ", ");
+  
+  // Replace 2 or more spaces with commas (from copied HTML chips/columns)
+  text = text.replace(/\s{2,}/g, ", ");
+
+  // CHECK: If text does NOT contain commas (or only 1 token so far),
+  // but contains multiple space-separated words (e.g. Gemini space-separated list):
+  // "Python FastApi Docker AWS Kubernetes PostgreSQL GraphQL Redis"
+  // or "Python FastAPI Docker Machine Learning Kubernetes CI/CD"
+  if (!text.includes(",")) {
+    const rawWords = text.trim().split(/\s+/).filter(w => w.length > 0);
+    // If there are 3 or more space-separated words, treat as space-separated keyword dump
+    if (rawWords.length >= 3) {
+      let transformed = text;
+      // Protect quoted phrases first: "machine learning" -> "machine_learning"
+      transformed = transformed.replace(/["']([^"']+)["']/g, (m, p1) => p1.replace(/\s+/g, "_SPACE_"));
+
+      // Protect known multi-word phrases
+      for (const phrase of _KNOWN_MULTI_WORD_PHRASES) {
+        const regex = new RegExp("\\b" + phrase.replace(/[\/\\]/g, "\\$&") + "\\b", "gi");
+        transformed = transformed.replace(regex, (match) => match.replace(/\s+/g, "_SPACE_"));
+      }
+
+      // Now split remaining spaces into commas!
+      transformed = transformed.replace(/\s+/g, ", ");
+      // Restore protected spaces
+      text = transformed.replace(/_SPACE_/g, " ");
+    }
+  }
+
+  // Split on commas
+  const rawItems = text.split(/,+/);
   const cleaned = [];
   const seen = new Set();
-
+  
   for (let item of rawItems) {
     if (!item) continue;
-    // Strip leading bullets (•, -, *), numbered lists (1., 1)), brackets, outer quotes
     let kw = item.trim()
-      .replace(/^[\s\-\*\•\d\.\)\(\[\]]+/, "")
+      .replace(/^[\s\-\*\•\·\●\▪\▫\◆\–\—\+]+/, "")
       .replace(/^["'`]+|["'`]+$/g, "")
-      .replace(/[,;]+$/, "")
+      .replace(/[,;:]+$/, "")
       .trim();
-
     if (kw && kw.length > 1 && !seen.has(kw.toLowerCase())) {
       seen.add(kw.toLowerCase());
       cleaned.push(kw);
@@ -3082,6 +3150,20 @@ function handleCustomKeywordsPaste(event) {
       input.value = cleanStr;
     }
     showToast(`✨ Auto-separated & formatted ${items.length} pasted keywords!`, "success");
+  }
+}
+
+function formatCustomKeywordsOnBlur() {
+  const input = document.getElementById("custom-keywords-input");
+  if (!input) return;
+  const val = input.value.trim();
+  if (!val) return;
+  const items = parseKeywordsList(val);
+  if (items.length > 1) {
+    const formatted = items.join(", ");
+    if (formatted !== val) {
+      input.value = formatted;
+    }
   }
 }
 
@@ -3380,7 +3462,7 @@ function handleMatrixManualKwPaste(event) {
   const pasted = (event.clipboardData || window.clipboardData)?.getData("text");
   if (!pasted) return;
   const items = parseKeywordsList(pasted);
-  if (items.length > 1 || (items.length === 1 && (pasted.includes("\n") || pasted.includes("•") || pasted.includes(";")))) {
+  if (items.length > 0) {
     event.preventDefault();
     const input = document.getElementById("matrix-manual-kw-input");
     if (input) input.value = "";
