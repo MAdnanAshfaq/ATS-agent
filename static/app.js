@@ -4894,16 +4894,21 @@ async function savePreviewEdits(optionalInstruction = "") {
         currentUrl.searchParams.set("t", Date.now());
         frame.src = currentUrl.toString();
       }
+      window._lastSaveError = "";
       return true;
     } else {
-      showToast(data.error || "Failed to save edits", "error");
+      const errMsg = data.error || "Failed to save edits";
+      window._lastSaveError = errMsg;
+      showToast(errMsg, "error");
       if (statusPill) {
         statusPill.innerHTML = `<i class="fa-solid fa-circle-exclamation text-rose" style="color:#ef4444;"></i> <span style="color:#ef4444;">Save failed</span>`;
       }
       return false;
     }
   } catch (err) {
-    showToast("Network error while saving edits: " + err.message, "error");
+    const errMsg = "Network error while saving edits: " + err.message;
+    window._lastSaveError = errMsg;
+    showToast(errMsg, "error");
     if (statusPill) {
       statusPill.innerHTML = `<i class="fa-solid fa-circle-exclamation text-rose" style="color:#ef4444;"></i> <span style="color:#ef4444;">Network error</span>`;
     }
@@ -4958,11 +4963,12 @@ async function applyPreviewAiInstruction() {
         statusContent.innerHTML = `<i class="fa-solid fa-circle-check"></i> <span>Polish applied successfully! Document rebuilt.</span>`;
       }
     } else {
+      const errMsg = window._lastSaveError || "Could not apply polish. Check connection or reload.";
       if (statusBox && statusContent) {
         statusBox.style.background = "rgba(239, 68, 68, 0.12)";
         statusBox.style.borderColor = "rgba(239, 68, 68, 0.35)";
         statusBox.style.color = "#f87171";
-        statusContent.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> <span>Could not apply polish. Check connection or reload.</span>`;
+        statusContent.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> <span>${escapeHtml(errMsg)}</span>`;
       }
     }
   } catch (err) {

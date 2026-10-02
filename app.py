@@ -2861,8 +2861,7 @@ def save_preview_edits():
 
     try:
         from rewriter import sanitize_keywords_list
-        from resume_builder import build_resume_docx, convert_to_pdf
-        from slugify import slugify
+        from resume_builder import slugify, build_resume_docx, convert_to_pdf
 
         # Ensure skills are cleanly decomposed
         if isinstance(updated_resume.get("skills"), list):
