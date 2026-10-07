@@ -491,7 +491,40 @@ def sanitize_pdf_metadata(
         writer = pypdf.PdfWriter()
         writer.append(reader)
 
-        # Infer candidate name if empty
+        # 1. Dynamically resolve candidate name & role if not explicitly passed
+        if not candidate_name:
+            # Check companion .docx core properties
+            docx_companion = Path(pdf_path).with_suffix(".docx")
+            if docx_companion.exists():
+                try:
+                    from docx import Document
+                    d = Document(str(docx_companion))
+                    if d.core_properties.author and d.core_properties.author != "python-docx":
+                        candidate_name = d.core_properties.author.strip()
+                    if not role and d.core_properties.subject:
+                        role = d.core_properties.subject.strip()
+                except Exception:
+                    pass
+
+        if not candidate_name:
+            # Check for candidate's tailored_resume.json or base_resume.json in adjacent paths
+            p_dir = Path(pdf_path).parent
+            for cand_json in [
+                p_dir / "tailored_resume.json",
+                p_dir / "base_resume.json",
+                p_dir.parent / "base_resume.json",
+            ]:
+                if cand_json.exists():
+                    try:
+                        import json
+                        with open(cand_json, "r", encoding="utf-8") as f:
+                            jdata = json.load(f)
+                            if jdata.get("name"):
+                                candidate_name = jdata["name"].strip()
+                                break
+                    except Exception:
+                        pass
+
         if not candidate_name:
             stem = Path(pdf_path).stem.replace("_", " ")
             candidate_name = stem.split(" Resume")[0].split(" Master")[0].strip() or "Candidate"

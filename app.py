@@ -1722,7 +1722,7 @@ def _build_crafted_master_resume(
         pdf_res = None
         try:
             from resume_builder import convert_to_pdf
-            pdf_res = convert_to_pdf(gen_docx)
+            pdf_res = convert_to_pdf(gen_docx, candidate_name=cand_name, role="Master Resume")
         except Exception as pe:
             print(f"[Master Download] convert_to_pdf note: {pe}")
 
@@ -1731,7 +1731,7 @@ def _build_crafted_master_resume(
                 from resume_html import docx_to_html, generate_pdf_from_html
                 html_c = docx_to_html(gen_docx)
                 cand_pdf = str(Path(gen_docx).with_suffix(".pdf"))
-                if generate_pdf_from_html(html_c, cand_pdf):
+                if generate_pdf_from_html(html_c, cand_pdf, candidate_name=cand_name, role="Master Resume"):
                     pdf_res = cand_pdf
             except Exception as html_err:
                 print(f"[Master Download] HTML fallback note: {html_err}")

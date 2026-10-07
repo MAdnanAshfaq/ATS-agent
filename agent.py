@@ -380,7 +380,8 @@ def run_pipeline(
         # Automatically convert to PDF
         try:
             from resume_builder import convert_to_pdf
-            pdf_out = convert_to_pdf(output_path)
+            cand_name = rewritten_resume.get("name") or "Candidate"
+            pdf_out = convert_to_pdf(output_path, candidate_name=cand_name, role=role)
             print_success(f"PDF document saved: {pdf_out}")
         except Exception as pdf_err:
             print_warning(f"PDF conversion note: {pdf_err}")
