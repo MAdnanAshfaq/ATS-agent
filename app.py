@@ -1577,6 +1577,221 @@ def clear_all_history():
     })
 
 
+def _build_crafted_master_resume(
+    user_data_dir: Path,
+    user_resume_path: Path,
+    user_output_dir: Path,
+    req_format: str = "docx",
+    template_mode: str = "crafted",
+) -> tuple[Path | None, str | None, str | None]:
+    """
+    Renders the candidate's master resume profile (base_resume.json) using the exact
+    document templating and styling engine that the system produces for new crafted resumes.
+
+    Args:
+        user_data_dir: Directory containing user files (e.g. master_resume_original.docx).
+        user_resume_path: Path to user's base_resume.json.
+        user_output_dir: Output root directory for rendered deliverables.
+        req_format: 'docx' or 'pdf'.
+        template_mode: 'crafted' (in-place styled patch if orig docx exists, else clean builder),
+                       'clean' (clean single-column ATS builder),
+                       'original' (unmodified uploaded file).
+
+    Returns:
+        tuple (file_path, download_name, mimetype) or (None, None, None)
+    """
+    req_format = (req_format or "docx").lower().strip()
+    template_mode = (template_mode or "crafted").lower().strip()
+
+    # If raw original file explicitly requested
+    if template_mode == "original":
+        if req_format == "pdf":
+            orig_pdf = user_data_dir / "master_resume_original.pdf"
+            if orig_pdf.exists():
+                return orig_pdf, "Master_Resume_Original.pdf", "application/pdf"
+            orig_docx = user_data_dir / "master_resume_original.docx"
+            if orig_docx.exists():
+                from resume_builder import convert_to_pdf
+                pdf_res = convert_to_pdf(str(orig_docx))
+                if pdf_res and os.path.exists(pdf_res):
+                    return Path(pdf_res), "Master_Resume_Original.pdf", "application/pdf"
+        else:
+            orig_docx = user_data_dir / "master_resume_original.docx"
+            if orig_docx.exists():
+                return (
+                    orig_docx,
+                    "Master_Resume_Original.docx",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                )
+
+    # 1. Load active base_resume.json
+    resume_dict = None
+    if user_resume_path.exists():
+        try:
+            with open(user_resume_path, "r", encoding="utf-8") as f:
+                resume_dict = json.load(f)
+        except Exception as e:
+            print(f"[Master Download] Error reading {user_resume_path}: {e}")
+
+    # Fallback to DB if NeonDB is enabled and user is authenticated
+    if not resume_dict and db_layer.is_db_available() and current_user and current_user.is_authenticated:
+        try:
+            resume_dict = db_layer.db_get_resume(current_user.username)
+            if resume_dict:
+                user_data_dir.mkdir(parents=True, exist_ok=True)
+                with open(user_resume_path, "w", encoding="utf-8") as f:
+                    json.dump(resume_dict, f, indent=2)
+        except Exception as db_err:
+            print(f"[Master Download] DB fallback error: {db_err}")
+
+    # Fallback to repo root base_resume.json
+    if not resume_dict:
+        fallback_path = BASE_DIR / "base_resume.json"
+        if fallback_path.exists():
+            try:
+                with open(fallback_path, "r", encoding="utf-8") as f:
+                    resume_dict = json.load(f)
+            except Exception as fe:
+                print(f"[Master Download] Error reading fallback base_resume.json: {fe}")
+
+    if not resume_dict:
+        return None, None, None
+
+    # Derive candidate name slug for clean, ATS-compliant download naming
+    cand_name = (resume_dict.get("name") or "Candidate").strip()
+    name_slug = re.sub(r'[^\w\s-]', '', cand_name)
+    name_slug = re.sub(r'[\s_-]+', '_', name_slug).strip('_') or "Candidate"
+
+    # Set up master output directory
+    target_folder = user_output_dir / "Master_Resume"
+    target_folder.mkdir(parents=True, exist_ok=True)
+
+    gen_docx = None
+
+    # 2. Render DOCX using the crafted resume generation pipeline
+    if template_mode in ("clean", "system"):
+        from resume_builder import build_resume_docx
+        gen_docx = build_resume_docx(
+            resume=resume_dict,
+            company="Master",
+            role="Resume",
+            output_dir=str(user_output_dir),
+        )
+    else:
+        # 'crafted' mode: check for user master template
+        user_orig_docx = user_data_dir / "master_resume_original.docx"
+        orig_docx_path = user_orig_docx if user_orig_docx.exists() else (BASE_DIR / "master_resume_original.docx")
+        if not orig_docx_path.exists():
+            try:
+                from docx_patcher import get_original_docx_path
+                cand_orig = get_original_docx_path(str(user_data_dir))
+                if cand_orig and os.path.exists(cand_orig):
+                    orig_docx_path = Path(cand_orig)
+            except Exception:
+                pass
+
+        if orig_docx_path.exists():
+            try:
+                from docx_patcher import patch_docx_with_rewritten_resume
+                gen_docx = patch_docx_with_rewritten_resume(
+                    original_docx_path=str(orig_docx_path),
+                    rewritten_resume=resume_dict,
+                    company="Master",
+                    role="Resume",
+                    output_dir=str(user_output_dir),
+                )
+            except Exception as pe:
+                print(f"[Master Download] docx_patcher note: {pe}, falling back to build_resume_docx")
+
+        if not gen_docx or not os.path.exists(gen_docx):
+            from resume_builder import build_resume_docx
+            gen_docx = build_resume_docx(
+                resume=resume_dict,
+                company="Master",
+                role="Resume",
+                output_dir=str(user_output_dir),
+            )
+
+    if not gen_docx or not os.path.exists(gen_docx):
+        return None, None, None
+
+    suffix_label = "_ATS" if template_mode in ("clean", "system") else ""
+
+    # 3. Format as PDF if requested
+    if req_format == "pdf":
+        pdf_res = None
+        try:
+            from resume_builder import convert_to_pdf
+            pdf_res = convert_to_pdf(gen_docx)
+        except Exception as pe:
+            print(f"[Master Download] convert_to_pdf note: {pe}")
+
+        if not pdf_res or not os.path.exists(pdf_res):
+            try:
+                from resume_html import docx_to_html, generate_pdf_from_html
+                html_c = docx_to_html(gen_docx)
+                cand_pdf = str(Path(gen_docx).with_suffix(".pdf"))
+                if generate_pdf_from_html(html_c, cand_pdf):
+                    pdf_res = cand_pdf
+            except Exception as html_err:
+                print(f"[Master Download] HTML fallback note: {html_err}")
+
+        if pdf_res and os.path.exists(pdf_res):
+            return (
+                Path(pdf_res),
+                f"{name_slug}_Master_Resume{suffix_label}.pdf",
+                "application/pdf",
+            )
+
+    # Return DOCX
+    return (
+        Path(gen_docx),
+        f"{name_slug}_Master_Resume{suffix_label}.docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+
+@app.route("/api/master-resume/download", methods=["GET", "POST"])
+def download_master_resume():
+    """
+    Download the master resume rendered with the template the system produces
+    for new crafted resumes.
+    """
+    user_data_dir = current_user.data_dir if current_user.is_authenticated else BASE_DIR
+    user_output_dir = get_user_output_dir()
+    user_resume_path = get_user_resume_path()
+
+    req_format = request.args.get("format")
+    if not req_format and request.is_json and request.json:
+        req_format = request.json.get("format")
+    if not req_format:
+        req_format = "docx"
+
+    template_mode = request.args.get("template")
+    if not template_mode and request.is_json and request.json:
+        template_mode = request.json.get("template")
+    if not template_mode:
+        template_mode = "crafted"
+
+    file_path, download_name, mimetype = _build_crafted_master_resume(
+        user_data_dir=user_data_dir,
+        user_resume_path=user_resume_path,
+        user_output_dir=user_output_dir,
+        req_format=req_format,
+        template_mode=template_mode,
+    )
+
+    if not file_path or not os.path.exists(file_path):
+        return jsonify({"error": "Unable to generate master resume. Ensure a valid master resume profile is uploaded or saved."}), 404
+
+    return send_file(
+        str(file_path),
+        as_attachment=True,
+        download_name=download_name,
+        mimetype=mimetype,
+    )
+
+
 @app.route("/api/download/<path:filepath>")
 @app.route("/download/<path:filepath>")
 @app.route("/api/<path:filepath>")
@@ -1594,8 +1809,22 @@ def download_file(filepath):
     clean_fp = urllib.parse.unquote(filepath).replace("\\", "/").strip("/")
     user_data_dir = current_user.data_dir if current_user.is_authenticated else BASE_DIR
 
-    # 0. Master resume explicit download handlers
+    # 0. Master resume explicit download handlers (rendered with system crafted template)
     if clean_fp in ("master", "master_resume", "master_resume.docx", "master.docx"):
+        file_path, download_name, mimetype = _build_crafted_master_resume(
+            user_data_dir=user_data_dir,
+            user_resume_path=user_resume_path,
+            user_output_dir=user_output_dir,
+            req_format="docx",
+            template_mode="crafted",
+        )
+        if file_path and os.path.exists(file_path):
+            return send_file(
+                str(file_path),
+                as_attachment=True,
+                download_name=download_name,
+                mimetype=mimetype,
+            )
         user_orig_docx = user_data_dir / "master_resume_original.docx"
         if user_orig_docx.exists():
             return send_file(
@@ -1604,7 +1833,22 @@ def download_file(filepath):
                 download_name="Master_Resume.docx",
                 mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             )
-    if clean_fp in ("master_resume.pdf", "master.pdf", "master_resume_original.pdf"):
+
+    if clean_fp in ("master_resume.pdf", "master.pdf"):
+        file_path, download_name, mimetype = _build_crafted_master_resume(
+            user_data_dir=user_data_dir,
+            user_resume_path=user_resume_path,
+            user_output_dir=user_output_dir,
+            req_format="pdf",
+            template_mode="crafted",
+        )
+        if file_path and os.path.exists(file_path):
+            return send_file(
+                str(file_path),
+                as_attachment=True,
+                download_name=download_name,
+                mimetype=mimetype,
+            )
         user_orig_pdf = user_data_dir / "master_resume_original.pdf"
         if user_orig_pdf.exists():
             return send_file(str(user_orig_pdf), as_attachment=True, download_name="Master_Resume.pdf", mimetype="application/pdf")
@@ -1614,6 +1858,21 @@ def download_file(filepath):
             pdf_res = convert_to_pdf(str(user_orig_docx))
             if pdf_res and os.path.exists(pdf_res):
                 return send_file(str(pdf_res), as_attachment=True, download_name="Master_Resume.pdf", mimetype="application/pdf")
+
+    if clean_fp == "master_resume_original.docx":
+        user_orig_docx = user_data_dir / "master_resume_original.docx"
+        if user_orig_docx.exists():
+            return send_file(
+                str(user_orig_docx),
+                as_attachment=True,
+                download_name="Master_Resume_Original.docx",
+                mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+
+    if clean_fp == "master_resume_original.pdf":
+        user_orig_pdf = user_data_dir / "master_resume_original.pdf"
+        if user_orig_pdf.exists():
+            return send_file(str(user_orig_pdf), as_attachment=True, download_name="Master_Resume_Original.pdf", mimetype="application/pdf")
 
     # 1. Direct absolute path check
     target_path = Path(clean_fp)

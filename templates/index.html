@@ -1275,6 +1275,36 @@
           <button class="btn btn-outline" onclick="previewMasterResume()">
             <i class="fa-solid fa-eye text-cyan"></i> Preview Master Resume
           </button>
+          <!-- Download Master Resume (Crafted Template) Dropdown -->
+          <div class="dropdown-wrapper" style="position:relative; display:inline-block;" id="master-download-dropdown-wrap">
+            <button class="btn btn-outline" id="master-download-btn" onclick="toggleMasterDownloadDropdown(event)" title="Download Master Resume with the system's crafted template">
+              <i class="fa-solid fa-download text-cyan"></i> Download Master Resume <i class="fa-solid fa-chevron-down" style="font-size:10px; margin-left:4px; opacity:0.75;"></i>
+            </button>
+            <div class="dropdown-menu-custom" id="master-download-menu" style="display:none; position:absolute; right:0; top:calc(100% + 6px); background:var(--card-bg, #1e293b); border:1px solid var(--border-color, rgba(255,255,255,0.12)); border-radius:10px; box-shadow:0 12px 28px rgba(0,0,0,0.45); z-index:100; min-width:250px; padding:6px; backdrop-filter:blur(12px);">
+              <a href="javascript:void(0)" onclick="downloadCraftedMasterResume('docx', 'crafted')" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; color:var(--text, #f8fafc); text-decoration:none; font-size:13px; font-weight:500; transition:background 0.15s;" onmouseover="this.style.background='rgba(56,189,248,0.12)'" onmouseout="this.style.background='transparent'">
+                <i class="fa-solid fa-file-word text-cyan" style="font-size:16px; width:18px;"></i>
+                <div>
+                  <div style="font-weight:600;">Download DOCX</div>
+                  <div style="font-size:11px; color:var(--t3, #94a3b8);">Crafted system template</div>
+                </div>
+              </a>
+              <a href="javascript:void(0)" onclick="downloadCraftedMasterResume('pdf', 'crafted')" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; color:var(--text, #f8fafc); text-decoration:none; font-size:13px; font-weight:500; transition:background 0.15s;" onmouseover="this.style.background='rgba(239,68,68,0.12)'" onmouseout="this.style.background='transparent'">
+                <i class="fa-solid fa-file-pdf" style="font-size:16px; width:18px; color:#ef4444;"></i>
+                <div>
+                  <div style="font-weight:600;">Download PDF</div>
+                  <div style="font-size:11px; color:var(--t3, #94a3b8);">Crafted system template</div>
+                </div>
+              </a>
+              <div style="height:1px; background:var(--border-color, rgba(255,255,255,0.08)); margin:4px 0;"></div>
+              <a href="javascript:void(0)" onclick="downloadCraftedMasterResume('docx', 'clean')" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; color:var(--text, #f8fafc); text-decoration:none; font-size:13px; font-weight:500; transition:background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.06)'" onmouseout="this.style.background='transparent'">
+                <i class="fa-solid fa-file-lines" style="font-size:16px; width:18px; color:#a78bfa;"></i>
+                <div>
+                  <div style="font-weight:600;">Download Clean ATS DOCX</div>
+                  <div style="font-size:11px; color:var(--t3, #94a3b8);">Standard single-column layout</div>
+                </div>
+              </a>
+            </div>
+          </div>
           <button class="btn btn-outline" onclick="document.getElementById('master-resume-file-input').click()">
             <i class="fa-solid fa-file-arrow-up text-cyan"></i> Replace Resume
           </button>

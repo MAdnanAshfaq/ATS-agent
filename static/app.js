@@ -5286,8 +5286,13 @@ function openPreviewModal(filePath, company = "Tailored Resume", role = "Documen
 
   const cacheBuster = `?t=${Date.now()}`;
   const previewUrl = `/api/preview/${encodeURIComponent(cleanPath).replace(/%2F/g, '/')}${cacheBuster}`;
-  const pdfDownloadUrl = `/api/download/${encodeURIComponent(cleanPath.replace(/\.(docx|pdf|json)$/i, '.pdf')).replace(/%2F/g, '/')}${cacheBuster}`;
-  const docxDownloadUrl = `/api/download/${encodeURIComponent(cleanPath.replace(/\.(docx|pdf|json)$/i, '.docx')).replace(/%2F/g, '/')}${cacheBuster}`;
+  let pdfDownloadUrl = `/api/download/${encodeURIComponent(cleanPath.replace(/\.(docx|pdf|json)$/i, '.pdf')).replace(/%2F/g, '/')}${cacheBuster}`;
+  let docxDownloadUrl = `/api/download/${encodeURIComponent(cleanPath.replace(/\.(docx|pdf|json)$/i, '.docx')).replace(/%2F/g, '/')}${cacheBuster}`;
+
+  if (cleanPath === 'master_resume' || cleanPath === 'master') {
+    pdfDownloadUrl = `/api/master-resume/download?format=pdf&template=crafted${cacheBuster}`;
+    docxDownloadUrl = `/api/master-resume/download?format=docx&template=crafted${cacheBuster}`;
+  }
 
   if (pdfBtn) pdfBtn.href = pdfDownloadUrl;
   if (docxBtn) docxBtn.href = docxDownloadUrl;
@@ -5478,6 +5483,10 @@ document.addEventListener("click", (e) => {
       closeSaveHistoryDropdown();
     }
   }
+  const masterWrap = document.getElementById("master-download-dropdown-wrap");
+  if (masterWrap && !masterWrap.contains(e.target)) {
+    closeMasterDownloadDropdown();
+  }
 });
 
 async function undoLastSavedPreview() {
@@ -5603,6 +5612,55 @@ function previewCurrentResume() {
 
 function previewMasterResume() {
   openPreviewModal("master_resume", "Master Resume Profile", "Authentic Candidate Base Profile");
+}
+
+function toggleMasterDownloadDropdown(event) {
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+  const menu = document.getElementById("master-download-menu");
+  if (!menu) return;
+  const isVisible = menu.style.display === "block";
+  menu.style.display = isVisible ? "none" : "block";
+}
+
+function closeMasterDownloadDropdown() {
+  const menu = document.getElementById("master-download-menu");
+  if (menu) menu.style.display = "none";
+}
+
+async function downloadCraftedMasterResume(format = 'docx', template = 'crafted') {
+  closeMasterDownloadDropdown();
+
+  // Validate that a resume profile exists
+  if (typeof currentResumeData === 'undefined' || !currentResumeData || (!currentResumeData.name && !currentResumeData.experience)) {
+    try {
+      const checkRes = await fetch('/api/resume');
+      if (!checkRes.ok) {
+        showToast("Please upload or save a Master Resume first.", "warning");
+        return;
+      }
+    } catch (e) {
+      showToast("Please upload or save a Master Resume first.", "warning");
+      return;
+    }
+  }
+
+  const formatUpper = (format || 'docx').toUpperCase();
+  const templateName = template === 'clean' ? 'Clean ATS' : 'Crafted System';
+  showToast(`Preparing Master Resume (${templateName} ${formatUpper})...`, "info");
+
+  const downloadUrl = `/api/master-resume/download?format=${encodeURIComponent(format)}&template=${encodeURIComponent(template)}&t=${Date.now()}`;
+
+  const link = document.createElement("a");
+  link.href = downloadUrl;
+  link.style.display = "none";
+  document.body.appendChild(link);
+  link.click();
+  setTimeout(() => {
+    if (link.parentNode) link.parentNode.removeChild(link);
+  }, 1000);
 }
 
 // Close preview or password modal or compass or system dialog on ESC, Save preview edits on Ctrl+S, Open Compass on Ctrl+G
