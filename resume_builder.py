@@ -80,6 +80,10 @@ def build_resume_docx(
         cp = doc.core_properties
         cp.author = name
         cp.title = f"{name} - Resume"
+        cp.last_modified_by = name
+        cp.comments = ""
+        cp.subject = f"{target_role} Resume" if target_role else "Resume"
+        cp.category = "Resume"
     except Exception:
         pass
 

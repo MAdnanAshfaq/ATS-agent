@@ -568,6 +568,19 @@ def patch_docx_with_rewritten_resume(
             if not clean_txt or len(clean_txt) < 3:
                 _delete_paragraph(p)
 
+    # Scrub metadata & set candidate properties
+    try:
+        cand_name = rewritten_resume.get("name") or "Candidate"
+        cp = doc.core_properties
+        cp.author = cand_name
+        cp.title = f"{cand_name} - Resume"
+        cp.last_modified_by = cand_name
+        cp.comments = ""
+        cp.subject = role or "Resume"
+        cp.category = "Resume"
+    except Exception:
+        pass
+
     # Save patched document
     doc.save(str(out_path))
     print(f"[Patcher] Successfully saved patched DOCX: {out_path}")
