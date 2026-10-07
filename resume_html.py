@@ -870,10 +870,16 @@ def docx_to_html(docx_path: str, company: str = "", role: str = "") -> str:
     return _get_base_html_template(content, title=title)
 
 
-def generate_pdf_from_html(html_content: str, output_pdf_path: str) -> bool:
+def generate_pdf_from_html(
+    html_content: str,
+    output_pdf_path: str,
+    candidate_name: str = "",
+    role: str = "",
+) -> bool:
     """
     Generate an authentic PDF file from an HTML resume string using Playwright headless Chromium.
     Works natively on Render Linux, Docker, and Windows without Word COM!
+    Immediately sanitizes PDF metadata to eliminate Chromium/Skia signatures.
     """
     try:
         from playwright.sync_api import sync_playwright
@@ -898,7 +904,15 @@ def generate_pdf_from_html(html_content: str, output_pdf_path: str) -> bool:
                 prefer_css_page_size=True,
             )
             browser.close()
-        return os.path.exists(output_pdf_path) and os.path.getsize(output_pdf_path) > 1000
+
+        success = os.path.exists(output_pdf_path) and os.path.getsize(output_pdf_path) > 1000
+        if success:
+            try:
+                from resume_builder import sanitize_pdf_metadata
+                sanitize_pdf_metadata(output_pdf_path, candidate_name=candidate_name, role=role)
+            except Exception:
+                pass
+        return success
     except Exception as e:
         logger.error(f"[HtmlToPdf] Playwright PDF generation failed: {e}")
         return False
