@@ -197,6 +197,7 @@ def run_pipeline(
     no_simplify: bool = False,
     passes: int = 2,
     output_dir: str = None,
+    target_ats: str = "",
 ) -> str:
     """Run full pipeline and return path to generated Word document."""
     from dotenv import load_dotenv
@@ -209,8 +210,18 @@ def run_pipeline(
     base_resume = load_base_resume()
     print_success(f"Loaded resume for: {base_resume.get('name', 'Unknown')}")
 
-    # ─── STEP 2: Scrape JD ────────────────────────────────────────────────────
-    print_step(2, "Scraping Job Description")
+    # ─── STEP 2: Detect Target ATS & Scrape JD ────────────────────────────────
+    print_step(2, "ATS Detection & Job Scraping")
+    from platform_rules import get_profile
+    from ats_detector import detect_ats_from_url
+    if target_ats:
+        ats_profile = get_profile(target_ats)
+        ats_detected = True
+        ats_source = "cli_override"
+    else:
+        ats_profile, conf, ats_source, ats_detected = detect_ats_from_url(url)
+    print_success(f"ATS Target: {ats_profile.display_name} ({ats_profile.matching_style.upper()} • {ats_profile.keyword_density_ceiling*100:.1f}% density cap • {ats_profile.date_format})")
+
     from scraper import scrape_jd_sync
 
     try:
@@ -299,6 +310,7 @@ def run_pipeline(
             missing_keywords=missing_keywords,
             company=company,
             role=role,
+            ats_profile=ats_profile,
         )
         print_success("Resume rewritten successfully")
     except Exception as e:
@@ -352,6 +364,7 @@ def run_pipeline(
                 company=company,
                 role=role,
                 output_dir=output_dir,
+                ats_profile=ats_profile,
             )
             print_success(f"Patched master DOCX template saved: {output_path}")
         else:
@@ -393,7 +406,10 @@ def run_pipeline(
     # Save a run log
     _save_run_log(
         url, company, role, missing_keywords, embedded, still_missing,
-        simplify_data, output_path, elapsed
+        simplify_data, output_path, elapsed,
+        ats_platform=getattr(ats_profile, 'id', getattr(ats_profile, 'platform_id', 'unknown')),
+        ats_detected=ats_detected,
+        ats_rules=ats_profile.to_dict(),
     )
 
     return output_path
@@ -403,7 +419,8 @@ def _save_run_log(
     url, company, role, missing_keywords, embedded_keywords,
     still_missing, simplify_data, output_path, elapsed,
     score_before=None, score_after=None, score_delta=None,
-    cover_letter_text="", output_dir=None, jd_text=""
+    cover_letter_text="", output_dir=None, jd_text="",
+    ats_platform="unknown", ats_detected=False, ats_rules=None,
 ):
     """Save a JSON log of this run."""
     base_out = Path(output_dir) if output_dir else (Path(__file__).parent / "output")
@@ -427,6 +444,9 @@ def _save_run_log(
         "url": url,
         "company": company,
         "role": role,
+        "ats_platform": ats_platform,
+        "ats_detected": ats_detected,
+        "ats_rules": ats_rules or {},
         "score_before": sb,
         "score_after": sa,
         "score_delta": sd,
@@ -461,7 +481,7 @@ def main():
         epilog="""
 Examples:
   python agent.py --url https://jobs.lever.co/company/role-id
-  python agent.py --url https://www.linkedin.com/jobs/view/123456789/
+  python agent.py --url https://www.linkedin.com/jobs/view/123456789/ --ats workday
   python agent.py --url URL --no-simplify
   python agent.py --url URL --passes 3
   python agent.py --url URL --output C:/MyResumes/output
@@ -472,6 +492,12 @@ Examples:
         "--url", "-u",
         required=True,
         help="Job description URL (LinkedIn, Lever, Greenhouse, Workday, etc.)",
+    )
+    parser.add_argument(
+        "--ats",
+        type=str,
+        default="",
+        help="Target ATS platform override (e.g. workday, greenhouse, lever, taleo, icims, ashby, etc.)",
     )
     parser.add_argument(
         "--no-simplify",
@@ -530,6 +556,7 @@ Examples:
             no_simplify=args.no_simplify,
             passes=args.passes,
             output_dir=args.output,
+            target_ats=args.ats,
         )
 
         # Open the output folder in Explorer

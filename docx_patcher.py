@@ -141,9 +141,11 @@ def patch_docx_with_rewritten_resume(
     company: str,
     role: str,
     output_dir: str = None,
+    ats_profile: Any = None,
 ) -> str:
     """
-    Patch the original DOCX with rewritten content, preserving 100% of formatting.
+    Patch the original DOCX with rewritten content, preserving 100% of formatting,
+    with platform format enforcement for strict ATS platforms (e.g. Workday, Taleo).
 
     Args:
         original_docx_path: Path to the user's original uploaded/baseline DOCX
@@ -151,11 +153,17 @@ def patch_docx_with_rewritten_resume(
         company: For output folder naming
         role: For output folder naming
         output_dir: Base output directory
+        ats_profile: Optional AtsProfile or string key for format constraints
 
     Returns:
         Path to the patched DOCX file
     """
     from docx import Document
+    from platform_rules import get_profile, get_safe_mode_profile
+
+    profile = ats_profile if ats_profile is not None else get_safe_mode_profile()
+    if isinstance(profile, str):
+        profile = get_profile(profile)
 
     if not os.path.exists(original_docx_path):
         raise FileNotFoundError(f"Original DOCX not found: {original_docx_path}")
@@ -178,6 +186,24 @@ def patch_docx_with_rewritten_resume(
     print(f"[Patcher] Copied original DOCX to: {out_path}")
 
     doc = Document(str(out_path))
+
+    # ── Platform Format Enforcement (§4.6 & Acceptance Criteria #2) ──────────
+    if not profile.allows_tables:
+        has_table_in_doc = len(doc.tables) > 0
+        has_table_in_resume = bool(rewritten_resume.get("_has_tables", False))
+        if has_table_in_doc or has_table_in_resume:
+            # Clean up temp output before raising
+            if os.path.exists(out_path):
+                try:
+                    os.remove(out_path)
+                except Exception:
+                    pass
+            raise ValueError(
+                f"ATS Format Violation on {profile.display_name}: Tables are strictly prohibited. "
+                f"The target ATS parser scrambles table cell order during ingestion. "
+                f"Export refused until tables are removed."
+            )
+
     all_paras = list(_get_all_paragraphs_from_doc(doc))
     print(f"[Patcher] Found {len(all_paras)} paragraphs in original DOCX")
 

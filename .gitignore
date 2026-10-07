@@ -25,6 +25,8 @@ __pycache__/
 
 # Scratch & one-off test scripts
 test_*.py
+!tests/
+!tests/**
 scratch/
 seed_neon.py
 

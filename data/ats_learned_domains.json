@@ -1,0 +1,100 @@
+{
+  "version": "1.0",
+  "domains": {
+    "custom-enterprise-careers-test.com": {
+      "platform_id": "taleo",
+      "confidence": 1.0,
+      "first_learned": "2026-10-06T19:26:35.474633+00:00",
+      "last_updated": "2026-10-07T14:13:58.164356+00:00",
+      "confirm_count": 12,
+      "source": "user_override",
+      "sample_domain": "custom-enterprise-careers-test.com"
+    },
+    "unknownportal.com": {
+      "platform_id": "greenhouse",
+      "confidence": 1.0,
+      "first_learned": "2026-10-06T19:54:17.472092+00:00",
+      "last_updated": "2026-10-06T19:54:17.472092+00:00",
+      "confirm_count": 1,
+      "source": "user_confirm",
+      "sample_domain": "unknownportal.com"
+    },
+    "careers.specialcorp.com": {
+      "platform_id": "taleo",
+      "confidence": 1.0,
+      "first_learned": "2026-10-06T19:55:54.545134+00:00",
+      "last_updated": "2026-10-07T14:14:01.201159+00:00",
+      "confirm_count": 5,
+      "source": "user_override",
+      "sample_domain": "careers.specialcorp.com"
+    },
+    "custom-portal-enterprise-test.org": {
+      "platform_id": "greenhouse",
+      "confidence": 1.0,
+      "first_learned": "2026-10-06T19:57:22.454300+00:00",
+      "last_updated": "2026-10-07T14:13:57.770206+00:00",
+      "confirm_count": 6,
+      "source": "user_override",
+      "sample_domain": "custom-portal-enterprise-test.org"
+    },
+    "newco.careers": {
+      "platform_id": "workday",
+      "confidence": 1.0,
+      "first_learned": "2026-10-06T19:57:22.510240+00:00",
+      "last_updated": "2026-10-07T14:13:57.828593+00:00",
+      "confirm_count": 6,
+      "source": "user_override",
+      "sample_domain": "newco.careers"
+    },
+    "custom-portal-enterprise-suite.org": {
+      "platform_id": "greenhouse",
+      "confidence": 1.0,
+      "first_learned": "2026-10-06T20:07:02.129669+00:00",
+      "last_updated": "2026-10-07T14:14:04.944355+00:00",
+      "confirm_count": 12,
+      "source": "user_override",
+      "sample_domain": "custom-portal-enterprise-suite.org"
+    },
+    "newco-suite.careers": {
+      "platform_id": "workday",
+      "confidence": 1.0,
+      "first_learned": "2026-10-06T20:07:02.164975+00:00",
+      "last_updated": "2026-10-07T14:14:05.019950+00:00",
+      "confirm_count": 12,
+      "source": "user_override",
+      "sample_domain": "newco-suite.careers"
+    }
+  },
+  "metrics": {
+    "total_lookups": 304,
+    "learned_hits": 30,
+    "user_overrides": 53,
+    "user_confirmations": 1
+  },
+  "platform_audits": {
+    "workday": {
+      "total_runs": 46,
+      "passes": 28,
+      "fails": 18,
+      "avg_density": 0.048
+    },
+    "unknown": {
+      "total_runs": 19,
+      "passes": 17,
+      "fails": 2,
+      "avg_density": 0.0226
+    },
+    "taleo": {
+      "total_runs": 54,
+      "passes": 5,
+      "fails": 49,
+      "avg_density": 0.2398
+    },
+    "greenhouse": {
+      "total_runs": 7,
+      "passes": 7,
+      "fails": 0,
+      "avg_density": 0.1538
+    }
+  }
+}

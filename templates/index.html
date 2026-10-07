@@ -369,6 +369,31 @@
                 </span>
               </div>
 
+              <div class="option-item full-width" style="background: rgba(99, 102, 241, 0.06); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 12px; padding: 14px 18px;">
+                <label for="target-ats-select" class="option-title-label" style="display:flex; align-items:center; justify-content:space-between;">
+                  <span><i class="fa-solid fa-bullseye" style="color:#6366f1; margin-right:6px;"></i> Target ATS Compliance Profile</span>
+                  <span id="ats-detection-indicator" class="badge" style="font-size:11px; padding:3px 10px; border-radius:6px; background:#6366f1; color:#fff; font-weight:700;">Auto-Detect from URL</span>
+                </label>
+                <select id="target-ats-select" class="form-select" style="font-weight:600; margin-top:6px;" onchange="onTargetAtsChange()">
+                  <option value="" selected>Auto-Detect from Job URL (Greenhouse, Lever, Workday, etc.)</option>
+                  <option value="greenhouse">Greenhouse ATS (Semantic Search • 2.5% Density Cap • ISO YYYY-MM)</option>
+                  <option value="lever">Lever ATS (Raw Token Match • 3.0% Density Cap • Month Year)</option>
+                  <option value="workday">Workday ATS (Strict Parsers • 1.8% Density Cap • Mon YYYY)</option>
+                  <option value="icims">iCIMS ATS (Heuristic Ranking • 3.2% Density • Month YYYY)</option>
+                  <option value="taleo">Oracle Taleo (Legacy Parser • Strict Order • 1.5% Density Cap • MM/YYYY)</option>
+                  <option value="smartrecruiters">SmartRecruiters (Modern NLP Matching • 2.8% Density Cap • Month YYYY)</option>
+                  <option value="ashby">Ashby ATS (Modern High-Precision Matching • 2.8% Density Cap • Month YYYY)</option>
+                  <option value="brassring">IBM Kenexa BrassRing (Strict 1.5% Density • MM/YYYY)</option>
+                  <option value="successfactors">SAP SuccessFactors (Corporate Enterprise Parser • MM/YYYY)</option>
+                  <option value="generic">Universal ATS (Balanced Standard Baseline)</option>
+                </select>
+                <div id="target-ats-rules-preview" style="margin-top:10px; font-size:12px; color:#475569; display:flex; flex-wrap:wrap; gap:8px;">
+                  <span class="badge" style="background:#e0e7ff; color:#3730a3; padding:4px 8px; border-radius:6px;"><i class="fa-solid fa-check-double"></i> Multi-ATS Engine Ready</span>
+                  <span class="badge" style="background:#f1f5f9; color:#475569; padding:4px 8px; border-radius:6px;"><i class="fa-solid fa-sliders"></i> Density Capped Per Engine</span>
+                  <span class="badge" style="background:#f1f5f9; color:#475569; padding:4px 8px; border-radius:6px;"><i class="fa-solid fa-calendar-days"></i> Dates Auto-Formatted</span>
+                </div>
+              </div>
+
               <div class="option-item">
                 <label class="toggle-switch">
                   <input type="checkbox" id="no-simplify-toggle">
@@ -505,6 +530,29 @@
                   <div style="font-weight:700; color:#0f172a; font-size:13px;" id="matrix-resume-filename">Master_Resume</div>
                 </div>
                 <span class="matrix-select-pill">Select <i class="fa-solid fa-caret-down"></i></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Row: ATS Engine Target & Rules -->
+          <div class="matrix-row" id="matrix-row-ats" style="background: rgba(99, 102, 241, 0.03);">
+            <div class="matrix-cell-label">
+              <span><i class="fa-solid fa-bullseye" style="color:#6366f1;"></i> ATS Engine</span>
+              <span class="matrix-status-dot dot-match" id="matrix-ats-status"><i class="fa-solid fa-check"></i></span>
+            </div>
+            <div class="matrix-cell-jd">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span id="matrix-ats-detected-name" class="matrix-text-strong" style="color:#4f46e5; font-size:13.5px;">Universal ATS (Safe Mode)</span>
+                <span id="matrix-ats-source-badge" class="badge" style="background:#e0e7ff; color:#3730a3; font-size:10px; padding:2px 6px; border-radius:4px; font-weight:700;">URL Match</span>
+              </div>
+              <div id="matrix-ats-specs" style="font-size:11.5px; color:#64748b; margin-top:3px;">
+                Parsing: Balanced Standard • Density Cap: 2.5% • Date Format: Month YYYY
+              </div>
+            </div>
+            <div class="matrix-cell-resume">
+              <div id="matrix-ats-guidance" style="font-size:12px; color:#334155; display:flex; align-items:center; flex-wrap:wrap; gap:6px;">
+                <span class="badge" style="background:#e0e7ff; color:#3730a3; font-size:10.5px; padding:2px 8px; border-radius:4px; font-weight:600;" id="matrix-ats-mode-pill">Semantic Matching</span>
+                <span id="matrix-ats-tip" style="color:#475569;">Standard Headings & Clean Hierarchies Active</span>
               </div>
             </div>
           </div>

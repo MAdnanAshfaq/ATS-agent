@@ -1,0 +1,234 @@
+{
+  "version": "1.0",
+  "platforms": {
+    "workday": {
+      "platform_id": "workday",
+      "display_name": "Workday",
+      "url_signatures": ["myworkdayjobs.com", "workday.com"],
+      "matching_style": "exact_weighted",
+      "title_weight": "high",
+      "format_tolerance": "strict",
+      "allows_tables": false,
+      "allows_columns": false,
+      "allows_header_contact": false,
+      "keyword_density_ceiling": 0.015,
+      "cover_letter_scored": false,
+      "date_format": "MM/YYYY",
+      "quirks": [
+        "Expects dates strictly formatted as MM/YYYY",
+        "Skills matched against explicit requisition lists",
+        "Parser strictly serializes top-down without tables or columns"
+      ]
+    },
+    "greenhouse": {
+      "platform_id": "greenhouse",
+      "display_name": "Greenhouse",
+      "url_signatures": ["greenhouse.io", "boards.greenhouse.io", "grnh.se"],
+      "matching_style": "semantic",
+      "title_weight": "medium",
+      "format_tolerance": "moderate",
+      "allows_tables": false,
+      "allows_columns": false,
+      "allows_header_contact": false,
+      "keyword_density_ceiling": 0.025,
+      "cover_letter_scored": true,
+      "date_format": "MM/YYYY",
+      "quirks": [
+        "Strong cover letter evaluation alongside resume",
+        "Recruiters use full-text search with synonym expansion",
+        "Supports structured candidate review scorecards"
+      ]
+    },
+    "lever": {
+      "platform_id": "lever",
+      "display_name": "Lever",
+      "url_signatures": ["lever.co", "jobs.lever.co"],
+      "matching_style": "semantic",
+      "title_weight": "medium",
+      "format_tolerance": "moderate",
+      "allows_tables": false,
+      "allows_columns": false,
+      "allows_header_contact": false,
+      "keyword_density_ceiling": 0.025,
+      "cover_letter_scored": false,
+      "date_format": "MM/YYYY",
+      "quirks": [
+        "Dynamic tagging and recruiter overview cards",
+        "Recruiter dashboard highlights top 3 recent experiences",
+        "Synonym and semantic phrase matching"
+      ]
+    },
+    "icims": {
+      "platform_id": "icims",
+      "display_name": "iCIMS",
+      "url_signatures": ["icims.com", "jobs.icims.com", "careers-icims.com"],
+      "matching_style": "exact_weighted",
+      "title_weight": "high",
+      "format_tolerance": "strict",
+      "allows_tables": false,
+      "allows_columns": false,
+      "allows_header_contact": false,
+      "keyword_density_ceiling": 0.018,
+      "cover_letter_scored": false,
+      "date_format": "MM/YYYY",
+      "quirks": [
+        "Strict section header parsing (Work Experience, Skills, Education)",
+        "Pre-screening question scores weighted alongside resume match",
+        "Extracts discrete entity tags from skills section"
+      ]
+    },
+    "taleo": {
+      "platform_id": "taleo",
+      "display_name": "Taleo (Oracle)",
+      "url_signatures": ["taleo.net", "oraclecloud.com/career"],
+      "matching_style": "exact_weighted",
+      "title_weight": "high",
+      "format_tolerance": "strict",
+      "allows_tables": false,
+      "allows_columns": false,
+      "allows_header_contact": false,
+      "keyword_density_ceiling": 0.015,
+      "cover_letter_scored": true,
+      "date_format": "Month YYYY",
+      "quirks": [
+        "Tables cause severe text scrambles in legacy parser",
+        "Cover letter is concatenated directly into resume scoring corpus",
+        "Knockout questions affect total composite ranking"
+      ]
+    },
+    "successfactors": {
+      "platform_id": "successfactors",
+      "display_name": "SAP SuccessFactors",
+      "url_signatures": ["successfactors.com", "successfactors.eu", "jobs2web.com"],
+      "matching_style": "exact_weighted",
+      "title_weight": "high",
+      "format_tolerance": "strict",
+      "allows_tables": false,
+      "allows_columns": false,
+      "allows_header_contact": false,
+      "keyword_density_ceiling": 0.018,
+      "cover_letter_scored": true,
+      "date_format": "MM/YYYY",
+      "quirks": [
+        "Matches competencies against SAP enterprise job catalog",
+        "Strict chronological work history parsing",
+        "Penalizes unmapped non-standard titles"
+      ]
+    },
+    "ashby": {
+      "platform_id": "ashby",
+      "display_name": "Ashby",
+      "url_signatures": ["ashbyhq.com", "jobs.ashbyhq.com"],
+      "matching_style": "semantic",
+      "title_weight": "medium",
+      "format_tolerance": "lenient",
+      "allows_tables": false,
+      "allows_columns": false,
+      "allows_header_contact": false,
+      "keyword_density_ceiling": 0.025,
+      "cover_letter_scored": false,
+      "date_format": "MM/YYYY",
+      "quirks": [
+        "Clean, modern UI rendering for hiring managers",
+        "Extracts structured links (GitHub, LinkedIn, Portfolio)",
+        "Semantic matching with flexible phrasing"
+      ]
+    },
+    "smartrecruiters": {
+      "platform_id": "smartrecruiters",
+      "display_name": "SmartRecruiters",
+      "url_signatures": ["smartrecruiters.com", "jobs.smartrecruiters.com"],
+      "matching_style": "semantic",
+      "title_weight": "medium",
+      "format_tolerance": "moderate",
+      "allows_tables": false,
+      "allows_columns": false,
+      "allows_header_contact": false,
+      "keyword_density_ceiling": 0.020,
+      "cover_letter_scored": false,
+      "date_format": "MM/YYYY",
+      "quirks": [
+        "SmartMatch AI algorithm heavily influences initial candidate ranking",
+        "Auto-extracts skills into profile tags",
+        "Recruiter sees a fit score percentage"
+      ]
+    },
+    "workable": {
+      "platform_id": "workable",
+      "display_name": "Workable",
+      "url_signatures": ["workable.com", "apply.workable.com"],
+      "matching_style": "semantic",
+      "title_weight": "medium",
+      "format_tolerance": "moderate",
+      "allows_tables": false,
+      "allows_columns": false,
+      "allows_header_contact": false,
+      "keyword_density_ceiling": 0.022,
+      "cover_letter_scored": false,
+      "date_format": "MM/YYYY",
+      "quirks": [
+        "AI Candidate Profile parses summary directly into hiring pitch",
+        "Fuzzy matching on experience duration and skills",
+        "Auto-enriches candidate contact and profile links"
+      ]
+    },
+    "bamboohr": {
+      "platform_id": "bamboohr",
+      "display_name": "BambooHR",
+      "url_signatures": ["bamboohr.com"],
+      "matching_style": "simple",
+      "title_weight": "low",
+      "format_tolerance": "lenient",
+      "allows_tables": false,
+      "allows_columns": false,
+      "allows_header_contact": false,
+      "keyword_density_ceiling": 0.025,
+      "cover_letter_scored": false,
+      "date_format": "MM/YYYY",
+      "quirks": [
+        "Simpler text-indexing parser sensitive to header formatting",
+        "Requires standard date headers to sequence positions",
+        "Knockout questions strictly filter candidates before resume review"
+      ]
+    },
+    "jobvite": {
+      "platform_id": "jobvite",
+      "display_name": "Jobvite",
+      "url_signatures": ["jobvite.com", "jobs.jobvite.com"],
+      "matching_style": "simple",
+      "title_weight": "low",
+      "format_tolerance": "lenient",
+      "allows_tables": false,
+      "allows_columns": false,
+      "allows_header_contact": false,
+      "keyword_density_ceiling": 0.025,
+      "cover_letter_scored": false,
+      "date_format": "MM/YYYY",
+      "quirks": [
+        "Weighted requisition match score presented directly to recruiter",
+        "Strict header parsing for Education and Experience",
+        "Exact keyword matches score higher than contextual synonyms"
+      ]
+    },
+    "unknown": {
+      "platform_id": "unknown",
+      "display_name": "Safe Mode (Universal ATS Compatibility)",
+      "url_signatures": [],
+      "matching_style": "exact_weighted",
+      "title_weight": "high",
+      "format_tolerance": "strict",
+      "allows_tables": false,
+      "allows_columns": false,
+      "allows_header_contact": false,
+      "keyword_density_ceiling": 0.015,
+      "cover_letter_scored": false,
+      "date_format": "MM/YYYY",
+      "quirks": [
+        "Universal fail-safe standard applied to unknown or custom domains",
+        "Zero tables, zero columns, zero contact info in document headers",
+        "Strict 1.5% keyword density cap to prevent keyword stuffing flags",
+        "Standard MM/YYYY chronological dates"
+      ]
+    }
+  }
+}

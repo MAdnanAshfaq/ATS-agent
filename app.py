@@ -2320,6 +2320,16 @@ def analyze_job():
             "source": source
         }
 
+        # Attach Multi-ATS detection
+        try:
+            from ats_detector import detect_ats
+            ats_info = detect_ats(url, html_content=jd_text or "")
+            res_payload["ats_detection"] = ats_info
+            print(f"[Analyze] ATS Platform detected: {ats_info.get('display_name')} (conf: {ats_info.get('confidence')}, source: {ats_info.get('source')})")
+        except Exception as ats_err:
+            print(f"[Analyze] ATS detection note: {ats_err}")
+            res_payload["ats_detection"] = None
+
         # Store in global memory cache so Generate step reuses this extract with 0 browser launches
         GLOBAL_ANALYSIS_CACHE[url] = {
             "company": company,
@@ -2348,6 +2358,139 @@ def analyze_job():
         except Exception:
             pass
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MULTI-ATS PLATFORM & CONTINUOUS LEARNING ENDPOINTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.route("/api/ats/detect", methods=["POST"])
+@app.route("/api/ats-detect", methods=["POST"])
+def api_ats_detect():
+    """Detect ATS platform for a URL or text before full analysis."""
+    data = request.json or {}
+    url = (data.get("url") or "").strip()
+    text = (data.get("text") or "").strip()
+    html_content = data.get("html") or None
+    try:
+        from ats_detector import detect_ats, detect_ats_from_url, detect_ats_from_text
+        if url:
+            result = detect_ats(url, html_content=html_content)
+        elif text:
+            profile, conf, src, detected = detect_ats_from_text(text)
+            result = {
+                "platform_id": profile.platform_id,
+                "display_name": profile.display_name,
+                "confidence": round(conf, 2),
+                "source": src,
+                "detected": detected,
+                "profile": profile.to_dict(),
+            }
+        else:
+            from platform_rules import get_safe_mode_profile
+            profile = get_safe_mode_profile()
+            result = {
+                "platform_id": profile.platform_id,
+                "display_name": profile.display_name,
+                "confidence": 0.0,
+                "source": "safe_mode_fallback",
+                "detected": False,
+                "profile": profile.to_dict(),
+            }
+        return jsonify({"success": True, **result})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/ats/feedback", methods=["POST"])
+@app.route("/api/ats-feedback", methods=["POST"])
+def api_ats_feedback():
+    """Record user confirmation or manual override into continuous learning memory."""
+    data = request.json or {}
+    domain_or_url = (data.get("domain") or data.get("url") or "").strip()
+    verified_ats = (data.get("verified_ats") or data.get("platform_id") or data.get("platform") or "").strip()
+    source = data.get("source", "user_override")
+    confirmed = bool(data.get("confirmed", True))
+
+    if not domain_or_url or not verified_ats:
+        return jsonify({"success": False, "error": "domain/url and verified_ats/platform_id are required."}), 400
+
+    try:
+        from ats_learning import record_domain_ats, get_learning_stats
+        from platform_rules import get_profile
+        profile = get_profile(verified_ats)
+        record_domain_ats(domain_or_url, profile.platform_id, source=source)
+        stats = get_learning_stats()
+        return jsonify({
+            "success": True,
+            "message": f"Successfully mapped domain to {profile.display_name}",
+            "platform_id": profile.platform_id,
+            "display_name": profile.display_name,
+            "stats": stats,
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/ats/audit", methods=["POST"])
+@app.route("/api/ats-audit", methods=["POST"])
+def api_ats_audit():
+    """Audit a resume dictionary against target ATS platform compliance rules."""
+    data = request.json or {}
+    resume = data.get("resume") or {}
+    platform_id = (data.get("platform_id") or data.get("platform") or "unknown").strip()
+    jd_keywords = data.get("jd_keywords") or []
+    jd_title = data.get("jd_title") or ""
+
+    if not resume:
+        return jsonify({"success": False, "error": "Resume dictionary is required."}), 400
+
+    try:
+        from human_voice_audit import audit_ats_compliance
+        from platform_rules import get_profile
+        profile = get_profile(platform_id)
+        audit_res = audit_ats_compliance(resume, ats_profile=profile, jd_keywords=jd_keywords, jd_title=jd_title)
+        return jsonify({
+            "success": True,
+            "audit": audit_res,
+            "platform": profile.platform_id,
+            "display_name": profile.display_name,
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/ats/platforms", methods=["GET"])
+@app.route("/api/ats-profiles", methods=["GET"])
+def api_ats_platforms():
+    """Return all supported ATS platforms and rules for dropdown menus."""
+    try:
+        from platform_rules import get_all_platforms, _load_registry
+        platforms = get_all_platforms()
+        registry = _load_registry()
+        return jsonify({
+            "success": True,
+            "platforms": platforms,
+            "profiles": [p.to_dict() for p in registry.values()],
+            "profiles_map": {k: p.to_dict() for k, p in registry.items()},
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/ats/stats", methods=["GET"])
+@app.route("/api/ats-stats", methods=["GET"])
+def api_ats_stats():
+    """Return continuous learning memory statistics."""
+    try:
+        from ats_learning import get_learning_stats
+        return jsonify({
+            "success": True,
+            "stats": get_learning_stats(),
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 
 
 @app.route("/api/simplify/status", methods=["GET"])
@@ -3342,6 +3485,11 @@ def preview_restore_version():
 
 
 
+
+
+
+
+
 @app.route("/api/run", methods=["POST"])
 @login_required
 def run_agent():
@@ -3354,6 +3502,7 @@ def run_agent():
     custom_keywords = data.get("custom_keywords", "")
     custom_bullets = data.get("custom_bullets", "")
     engine_mode = data.get("engine_mode", "danis_engine")
+    target_ats = (data.get("target_ats") or data.get("ats") or "").strip()
     no_simplify = data.get("no_simplify", False)
     passes = int(data.get("passes", 2))
     custom_output = data.get("custom_output", "")
@@ -3379,7 +3528,7 @@ def run_agent():
     thread = threading.Thread(
         target=_execute_agent_pipeline,
         args=(run_id, url, custom_keywords, no_simplify, passes, custom_output, msg_queue, score_before, custom_bullets, engine_mode, custom_company, custom_role, direct_jd_text),
-        kwargs={"user_resume_path": user_resume_path, "user_output_dir": user_output_dir, "user_settings": user_settings, "user_username": user_username},
+        kwargs={"user_resume_path": user_resume_path, "user_output_dir": user_output_dir, "user_settings": user_settings, "user_username": user_username, "target_ats": target_ats},
         daemon=True,
     )
     thread.start()
@@ -3387,7 +3536,7 @@ def run_agent():
     return jsonify({"run_id": run_id, "status": "started"})
 
 
-def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passes, custom_output, msg_queue, analyze_score_before=None, custom_bullets="", engine_mode="danis_engine", custom_company="", custom_role="", direct_jd_text="", user_resume_path=None, user_output_dir=None, user_settings=None, user_username=""):
+def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passes, custom_output, msg_queue, analyze_score_before=None, custom_bullets="", engine_mode="danis_engine", custom_company="", custom_role="", direct_jd_text="", user_resume_path=None, user_output_dir=None, user_settings=None, user_username="", target_ats=""):
     """Execute pipeline in thread and push step logs to SSE queue."""
     # analyze_score_before: real score from Analyze step (Gemini/Simplify) — authoritative before score
 
@@ -3566,6 +3715,21 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
             GLOBAL_ANALYSIS_CACHE[url]["company"] = company
             GLOBAL_ANALYSIS_CACHE[url]["role"] = role
 
+        # Resolve target ATS Platform (User Selection/Override -> URL Detection -> HTML Fingerprints -> Safe Mode)
+        from platform_rules import get_profile, get_safe_mode_profile
+        from ats_detector import detect_ats_from_url
+        if target_ats:
+            ats_profile = get_profile(target_ats)
+            ats_detected = True
+            ats_source = "user_selection"
+        else:
+            ats_profile, ats_conf, ats_source, ats_detected = detect_ats_from_url(url, html_content=jd_text)
+
+        send_log(2, "ATS Target Platform",
+                 f"Configured for {ats_profile.display_name} ({ats_profile.matching_style.upper()} Mode • {ats_profile.keyword_density_ceiling*100:.1f}% Density Cap • {ats_profile.date_format})",
+                 data={"ats_profile": ats_profile.to_dict(), "source": ats_source, "detected": ats_detected},
+                 status="success")
+
         # Step 3: Parse custom keywords OR Simplify ATS score OR local keyword extraction
         missing_keywords = []
         simplify_data = None
@@ -3663,6 +3827,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                 custom_bullets=custom_bullets,
                 log_callback=send_log,
                 keyword_contexts=keyword_contexts,
+                ats_profile=ats_profile,
             )
             send_log(5, "Dani's Engine", "Multi-role resume generation & human-voice audit passed!", status="success")
         else:
@@ -3746,15 +3911,16 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
             if orig_docx_path.exists():
                 try:
                     from docx_patcher import patch_docx_with_rewritten_resume
-                    send_log(7, "Word Document", "Patching original master DOCX template to preserve authentic styling...", status="working")
+                    send_log(7, "Word Document", f"Patching original master DOCX template for {ats_profile.display_name} compliance...", status="working")
                     _doc_path = patch_docx_with_rewritten_resume(
                         original_docx_path=str(orig_docx_path),
                         rewritten_resume=cleaned_resume,
                         company=company,
                         role=role,
                         output_dir=effective_output,
+                        ats_profile=ats_profile,
                     )
-                    send_log(7, "Word Document", "Patched original master template with rewritten content!", status="success")
+                    send_log(7, "Word Document", f"Patched original master template ({ats_profile.display_name} compliant)!", status="success")
                 except Exception as patch_err:
                     print(f"[Pipeline] DOCX patcher error: {patch_err}, falling back to build_resume_docx")
                     _doc_path = build_resume_docx(
@@ -3805,6 +3971,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                     role=role,
                     missing_keywords=missing_keywords,
                     output_dir=effective_output,
+                    ats_profile=ats_profile,
                 )
             except Exception as cl_err:
                 print(f"[Pipeline] Cover letter note: {cl_err}")
@@ -3879,7 +4046,14 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
             score_after_val = 90 if score_before_val < 90 else min(98, score_before_val + 10)
         score_delta_val = score_after_val - score_before_val
 
-        # Save log entry with full score synchronization
+        # ATS compliance audit of final rewritten resume
+        ats_compliance_report = {}
+        try:
+            ats_compliance_report = ats_profile.validate_resume_dict(cleaned_resume)
+        except Exception as _comp_err:
+            logging.warning(f"[Pipeline] ATS compliance validation note: {_comp_err}")
+
+        # Save log entry with full score synchronization and ATS profile metadata
         _save_run_log(
             url, company, role, missing_keywords,
             embedded_keywords, still_missing,
@@ -3889,7 +4063,10 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
             score_delta=score_delta_val,
             cover_letter_text=cover_letter_text,
             output_dir=_output_dir,
-            jd_text=jd_text
+            jd_text=jd_text,
+            ats_platform=ats_profile.id,
+            ats_detected=ats_detected,
+            ats_rules=ats_profile.to_dict()
         )
 
         # ── Persist run log to NeonDB in background (non-blocking) ──────────────
@@ -3917,6 +4094,9 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                         "tailored_resume": cleaned_resume,
                         "jd_text": jd_text,
                         "log_file_name": f"{run_id}.json",
+                        "ats_platform": ats_profile.id,
+                        "ats_profile_name": ats_profile.display_name,
+                        "ats_compliance": ats_compliance_report,
                     }
                     db_layer.db_save_run_log(user_username, run_id, db_log)
                 except Exception as _db_log_err:
@@ -3948,7 +4128,10 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                     "tailored_resume": cleaned_resume,
                     "cover_letter_text": cover_letter_text,
                     "jd_text": jd_text,
-                    "next_step": "Upload the .docx to your Simplify profile to verify your new score",
+                    "ats_platform": ats_profile.id,
+                    "ats_profile_name": ats_profile.display_name,
+                    "ats_compliance": ats_compliance_report,
+                    "next_step": f"Upload the .docx or .pdf to your application ({ats_profile.display_name} compliant)",
                 }
             })
         except queue.Full:

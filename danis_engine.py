@@ -144,12 +144,35 @@ def run_researcher_phase(
                     if len(soft_reqs) >= 4:
                         break
 
+    canonical_titles = [role.strip()] if role else []
+    # Derive canonical industry title variants
+    if role:
+        clean_r = role.strip()
+        for prefix in ["Senior ", "Lead ", "Principal ", "Staff ", "Junior ", "Associate "]:
+            if clean_r.startswith(prefix):
+                base_title = clean_r[len(prefix):].strip()
+                if base_title not in canonical_titles:
+                    canonical_titles.append(base_title)
+        if "Data Engineer" in clean_r and "Big Data Engineer" not in canonical_titles:
+            canonical_titles.append("Big Data Engineer")
+        if "Software Engineer" in clean_r and "Backend Engineer" not in canonical_titles:
+            canonical_titles.append("Backend Engineer")
+
+    # Keyword Evidence Matrix: 3 Tiers
+    keyword_matrix = {
+        "tier_1_hard_requirements": hard_reqs[:10],
+        "tier_2_soft_competencies": soft_reqs[:5],
+        "tier_3_canonical_titles": canonical_titles,
+    }
+
     return {
         "role_title": role,
         "company_name": company,
         "hard_requirements": hard_reqs[:10],
         "soft_requirements": soft_reqs[:5],
-        "key_buzzwords_and_acronyms": missing_keywords or []
+        "key_buzzwords_and_acronyms": missing_keywords or [],
+        "keyword_matrix": keyword_matrix,
+        "canonical_title_variants": canonical_titles,
     }
 
 
@@ -163,11 +186,18 @@ def run_writer_phase(
     client: genai.Client,
     model_name: str = "gemini-2.5-flash",
     keyword_contexts: Optional[dict[str, str]] = None,
+    ats_profile: Any = None,
 ) -> dict[str, Any]:
     """
     Role 2: Writer.
-    Applies Rules 0–16 (Human Voice, So What test, Front-load value, Plain strong verbs).
+    Applies Rules 0–16 (Human Voice, So What test, Front-load value, Plain strong verbs)
+    AND injects target ATS platform constraints (phrasing style, density ceiling, date format).
     """
+    from platform_rules import get_profile, get_safe_mode_profile
+    profile = ats_profile if ats_profile is not None else get_safe_mode_profile()
+    if isinstance(profile, str):
+        profile = get_profile(profile)
+
     ai_tells = load_ai_tells()
     cliche_list = ", ".join(ai_tells.get("cliche_openers", [])[:15])
     banned_list = ", ".join(ai_tells.get("banned_words", [])[:15])
@@ -202,8 +232,21 @@ Do NOT treat keywords generically or hallucinate unrelated domain meanings (e.g.
 Weave these technologies into relevant work experience bullets adhering strictly to how the target company uses them.
 """
 
+    ats_section = f"""
+===================================================================
+TARGET ATS PLATFORM MANDATES ({profile.display_name.upper()}):
+===================================================================
+- Target ATS Platform: {profile.display_name} ({profile.matching_style.upper()} matching algorithm)
+  {"* LITERAL BOOLEAN MANDATE: The target ATS uses exact string search. Match required tools, skills, and certifications verbatim in experience bullets." if profile.matching_style == "exact_weighted" else "* SEMANTIC/VECTOR MANDATE: The target ATS and recruiters evaluate contextual accomplishment. Use the primary keyword naturally, and use organic domain synonyms across other bullets."}
+- Keyword Density Ceiling: STRICT MAXIMUM {profile.keyword_density_ceiling*100:.1f}%. Never repeat any single keyword excessively across bullets (2-3 natural occurrences max across the whole resume). Avoid keyword stuffing flags.
+- Date Formatting Standard: All job and education dates MUST be strictly formatted as {profile.date_format}.
+- Title Equivalence (Rule 0 Guardrail): Master resume job titles must remain truthful. If the candidate's existing title represents an equivalent role to '{role}', you may include an authentic parenthetical equivalent in the summary or bullet context (e.g. 'Software Engineer ({role} focus)'), but NEVER fabricate a false past title.
+"""
+
     system_prompt = f"""You are the Writer in Dani's Multi-Agent Resume Team.
 Your job is to tailor the candidate's resume with strict adherence to human voice, authenticity, and high HR impact.
+
+{ats_section}
 
 EDITORIAL PRIORITY ORDER (NEVER INVERT):
 1. AUTHENTICITY / TRUTH: Never invent fake metrics, fake companies, or fake degrees.
@@ -326,34 +369,128 @@ Draft the optimized resume now as valid JSON."""
     raise RuntimeError(f"Writer failed across all models: {last_err}")
 
 
+def reduce_keyword_density_to_ceiling(
+    resume_dict: dict,
+    ats_profile: Any = None,
+    jd_keywords: Optional[list[str]] = None,
+) -> dict:
+    """
+    Deterministically revises down over-stuffed keywords so density complies with
+    ats_profile.keyword_density_ceiling (§4.4, §4.5 & Acceptance Criteria #5).
+    Replaces redundant repetitions with natural phrasing/pronouns without losing truth.
+    """
+    from platform_rules import get_profile, get_safe_mode_profile
+    profile = ats_profile if ats_profile is not None else get_safe_mode_profile()
+    if isinstance(profile, str):
+        profile = get_profile(profile)
+
+    ceiling = getattr(profile, "keyword_density_ceiling", 0.015)
+    if not jd_keywords:
+        return resume_dict
+
+    try:
+        cleaned = json.loads(json.dumps(resume_dict))
+    except Exception:
+        cleaned = dict(resume_dict)
+
+    # Extract all prose text to count total words exactly as audit_ats_compliance does
+    full_text_parts = []
+    if cleaned.get("summary"):
+        full_text_parts.append(str(cleaned["summary"]))
+    for sk in cleaned.get("skills", []):
+        full_text_parts.append(str(sk))
+    for exp in cleaned.get("experience", []):
+        if exp.get("title"):
+            full_text_parts.append(str(exp["title"]))
+        if exp.get("company"):
+            full_text_parts.append(str(exp["company"]))
+        for b in exp.get("bullets", []):
+            full_text_parts.append(str(b))
+    for pr in cleaned.get("projects", []):
+        if isinstance(pr, dict):
+            full_text_parts.append(str(pr.get("name", "")))
+            for b in pr.get("bullets", []):
+                full_text_parts.append(str(b))
+        elif isinstance(pr, str):
+            full_text_parts.append(pr)
+
+    combined_text = " ".join(full_text_parts)
+    words = [w.lower() for w in re.findall(r'[a-zA-Z0-9_\-\+\#\.]+', combined_text)]
+    total_words = max(1, len(words))
+
+    # For each keyword, calculate allowable occurrences
+    for kw in jd_keywords:
+        if not kw or len(kw.strip()) < 2:
+            continue
+        kw_clean = kw.strip()
+        pattern = re.compile(r'\b' + re.escape(kw_clean) + r'\b', re.IGNORECASE)
+        matches = len(pattern.findall(combined_text))
+
+        # Target occurrences: strictly below or equal to platform density ceiling
+        max_allowed = max(1, int(total_words * ceiling))
+        while max_allowed > 1 and (max_allowed / total_words > ceiling):
+            max_allowed -= 1
+
+        if matches > max_allowed:
+            surplus = matches - max_allowed
+            replaced = 0
+            for exp in reversed(cleaned.get("experience", [])):
+                new_bullets = []
+                for b in exp.get("bullets", []):
+                    b_str = str(b)
+                    while surplus > replaced and pattern.search(b_str):
+                        b_str = pattern.sub("the technology", b_str, count=1)
+                        replaced += 1
+                    new_bullets.append(b_str)
+                exp["bullets"] = new_bullets
+                if replaced >= surplus:
+                    break
+
+    return cleaned
+
+
 def run_editor_phase(
     draft_resume: dict,
     audit_findings: list[str],
     client: genai.Client,
+    ats_profile: Any = None,
+    jd_keywords: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """
     Role 4: Editor.
-    Fixes audit findings. First applies deterministic regex replacements (0 API calls).
+    Fixes audit findings. Applies deterministic voice and ATS keyword density cleanup (0 API calls).
     Only calls LLM if unresolvable findings remain.
     """
     cleaned_draft = deterministic_voice_cleanup(draft_resume)
+    if ats_profile and jd_keywords:
+        cleaned_draft = reduce_keyword_density_to_ceiling(cleaned_draft, ats_profile, jd_keywords)
+
     re_audit = audit_resume_dict(cleaned_draft)
-    if re_audit.get("passed") or not re_audit.get("findings"):
-        print(f"[Dani's Engine - Editor] Deterministic regex cleanup resolved all audit findings! (0 API calls burned)")
+    from human_voice_audit import audit_ats_compliance
+    re_ats = audit_ats_compliance(cleaned_draft, ats_profile=ats_profile, jd_keywords=jd_keywords)
+
+    if (re_audit.get("passed") or not re_audit.get("findings")) and (re_ats.get("passed") or not re_ats.get("findings")):
+        print(f"[Dani's Engine - Editor] Deterministic regex & density cleanup resolved all audit findings! (0 API calls burned)")
         return cleaned_draft
 
+    combined_to_fix = list(re_audit.get("findings", []))
+    for f in re_ats.get("findings", []):
+        if f not in combined_to_fix:
+            combined_to_fix.append(f)
+
     system_prompt = """You are the Editor in Dani's Multi-Agent Resume Team.
-The Auditor has flagged specific human-voice / AI-tell findings in the draft resume.
+The Auditor has flagged specific human-voice, AI-tell, or ATS keyword density findings in the draft resume.
 Your task is to fix ONLY the flagged lines while preserving all facts, numbers, tools, and experiences.
 
 Replace any cliché opener with a plain strong action verb (Built, Designed, Cut, Led, Shipped, Automated, Improved).
 Replace any banned AI words with plain equivalents.
 Shorten overlong sentences to under 24 words.
+If keyword density ceiling was exceeded, replace redundant repetitions with pronouns or synonyms so total occurrences decrease.
 
 Return the fully corrected resume as valid JSON."""
 
     user_prompt = f"""AUDITOR FINDINGS TO FIX:
-{json.dumps(re_audit.get('findings', audit_findings), indent=2)}
+{json.dumps(combined_to_fix or audit_findings, indent=2)}
 
 DRAFT RESUME TO EDIT:
 {json.dumps(cleaned_draft, ensure_ascii=False, separators=(',', ':'))}
@@ -396,16 +533,24 @@ def execute_danis_engine_pipeline(
     custom_bullets: str = "",
     log_callback: Optional[Callable[[int, str, str, Optional[dict], str], None]] = None,
     keyword_contexts: Optional[dict[str, str]] = None,
+    ats_profile: Any = None,
 ) -> dict[str, Any]:
     """
     Main Orchestrator for Dani's Multi-Agent Engine.
     Executes:
-    1. Researcher (JD Rubric Extraction)
-    2. Writer (Rules 0-16 Grounded Drafting with JD Domain Context)
-    3. Auditor (Human Voice & Provenance Verification)
-    4. Editor (Targeted Fixes if Audit flags issues)
+    1. Researcher (JD Rubric & 3-Tier Keyword Matrix Extraction)
+    2. Writer (Rules 0-16 Grounded Drafting with JD Domain Context & ATS Profile Constraints)
+    3. Auditor (Human Voice & 4-Gate ATS Compliance Verification)
+    4. Editor (Targeted Fixes if Voice or ATS Audit flags issues)
     5. Post-Processing & Multi-Role Guarantee
     """
+    from platform_rules import get_profile, get_safe_mode_profile
+    from human_voice_audit import audit_resume_dict, audit_ats_compliance
+
+    profile = ats_profile if ats_profile is not None else get_safe_mode_profile()
+    if isinstance(profile, str):
+        profile = get_profile(profile)
+
     def log(step: int, title: str, desc: str, data: dict = None, status: str = "working"):
         if log_callback:
             log_callback(step, title, desc, data, status)
@@ -414,15 +559,15 @@ def execute_danis_engine_pipeline(
     client = get_gemini_client()
 
     # Step 1: Researcher Phase (Deterministic & local - preserves 100% quota for Writer)
-    log(4, "Dani's Researcher", "Extracting atomic hard & soft requirements from JD...", status="working")
+    log(4, "Dani's Researcher", f"Extracting 3-tier keyword matrix for {role} at {company}...", status="working")
     research_rubric = run_researcher_phase(
         jd_text, company, role, client,
         missing_keywords=missing_keywords, keyword_contexts=keyword_contexts
     )
-    log(4, "Dani's Researcher", f"Extracted {len(research_rubric.get('hard_requirements', []))} hard requirements.", status="success")
+    log(4, "Dani's Researcher", f"Extracted {len(research_rubric.get('hard_requirements', []))} hard requirements & {len(research_rubric.get('canonical_title_variants', []))} canonical title variants.", status="success")
 
-    # Step 2: Writer Phase (Rules 0-16)
-    log(4, "Dani's Writer", "Drafting resume with Rules 0–16 (burstiness, front-loaded value, plain verbs)...", status="working")
+    # Step 2: Writer Phase (Rules 0-16 + ATS Constraints)
+    log(4, "Dani's Writer", f"Drafting resume tailored for {profile.display_name} (Cap: {profile.keyword_density_ceiling*100:.1f}%, Dates: {profile.date_format})...", status="working")
     draft = run_writer_phase(
         base_resume=base_resume,
         research_rubric=research_rubric,
@@ -432,23 +577,54 @@ def execute_danis_engine_pipeline(
         custom_bullets=custom_bullets,
         client=client,
         keyword_contexts=keyword_contexts,
+        ats_profile=profile,
     )
-    log(4, "Dani's Writer", "Draft created with strict human-voice protocols.", status="success")
+    log(4, "Dani's Writer", f"Draft created with strict human-voice protocols & {profile.display_name} phrasing rules.", status="success")
 
-    # Step 3: Auditor Phase
-    log(5, "Dani's Auditor", "Running Human Voice Audit (burstiness CV, AI tells, sentence caps)...", status="working")
+    # Step 2.5: Cover Letter Generation (§4.4 & Acceptance Criteria #3)
+    # If target ATS actively scores cover letters (e.g. Greenhouse, Taleo), generate one before Auditor runs
+    cover_letter_text = draft.get("_cover_letter", "")
+    if getattr(profile, "cover_letter_scored", False) and not cover_letter_text:
+        try:
+            from cover_letter_generator import generate_cover_letter
+            log(4, "Dani's Writer", f"Generating mandatory cover letter ({profile.display_name} actively scores cover letters)...", status="working")
+            cl_dict = generate_cover_letter(
+                base_resume=base_resume,
+                company=company,
+                role=role,
+                missing_keywords=missing_keywords,
+                ats_profile=profile,
+            )
+            cover_letter_text = cl_dict.get("text", "")
+            draft["_cover_letter"] = cover_letter_text
+            log(4, "Dani's Writer", f"Generated cover letter tailored for {profile.display_name} scoring.", status="success")
+        except Exception as cl_err:
+            print(f"[Dani's Engine] Cover letter auto-generation note: {cl_err}")
+
+    # Step 3: Auditor Phase (Human Voice + 4-Gate ATS Compliance)
+    log(5, "Dani's Auditor", f"Running Human Voice & {profile.display_name} 4-Gate ATS Compliance Audit...", status="working")
     audit_report = audit_resume_dict(draft)
+    ats_report = audit_ats_compliance(draft, ats_profile=profile, jd_keywords=missing_keywords, jd_title=role)
+
+    all_passed = audit_report["passed"] and ats_report["passed"]
+    combined_findings = list(audit_report.get("findings", []))
+    for f in ats_report.get("findings", []):
+        if f not in combined_findings:
+            combined_findings.append(f)
+
     log(5, "Dani's Auditor",
-        f"Audit Score: {audit_report['score']}% (Burstiness CV: {audit_report['burstiness_cv']})",
-        data=audit_report,
-        status="success" if audit_report["passed"] else "warning")
+        f"Voice Score: {audit_report['score']}% (CV: {audit_report['burstiness_cv']}) | ATS ({profile.display_name}) Score: {ats_report['score']}%",
+        data={"voice_audit": audit_report, "ats_audit": ats_report},
+        status="success" if all_passed else "warning")
 
     # Step 4: Editor Phase (if findings exist)
-    if not audit_report["passed"] and audit_report["findings"]:
-        log(5, "Dani's Editor", f"Correcting {len(audit_report['findings'])} auditor findings...", status="working")
-        draft = run_editor_phase(draft, audit_report["findings"], client)
+    if not all_passed and combined_findings:
+        log(5, "Dani's Editor", f"Correcting {len(combined_findings)} auditor findings...", status="working")
+        draft = run_editor_phase(draft, combined_findings, client, ats_profile=profile, jd_keywords=missing_keywords)
         re_audit = audit_resume_dict(draft)
-        log(5, "Dani's Editor", f"Corrected draft re-audited. Score: {re_audit['score']}%", data=re_audit, status="success")
+        re_ats_audit = audit_ats_compliance(draft, ats_profile=profile, jd_keywords=missing_keywords, jd_title=role)
+        ats_report = re_ats_audit
+        log(5, "Dani's Editor", f"Corrected draft re-audited. Voice: {re_audit['score']}%, ATS: {re_ats_audit['score']}%", data={"voice_audit": re_audit, "ats_audit": re_ats_audit}, status="success")
 
     # Step 5: Post-Processing & Multi-Role Guarantee
     merged = dict(base_resume)
@@ -566,5 +742,9 @@ def execute_danis_engine_pipeline(
             final_skills_lower.add(kw_clean.lower())
 
     merged["skills"] = final_skills
+    merged["_ats_platform"] = profile.platform_id
+    merged["_ats_profile"] = profile.to_dict()
+    merged["_ats_audit"] = ats_report
 
     return merged
+

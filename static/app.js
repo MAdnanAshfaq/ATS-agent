@@ -790,37 +790,158 @@ function initFormListeners() {
   });
 }
 
+const ATS_PROFILES_METADATA = {
+  greenhouse: {
+    name: "Greenhouse ATS",
+    model: "Semantic Search + Exact Token",
+    density: "2.5% max density cap",
+    dateFormat: "YYYY-MM (ISO 8601)",
+    tip: "Preserves markdown and exact skill titles; supports rich bullet descriptions."
+  },
+  lever: {
+    name: "Lever ATS",
+    model: "Raw Token Matching",
+    density: "3.0% max density cap",
+    dateFormat: "Month YYYY",
+    tip: "Raw token matching. Requires exact spelling variations (e.g. 'CI/CD' and 'Continuous Integration')."
+  },
+  workday: {
+    name: "Workday ATS",
+    model: "Strict Field Extraction Parser",
+    density: "1.8% conservative density cap",
+    dateFormat: "Mon YYYY (e.g., Jan 2024)",
+    tip: "Strict section ordering. Avoid multi-column layouts, icons, and non-standard headings."
+  },
+  icims: {
+    name: "iCIMS ATS",
+    model: "Weighted Heuristic Ranking",
+    density: "3.2% density tolerance",
+    dateFormat: "Month YYYY",
+    tip: "Heuristic skill frequency scoring; highlights primary technologies in summary and top bullets."
+  },
+  taleo: {
+    name: "Oracle Taleo",
+    model: "Legacy Strict Linear Parser",
+    density: "1.5% strict density cap",
+    dateFormat: "MM/YYYY (e.g., 01/2024)",
+    tip: "Strips complex formatting and tables. Requires classic section order: Contact, Experience, Education, Skills."
+  },
+  smartrecruiters: {
+    name: "SmartRecruiters",
+    model: "Modern Hybrid Semantic Matcher",
+    density: "2.8% max density cap",
+    dateFormat: "Month YYYY",
+    tip: "High semantic tolerance. Focuses on impact verbs and quantifiable achievement metrics."
+  },
+  ashby: {
+    name: "Ashby ATS",
+    model: "High-Precision Vector Matcher",
+    density: "2.8% max density cap",
+    dateFormat: "Month YYYY",
+    tip: "Modern engineering-first ATS. Recognizes modern stacks and nuanced technical responsibilities."
+  },
+  brassring: {
+    name: "IBM Kenexa BrassRing",
+    model: "Legacy String Matcher",
+    density: "1.5% density cap",
+    dateFormat: "MM/YYYY",
+    tip: "Strips tables and symbols. Prioritizes raw exact keywords from JD."
+  },
+  successfactors: {
+    name: "SAP SuccessFactors",
+    model: "Enterprise OCR & Parser",
+    density: "2.0% density cap",
+    dateFormat: "MM/YYYY",
+    tip: "Demands strict chronological consistency and exact formal degree/job titles."
+  },
+  generic: {
+    name: "Universal ATS (Safe Mode)",
+    model: "Balanced Standard Baseline",
+    density: "2.5% max density cap",
+    dateFormat: "Month YYYY",
+    tip: "Guaranteed maximum cross-compatibility with 100% of commercial ATS parsers."
+  }
+};
+
+function onTargetAtsChange() {
+  const sel = document.getElementById("target-ats-select");
+  const ind = document.getElementById("ats-detection-indicator");
+  const val = sel ? sel.value : "";
+  if (!val) {
+    if (ind) {
+      ind.textContent = "Auto-Detect from URL";
+      ind.style.background = "#6366f1";
+    }
+    updateAtsRulesPreview("generic");
+  } else {
+    const meta = ATS_PROFILES_METADATA[val] || ATS_PROFILES_METADATA.generic;
+    if (ind) {
+      ind.textContent = `Manual Target: ${meta.name}`;
+      ind.style.background = "#0284c7";
+    }
+    updateAtsRulesPreview(val);
+  }
+}
+
+function updateAtsRulesPreview(platformId) {
+  const preview = document.getElementById("target-ats-rules-preview");
+  if (!preview) return;
+  const p = ATS_PROFILES_METADATA[platformId] || ATS_PROFILES_METADATA.generic;
+  preview.innerHTML = `
+    <span class="badge" style="background:#e0e7ff; color:#3730a3; padding:4px 8px; border-radius:6px; font-weight:600;"><i class="fa-solid fa-brain"></i> ${p.model}</span>
+    <span class="badge" style="background:#f1f5f9; color:#475569; padding:4px 8px; border-radius:6px; font-weight:600;"><i class="fa-solid fa-gauge-high"></i> ${p.density}</span>
+    <span class="badge" style="background:#f1f5f9; color:#475569; padding:4px 8px; border-radius:6px; font-weight:600;"><i class="fa-solid fa-calendar-day"></i> Dates: ${p.dateFormat}</span>
+    <span class="badge" style="background:#f8fafc; color:#64748b; padding:4px 8px; border-radius:6px;"><i class="fa-solid fa-circle-info"></i> ${p.tip}</span>
+  `;
+}
+
 function detectPlatform(url) {
   const badge = document.getElementById("detected-platform-badge");
   const platformName = document.getElementById("platform-name");
 
   if (!url || !url.startsWith("http")) {
-    badge.classList.add("hidden");
+    if (badge) badge.classList.add("hidden");
     return;
   }
 
   const platforms = {
-    "linkedin.com": "LinkedIn Jobs",
-    "lever.co": "Lever ATS",
-    "greenhouse.io": "Greenhouse ATS",
-    "myworkdayjobs.com": "Workday ATS",
-    "workday.com": "Workday ATS",
-    "wellfound.com": "Wellfound",
-    "ashbyhq.com": "Ashby ATS",
-    "smartrecruiters.com": "SmartRecruiters",
-    "icims.com": "iCIMS ATS",
+    "linkedin.com": { name: "LinkedIn Jobs", ats: "generic" },
+    "lever.co": { name: "Lever ATS", ats: "lever" },
+    "greenhouse.io": { name: "Greenhouse ATS", ats: "greenhouse" },
+    "myworkdayjobs.com": { name: "Workday ATS", ats: "workday" },
+    "workday.com": { name: "Workday ATS", ats: "workday" },
+    "wellfound.com": { name: "Wellfound", ats: "generic" },
+    "ashbyhq.com": { name: "Ashby ATS", ats: "ashby" },
+    "smartrecruiters.com": { name: "SmartRecruiters", ats: "smartrecruiters" },
+    "icims.com": { name: "iCIMS ATS", ats: "icims" },
+    "taleo.net": { name: "Oracle Taleo", ats: "taleo" },
+    "brassring.com": { name: "Kenexa BrassRing", ats: "brassring" },
+    "successfactors.com": { name: "SAP SuccessFactors", ats: "successfactors" },
   };
 
-  let found = "Generic Portal";
-  for (const [key, name] of Object.entries(platforms)) {
+  let foundName = "Generic Portal";
+  let foundAts = "generic";
+  for (const [key, info] of Object.entries(platforms)) {
     if (url.includes(key)) {
-      found = name;
+      foundName = info.name;
+      foundAts = info.ats;
       break;
     }
   }
 
-  platformName.textContent = found;
-  badge.classList.remove("hidden");
+  if (platformName) platformName.textContent = foundName;
+  if (badge) badge.classList.remove("hidden");
+
+  // Sync ATS Target selector if user hasn't overridden
+  const targetAtsSelect = document.getElementById("target-ats-select");
+  const atsIndicator = document.getElementById("ats-detection-indicator");
+  if (targetAtsSelect && !targetAtsSelect.value) {
+    if (atsIndicator) {
+      atsIndicator.textContent = `Auto-Detected: ${foundName}`;
+      atsIndicator.style.background = "#10b981";
+    }
+    updateAtsRulesPreview(foundAts);
+  }
 }
 
 /* ── Pipeline Run Execution ──────────────────────────────────────────────── */
@@ -848,6 +969,9 @@ async function startGeneration(opts = {}) {
 
   const outputDirElem = document.getElementById("custom-output-dir");
   const outputDir = outputDirElem ? outputDirElem.value.trim() : "";
+
+  const targetAtsElem = document.getElementById("target-ats-select");
+  const targetAts = targetAtsElem ? targetAtsElem.value.trim() : "";
 
   // Use score passed from Analyze step if available, otherwise null (backend will compute)
   const scoreBefore = opts.scoreBefore !== undefined ? opts.scoreBefore : analyzeScoreBefore;
@@ -893,6 +1017,7 @@ async function startGeneration(opts = {}) {
         passes,
         output_dir: outputDir || undefined,
         score_before: scoreBefore !== null ? scoreBefore : undefined,
+        target_ats: targetAts || undefined,
       }),
     });
 

@@ -12,6 +12,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import Any, Optional
 from google import genai
 from google.genai import types
 from gemini_client import get_gemini_client, execute_with_failover, get_all_gemini_keys
@@ -36,9 +37,11 @@ def generate_cover_letter(
     role: str,
     missing_keywords: list = None,
     output_dir: str = None,
+    ats_profile: Any = None,
 ) -> dict:
     """
-    Generate a high-impact, job-specific cover letter using Gemini.
+    Generate a high-impact, job-specific cover letter using Gemini,
+    with platform awareness for cover-letter scored ATS systems.
 
     Returns:
         dict with keys: {
@@ -49,6 +52,11 @@ def generate_cover_letter(
             "role": str
         }
     """
+    from platform_rules import get_profile, get_safe_mode_profile
+    profile = ats_profile if ats_profile is not None else get_safe_mode_profile()
+    if isinstance(profile, str):
+        profile = get_profile(profile)
+
     missing_keywords = missing_keywords or []
     client = _get_gemini_client()
 
@@ -57,8 +65,15 @@ def generate_cover_letter(
     candidate_phone = base_resume.get("contact", {}).get("phone", "")
     candidate_location = base_resume.get("contact", {}).get("location", "")
 
+    platform_notes = ""
+    if profile.cover_letter_scored:
+        platform_notes = f"\nTARGET ATS NOTE ({profile.display_name.upper()}): This platform actively scores cover letters alongside resumes. Ensure top required skills and genuine problem-solving impact are prominently highlighted."
+    if profile.platform_id == "taleo":
+        platform_notes = f"\nTALEO QUIRK NOTICE: Taleo concatenates the cover letter directly into the resume text corpus for keyword parsing. Keep this letter keyword-light and focused on qualitative stories so the composite document does not breach the 1.5% keyword density ceiling."
+
     prompt = f"""You are the expert Cover Letter Writer adhering to Dani's Human-Voice Rules (from ResumeHQ cover-letter.md).
 Write a brief, punchy, persuasive 1-page Cover Letter for {candidate_name} applying for the {role} position at {company}.
+{platform_notes}
 
 PRIORITY ORDER:
 1. Authenticity: Only reference facts, tools, and achievements from the candidate's real profile.
@@ -206,6 +221,7 @@ Sincerely,
             print(f"[Cover Letter] DOCX save note: {docx_err}")
 
     return {
+        "text": cover_letter_text,
         "cover_letter_text": cover_letter_text,
         "file_path_docx": file_path_docx,
         "file_path_txt": file_path_txt,
