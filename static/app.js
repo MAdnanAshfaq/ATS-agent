@@ -773,8 +773,11 @@ function initFormListeners() {
   const optionsPanel = document.getElementById("options-panel");
 
   // Platform auto-detector
-  urlInput.addEventListener("input", (e) => {
-    detectPlatform(e.target.value);
+  const runDetect = (val) => detectPlatform(val);
+  urlInput.addEventListener("input", (e) => runDetect(e.target.value));
+  urlInput.addEventListener("change", (e) => runDetect(e.target.value));
+  urlInput.addEventListener("paste", (e) => {
+    setTimeout(() => runDetect(urlInput.value), 20);
   });
 
   // Advanced options toggle
@@ -863,10 +866,16 @@ const ATS_PROFILES_METADATA = {
   }
 };
 
-function onTargetAtsChange() {
+function onTargetAtsChange(event) {
   const sel = document.getElementById("target-ats-select");
   const ind = document.getElementById("ats-detection-indicator");
   const val = sel ? sel.value : "";
+  if (event && event.isTrusted) {
+    if (sel) {
+      if (val) sel.dataset.userManuallySelected = "true";
+      else delete sel.dataset.userManuallySelected;
+    }
+  }
   if (!val) {
     if (ind) {
       ind.textContent = "Auto-Detect from URL";
@@ -876,7 +885,7 @@ function onTargetAtsChange() {
   } else {
     const meta = ATS_PROFILES_METADATA[val] || ATS_PROFILES_METADATA.generic;
     if (ind) {
-      ind.textContent = `Manual Target: ${meta.name}`;
+      ind.textContent = `Target: ${meta.name}`;
       ind.style.background = "#0284c7";
     }
     updateAtsRulesPreview(val);
@@ -895,53 +904,104 @@ function updateAtsRulesPreview(platformId) {
   `;
 }
 
-function detectPlatform(url) {
+let _atsDetectTimeout = null;
+async function detectPlatform(urlOrText) {
   const badge = document.getElementById("detected-platform-badge");
   const platformName = document.getElementById("platform-name");
+  const targetAtsSelect = document.getElementById("target-ats-select");
+  const atsIndicator = document.getElementById("ats-detection-indicator");
 
-  if (!url || !url.startsWith("http")) {
+  const trimmed = (urlOrText || "").trim();
+  if (!trimmed) {
     if (badge) badge.classList.add("hidden");
+    if (atsIndicator && (!targetAtsSelect || !targetAtsSelect.value)) {
+      atsIndicator.textContent = "Auto-Detect from URL";
+      atsIndicator.style.background = "#6366f1";
+    }
     return;
   }
 
-  const platforms = {
-    "linkedin.com": { name: "LinkedIn Jobs", ats: "generic" },
-    "lever.co": { name: "Lever ATS", ats: "lever" },
-    "greenhouse.io": { name: "Greenhouse ATS", ats: "greenhouse" },
-    "myworkdayjobs.com": { name: "Workday ATS", ats: "workday" },
-    "workday.com": { name: "Workday ATS", ats: "workday" },
-    "wellfound.com": { name: "Wellfound", ats: "generic" },
-    "ashbyhq.com": { name: "Ashby ATS", ats: "ashby" },
-    "smartrecruiters.com": { name: "SmartRecruiters", ats: "smartrecruiters" },
-    "icims.com": { name: "iCIMS ATS", ats: "icims" },
-    "taleo.net": { name: "Oracle Taleo", ats: "taleo" },
-    "brassring.com": { name: "Kenexa BrassRing", ats: "brassring" },
-    "successfactors.com": { name: "SAP SuccessFactors", ats: "successfactors" },
-  };
+  // 1. Instant local regex/keyword matching for zero-latency UI update
+  const lower = trimmed.toLowerCase();
+  let quickAts = null;
+  let quickName = null;
 
-  let foundName = "Generic Portal";
-  let foundAts = "generic";
-  for (const [key, info] of Object.entries(platforms)) {
-    if (url.includes(key)) {
-      foundName = info.name;
-      foundAts = info.ats;
-      break;
+  if (lower.includes("myworkdayjobs") || lower.includes("workday.com") || lower.includes("myworkday") || lower.includes("wday.com") || lower.includes("powered by workday") || lower.includes("workday careers") || lower.includes("workday ats") || lower.includes("workday requisition")) {
+    quickAts = "workday";
+    quickName = "Workday ATS";
+  } else if (lower.includes("ashbyhq") || lower.includes("jobs.ashbyhq") || lower.includes("ashby.io") || lower.includes("powered by ashby") || lower.includes("apply via ashby") || lower.includes("ashby ats") || lower.includes("ashby application")) {
+    quickAts = "ashby";
+    quickName = "Ashby ATS";
+  } else if (lower.includes("greenhouse.io") || lower.includes("grnh.se") || lower.includes("gh_src") || lower.includes("powered by greenhouse") || lower.includes("greenhouse ats")) {
+    quickAts = "greenhouse";
+    quickName = "Greenhouse ATS";
+  } else if (lower.includes("lever.co") || lower.includes("powered by lever") || lower.includes("lever ats")) {
+    quickAts = "lever";
+    quickName = "Lever ATS";
+  } else if (lower.includes("taleo.net") || lower.includes("oraclecloud.com/career") || lower.includes("oracle taleo") || lower.includes("taleo ats")) {
+    quickAts = "taleo";
+    quickName = "Oracle Taleo";
+  } else if (lower.includes("icims.com") || lower.includes("careers-icims") || lower.includes("powered by icims") || lower.includes("icims ats")) {
+    quickAts = "icims";
+    quickName = "iCIMS ATS";
+  } else if (lower.includes("smartrecruiters.com") || lower.includes("powered by smartrecruiters")) {
+    quickAts = "smartrecruiters";
+    quickName = "SmartRecruiters";
+  } else if (lower.includes("workable.com") || lower.includes("apply.workable.com")) {
+    quickAts = "workable";
+    quickName = "Workable";
+  } else if (lower.includes("bamboohr.com")) {
+    quickAts = "bamboohr";
+    quickName = "BambooHR";
+  } else if (lower.includes("jobvite.com")) {
+    quickAts = "jobvite";
+    quickName = "Jobvite";
+  } else if (lower.includes("successfactors.com") || lower.includes("jobs2web.com")) {
+    quickAts = "successfactors";
+    quickName = "SAP SuccessFactors";
+  }
+
+  if (quickAts) {
+    if (platformName) platformName.textContent = quickName;
+    if (badge) badge.classList.remove("hidden");
+    if (targetAtsSelect && !targetAtsSelect.dataset.userManuallySelected) {
+      targetAtsSelect.value = quickAts;
+      if (atsIndicator) {
+        atsIndicator.textContent = `Auto-Detected: ${quickName}`;
+        atsIndicator.style.background = "#10b981";
+      }
+      updateAtsRulesPreview(quickAts);
     }
   }
 
-  if (platformName) platformName.textContent = foundName;
-  if (badge) badge.classList.remove("hidden");
-
-  // Sync ATS Target selector if user hasn't overridden
-  const targetAtsSelect = document.getElementById("target-ats-select");
-  const atsIndicator = document.getElementById("ats-detection-indicator");
-  if (targetAtsSelect && !targetAtsSelect.value) {
-    if (atsIndicator) {
-      atsIndicator.textContent = `Auto-Detected: ${foundName}`;
-      atsIndicator.style.background = "#10b981";
+  // 2. Debounced backend API detection for custom corporate domains & learned domain memory
+  if (_atsDetectTimeout) clearTimeout(_atsDetectTimeout);
+  _atsDetectTimeout = setTimeout(async () => {
+    try {
+      const resp = await fetch("/api/ats-detect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: trimmed, text: trimmed })
+      });
+      if (resp.ok) {
+        const d = await resp.json();
+        if (d.success && d.detected && d.platform_id && d.platform_id !== "unknown") {
+          if (platformName) platformName.textContent = d.display_name;
+          if (badge) badge.classList.remove("hidden");
+          if (targetAtsSelect && !targetAtsSelect.dataset.userManuallySelected) {
+            targetAtsSelect.value = d.platform_id;
+            if (atsIndicator) {
+              atsIndicator.textContent = `Auto-Detected: ${d.display_name}`;
+              atsIndicator.style.background = "#10b981";
+            }
+            updateAtsRulesPreview(d.platform_id);
+          }
+        }
+      }
+    } catch (e) {
+      // Background lookup fails silently
     }
-    updateAtsRulesPreview(foundAts);
-  }
+  }, 250);
 }
 
 /* ── Pipeline Run Execution ──────────────────────────────────────────────── */
@@ -3388,6 +3448,84 @@ function renderSimplifyCard(data) {
     else roleName.innerText = rName;
   }
   if (resumeFile) resumeFile.innerText = data.resume_name || "Master_Resume";
+
+  // 2b. ATS Engine Target Row
+  const atsInfo = data.ats_detection || data.ats || {};
+  const atsProf = atsInfo.profile || {};
+  const atsDetectedName = document.getElementById("matrix-ats-detected-name");
+  const atsSourceBadge = document.getElementById("matrix-ats-source-badge");
+  const atsSpecs = document.getElementById("matrix-ats-specs");
+  const atsModePill = document.getElementById("matrix-ats-mode-pill");
+  const atsTip = document.getElementById("matrix-ats-tip");
+  const atsStatus = document.getElementById("matrix-ats-status");
+
+  if (atsInfo && atsInfo.detected && atsInfo.platform_id && atsInfo.platform_id !== "unknown") {
+    const dispName = atsInfo.display_name || atsProf.display_name || "Target ATS";
+    if (atsDetectedName) atsDetectedName.innerText = dispName;
+    if (atsSourceBadge) {
+      const srcLabels = {
+        url_signature: "URL Match",
+        learned_memory: "Learned Memory",
+        html_fingerprint: "Page Fingerprint",
+        text_fingerprint: "JD Match",
+        text_contextual_keyword: "JD Match",
+        text_embedded_url_url_signature: "Link Match",
+        user_selection: "User Override"
+      };
+      atsSourceBadge.innerText = srcLabels[atsInfo.source] || "Detected";
+      atsSourceBadge.style.background = "#dcfce7";
+      atsSourceBadge.style.color = "#15803d";
+    }
+    if (atsSpecs) {
+      const density = atsProf.keyword_density_ceiling ? (atsProf.keyword_density_ceiling * 100).toFixed(1) + "%" : "2.0%";
+      const styleName = (atsProf.matching_style || "Standard").replace("_", " ").toUpperCase();
+      const dateFmt = atsProf.date_format || "MM/YYYY";
+      atsSpecs.innerText = `Parsing: ${styleName} • Density Cap: ${density} • Date Format: ${dateFmt}`;
+    }
+    if (atsModePill) {
+      atsModePill.innerText = atsProf.matching_style === "exact_weighted" ? "Exact Weighted Matching" : "Semantic Matching";
+      if (atsProf.matching_style === "exact_weighted") {
+        atsModePill.style.background = "#fee2e2";
+        atsModePill.style.color = "#991b1b";
+      } else {
+        atsModePill.style.background = "#e0e7ff";
+        atsModePill.style.color = "#3730a3";
+      }
+    }
+    if (atsTip) {
+      atsTip.innerText = (atsProf.quirks && atsProf.quirks[0]) || "Standard Headings & Clean Hierarchies Active";
+    }
+    if (atsStatus) {
+      atsStatus.className = "matrix-status-dot dot-match";
+      atsStatus.innerHTML = `<i class="fa-solid fa-check"></i>`;
+    }
+
+    // Automatically synchronize the target-ats-select dropdown!
+    const targetAtsSelect = document.getElementById("target-ats-select");
+    if (targetAtsSelect && atsInfo.platform_id) {
+      targetAtsSelect.value = atsInfo.platform_id;
+      onTargetAtsChange();
+    }
+  } else {
+    // Safe Mode / Universal
+    if (atsDetectedName) atsDetectedName.innerText = "Universal ATS (Safe Mode)";
+    if (atsSourceBadge) {
+      atsSourceBadge.innerText = "Universal Baseline";
+      atsSourceBadge.style.background = "#f1f5f9";
+      atsSourceBadge.style.color = "#475569";
+    }
+    if (atsSpecs) atsSpecs.innerText = "Parsing: Balanced Standard • Density Cap: 2.5% • Date Format: Month YYYY";
+    if (atsModePill) {
+      atsModePill.innerText = "Cross-Compatibility";
+      atsModePill.style.background = "#e0e7ff";
+      atsModePill.style.color = "#3730a3";
+    }
+    if (atsTip) atsTip.innerText = "Standard Headings & Clean Hierarchies Active";
+    if (atsStatus) {
+      atsStatus.className = "matrix-status-dot dot-match";
+      atsStatus.innerHTML = `<i class="fa-solid fa-check"></i>`;
+    }
+  }
 
   // 3. Job Title Row
   const titleJd = document.getElementById("matrix-title-jd");

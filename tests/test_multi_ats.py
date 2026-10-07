@@ -611,7 +611,48 @@ class TestSection7AcceptanceCriteria(unittest.TestCase):
         self.assertTrue(ko_res["disqualified"])
         self.assertEqual(ko_res["results"][0]["status"], "knockout_disqualification")
 
+    def test_workday_and_ashby_detection_urls_and_prose(self):
+        from ats_detector import detect_ats, detect_ats_from_url, detect_ats_from_text
+
+        # 1. Workday URLs
+        wd1 = detect_ats("https://target.myworkdayjobs.com/en-US/careers/job/Engineer_123")
+        self.assertTrue(wd1["detected"])
+        self.assertEqual(wd1["platform_id"], "workday")
+
+        wd2 = detect_ats("https://nvidia.wd5.myworkdayjobs.com/job/123")
+        self.assertTrue(wd2["detected"])
+        self.assertEqual(wd2["platform_id"], "workday")
+
+        # 2. Ashby URLs
+        ash1 = detect_ats("https://jobs.ashbyhq.com/openai/1234-abcd")
+        self.assertTrue(ash1["detected"])
+        self.assertEqual(ash1["platform_id"], "ashby")
+
+        ash2 = detect_ats("https://ashbyhq.com/acme/job/789")
+        self.assertTrue(ash2["detected"])
+        self.assertEqual(ash2["platform_id"], "ashby")
+
+        # 3. Pasted prose text with ATS mentions
+        wd_text = detect_ats("We are looking for a Senior Engineer. Powered by Workday. Apply online.")
+        self.assertTrue(wd_text["detected"])
+        self.assertEqual(wd_text["platform_id"], "workday")
+
+        ash_text = detect_ats("Join our hypergrowth AI team. Submit your application via Ashby portal today.")
+        self.assertTrue(ash_text["detected"])
+        self.assertEqual(ash_text["platform_id"], "ashby")
+
+        # 4. HTTP API endpoint /api/ats-detect
+        client = app.test_client()
+        r_wd = client.post("/api/ats-detect", json={"url": "https://company.myworkdayjobs.com/job/1"})
+        self.assertEqual(r_wd.status_code, 200)
+        self.assertEqual(r_wd.get_json()["platform_id"], "workday")
+
+        r_ash = client.post("/api/ats-detect", json={"url": "https://jobs.ashbyhq.com/company/1"})
+        self.assertEqual(r_ash.status_code, 200)
+        self.assertEqual(r_ash.get_json()["platform_id"], "ashby")
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

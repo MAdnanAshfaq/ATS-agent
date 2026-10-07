@@ -2582,12 +2582,17 @@ def analyze_job():
         # Attach Multi-ATS detection
         try:
             from ats_detector import detect_ats
-            ats_info = detect_ats(url, html_content=jd_text or "")
+            ats_target_input = url if not is_direct_text else (direct_jd_text or url)
+            ats_info = detect_ats(ats_target_input, html_content=jd_text or "")
             res_payload["ats_detection"] = ats_info
+            res_payload["ats"] = ats_info
+            res_payload["target_ats"] = ats_info.get("platform_id")
             print(f"[Analyze] ATS Platform detected: {ats_info.get('display_name')} (conf: {ats_info.get('confidence')}, source: {ats_info.get('source')})")
         except Exception as ats_err:
             print(f"[Analyze] ATS detection note: {ats_err}")
             res_payload["ats_detection"] = None
+            res_payload["ats"] = None
+            res_payload["target_ats"] = None
 
         # Store in global memory cache so Generate step reuses this extract with 0 browser launches
         GLOBAL_ANALYSIS_CACHE[url] = {
@@ -2601,6 +2606,8 @@ def analyze_job():
             "source": source,
             "jd_data": jd_data,
             "matrix": res_payload,
+            "ats": res_payload.get("ats"),
+            "target_ats": res_payload.get("target_ats"),
         }
         _trim_analysis_cache()
 
@@ -3976,13 +3983,22 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
 
         # Resolve target ATS Platform (User Selection/Override -> URL Detection -> HTML Fingerprints -> Safe Mode)
         from platform_rules import get_profile, get_safe_mode_profile
-        from ats_detector import detect_ats_from_url
+        from ats_detector import detect_ats
         if target_ats:
             ats_profile = get_profile(target_ats)
             ats_detected = True
             ats_source = "user_selection"
+        elif cached_analysis and cached_analysis.get("ats") and cached_analysis["ats"].get("detected"):
+            ats_data = cached_analysis["ats"]
+            ats_profile = get_profile(ats_data["platform_id"])
+            ats_detected = True
+            ats_source = ats_data.get("source", "cached_analysis")
         else:
-            ats_profile, ats_conf, ats_source, ats_detected = detect_ats_from_url(url, html_content=jd_text)
+            ats_target_input = url if not is_direct_text else (direct_jd_text or url)
+            detection_res = detect_ats(ats_target_input, html_content=jd_text or "")
+            ats_profile = get_profile(detection_res["platform_id"])
+            ats_detected = detection_res["detected"]
+            ats_source = detection_res["source"]
 
         send_log(2, "ATS Target Platform",
                  f"Configured for {ats_profile.display_name} ({ats_profile.matching_style.upper()} Mode • {ats_profile.keyword_density_ceiling*100:.1f}% Density Cap • {ats_profile.date_format})",

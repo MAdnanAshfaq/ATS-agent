@@ -50,8 +50,8 @@
       "platform_id": "greenhouse",
       "confidence": 1.0,
       "first_learned": "2026-10-06T20:07:02.129669+00:00",
-      "last_updated": "2026-10-07T14:14:04.944355+00:00",
-      "confirm_count": 12,
+      "last_updated": "2026-10-07T19:08:45.590081+00:00",
+      "confirm_count": 15,
       "source": "user_override",
       "sample_domain": "custom-portal-enterprise-suite.org"
     },
@@ -59,40 +59,40 @@
       "platform_id": "workday",
       "confidence": 1.0,
       "first_learned": "2026-10-06T20:07:02.164975+00:00",
-      "last_updated": "2026-10-07T14:14:05.019950+00:00",
-      "confirm_count": 12,
+      "last_updated": "2026-10-07T19:08:45.665285+00:00",
+      "confirm_count": 15,
       "source": "user_override",
       "sample_domain": "newco-suite.careers"
     }
   },
   "metrics": {
-    "total_lookups": 304,
+    "total_lookups": 370,
     "learned_hits": 30,
-    "user_overrides": 53,
+    "user_overrides": 59,
     "user_confirmations": 1
   },
   "platform_audits": {
     "workday": {
-      "total_runs": 46,
-      "passes": 28,
-      "fails": 18,
-      "avg_density": 0.048
+      "total_runs": 61,
+      "passes": 37,
+      "fails": 24,
+      "avg_density": 0.0461
     },
     "unknown": {
-      "total_runs": 19,
-      "passes": 17,
+      "total_runs": 22,
+      "passes": 20,
       "fails": 2,
-      "avg_density": 0.0226
+      "avg_density": 0.023
     },
     "taleo": {
-      "total_runs": 54,
+      "total_runs": 66,
       "passes": 5,
-      "fails": 49,
-      "avg_density": 0.2398
+      "fails": 61,
+      "avg_density": 0.2311
     },
     "greenhouse": {
-      "total_runs": 7,
-      "passes": 7,
+      "total_runs": 10,
+      "passes": 10,
       "fails": 0,
       "avg_density": 0.1538
     }

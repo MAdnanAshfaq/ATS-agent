@@ -4,7 +4,7 @@
     "workday": {
       "platform_id": "workday",
       "display_name": "Workday",
-      "url_signatures": ["myworkdayjobs.com", "workday.com"],
+      "url_signatures": ["myworkdayjobs.com", "workday.com", "myworkday.com", "wday.com", "workdaycdn.com"],
       "matching_style": "exact_weighted",
       "title_weight": "high",
       "format_tolerance": "strict",
@@ -118,7 +118,7 @@
     "ashby": {
       "platform_id": "ashby",
       "display_name": "Ashby",
-      "url_signatures": ["ashbyhq.com", "jobs.ashbyhq.com"],
+      "url_signatures": ["ashbyhq.com", "jobs.ashbyhq.com", "ashby.io", "app.ashbyhq.com"],
       "matching_style": "semantic",
       "title_weight": "medium",
       "format_tolerance": "lenient",

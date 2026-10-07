@@ -24,11 +24,14 @@ HTML_FINGERPRINTS = {
     "greenhouse": [
         "boards.greenhouse.io",
         "greenhouse.io",
+        "grnh.se",
         "gh_src",
         "grnhse",
         "greenhouse-embed",
         "api.greenhouse.io",
         "powered by greenhouse",
+        "greenhouse ats",
+        "greenhouse job board",
     ],
     "lever": [
         "jobs.lever.co",
@@ -37,16 +40,24 @@ HTML_FINGERPRINTS = {
         "lever.co/embed",
         "lever-apply",
         "powered by lever",
+        "lever ats",
     ],
     "workday": [
         "myworkdayjobs.com",
+        "myworkday.com",
         "workday.com",
+        "wday.com",
         "wd-job-posting",
         "workdaycdn.com",
+        "workdaycdn",
         "workday-job-details",
         "wday",
         "powered by workday",
         "workday careers",
+        "apply via workday",
+        "workday application",
+        "workday ats",
+        "workday requisition",
     ],
     "icims": [
         "icims.com",
@@ -54,47 +65,61 @@ HTML_FINGERPRINTS = {
         "careers-icims",
         "icims-content",
         "powered by icims",
+        "icims ats",
     ],
     "taleo": [
         "taleo.net",
         "taleo-job",
         "oraclecloud.com/career",
         "powered by taleo",
+        "oracle taleo",
+        "taleo ats",
     ],
     "ashby": [
         "ashbyhq.com",
         "jobs.ashbyhq.com",
+        "ashby.io",
+        "app.ashbyhq.com",
         "ashby-job-posting",
         "powered by ashby",
+        "ashby ats",
+        "apply via ashby",
+        "ashby application",
+        "ashby job",
     ],
     "smartrecruiters": [
         "smartrecruiters.com",
         "smartrecruiters-widget",
         "st-apply",
         "powered by smartrecruiters",
+        "smartrecruiters ats",
     ],
     "workable": [
         "workable.com",
         "apply.workable.com",
         "workable-jobs",
         "powered by workable",
+        "workable ats",
     ],
     "bamboohr": [
         "bamboohr.com/jobs",
         "bamboohr.com",
         "bamboohr-embed",
         "powered by bamboohr",
+        "bamboohr ats",
     ],
     "jobvite": [
         "jobvite.com",
         "jobvite-job-board",
         "powered by jobvite",
+        "jobvite ats",
     ],
     "successfactors": [
         "successfactors.com",
         "successfactors.eu",
         "jobs2web.com",
         "powered by successfactors",
+        "sap successfactors",
     ],
 }
 
@@ -163,20 +188,38 @@ def detect_ats_from_text(text: str) -> Tuple[AtsProfile, float, str, bool]:
     if not text or not text.strip():
         return get_safe_mode_profile(), 0.0, "safe_mode_fallback", False
 
-    # Check for embedded URLs in text
-    urls = re.findall(r'https?://[^\s<>"]+|www\.[^\s<>"]+', text)
+    text_lower = text.lower()
+
+    # Check for embedded URLs in text first
+    urls = re.findall(r'https?://[^\s<>"]+|www\.[^\s<>"]+|[\w.-]+\.(?:com|org|net|io|co)(?:/[^\s<>"]*)?', text)
     for u in urls:
         prof, conf, src, det = detect_ats_from_url(u)
         if det:
             return prof, conf, f"text_embedded_url_{src}", True
 
-    # Check HTML fingerprints against text
-    text_lower = text.lower()
+    # Check HTML / keyword fingerprints against text
     for plat_id, signatures in HTML_FINGERPRINTS.items():
         for sig in signatures:
             if sig.lower() in text_lower:
                 profile = get_profile(plat_id)
-                return profile, 0.80, "text_fingerprint", True
+                return profile, 0.85, "text_fingerprint", True
+
+    # Check contextual keyword mentions in text
+    context_patterns = {
+        "workday": r'\b(myworkdayjobs|workdayjobs|myworkday|workdaycdn)\b|\bworkday\b(?=[\s\S]{0,40}\b(?:careers|job|apply|portal|application|ats|requisition|posting)\b)|\b(?:careers|job|apply|portal|application|ats|requisition|posting)\b[\s\S]{0,40}\bworkday\b',
+        "ashby": r'\b(ashbyhq|jobs\.ashbyhq)\b|\bashby\b(?=[\s\S]{0,40}\b(?:careers|job|apply|portal|application|ats|requisition|posting)\b)|\b(?:careers|job|apply|portal|application|ats|requisition|posting)\b[\s\S]{0,40}\bashby\b',
+        "greenhouse": r'\b(greenhouse\.io|grnh\.se|gh_src)\b|\bgreenhouse\b(?=[\s\S]{0,40}\b(?:careers|job|apply|board|portal|application|ats)\b)',
+        "lever": r'\b(lever\.co)\b|\blever\b(?=[\s\S]{0,40}\b(?:careers|job|apply|portal|application|ats)\b)',
+        "taleo": r'\b(taleo\.net|oraclecloud\.com/career)\b|\btaleo\b',
+        "icims": r'\b(icims\.com|careers-icims)\b|\bicims\b',
+        "smartrecruiters": r'\bsmartrecruiters\b',
+        "workable": r'\bworkable\.com\b|\bworkable\b(?=[\s\S]{0,40}\b(?:careers|job|apply)\b)',
+    }
+
+    for plat_id, pattern in context_patterns.items():
+        if re.search(pattern, text_lower):
+            profile = get_profile(plat_id)
+            return profile, 0.80, "text_contextual_keyword", True
 
     return get_safe_mode_profile(), 0.0, "safe_mode_fallback", False
 
@@ -186,7 +229,23 @@ def detect_ats(
     html_content: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Public helper returning a dictionary suitable for API responses and UI dropdowns."""
-    profile, confidence, source, detected = detect_ats_from_url(url_or_text, html_content=html_content)
+    target_str = (url_or_text or "").strip()
+
+    # 1. Try URL / continuous memory / HTML detection
+    profile, confidence, source, detected = detect_ats_from_url(target_str, html_content=html_content)
+
+    # 2. If not detected via pure URL, try text scanning on target_str
+    if not detected and target_str:
+        text_prof, text_conf, text_src, text_det = detect_ats_from_text(target_str)
+        if text_det:
+            profile, confidence, source, detected = text_prof, text_conf, text_src, text_det
+
+    # 3. If still not detected, try text scanning on html_content (e.g. scraped body text)
+    if not detected and html_content:
+        html_prof, html_conf, html_src, html_det = detect_ats_from_text(html_content)
+        if html_det:
+            profile, confidence, source, detected = html_prof, html_conf, html_src, html_det
+
     return {
         "platform_id": profile.platform_id,
         "display_name": profile.display_name,
