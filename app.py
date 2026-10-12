@@ -3395,6 +3395,15 @@ def save_preview_edits():
                     pass
             full_master = dict(disk_master)
             full_master.update({k: v for k, v in updated_resume.items() if v is not None and v != ""})
+            if "contact" in full_master and isinstance(full_master["contact"], dict):
+                ct_m = dict(full_master["contact"])
+                if ct_m.get("phone"):
+                    ph_val = str(ct_m["phone"])
+                    if re.search(r'[a-zA-Z]', ph_val) or any(k in ph_val.lower() for k in ("linkedin", "http", "github", "www.", ".com")):
+                        if not ct_m.get("linkedin") and "linkedin" in ph_val.lower():
+                            ct_m["linkedin"] = ph_val
+                        ct_m["phone"] = ""
+                full_master["contact"] = ct_m
             updated_resume = full_master
 
             if instruction:
@@ -3476,6 +3485,12 @@ def save_preview_edits():
         if "contact" in updated_resume and isinstance(updated_resume["contact"], dict):
             cur_ct = dict(merged_resume.get("contact") or {})
             cur_ct.update({ck: cv for ck, cv in updated_resume["contact"].items() if cv})
+            if cur_ct.get("phone"):
+                ph_val = str(cur_ct["phone"])
+                if re.search(r'[a-zA-Z]', ph_val) or any(k in ph_val.lower() for k in ("linkedin", "http", "github", "www.", ".com")):
+                    if not cur_ct.get("linkedin") and "linkedin" in ph_val.lower():
+                        cur_ct["linkedin"] = ph_val
+                    cur_ct["phone"] = ""
             merged_resume["contact"] = cur_ct
         # Preserve section headings
         if "section_headings" in updated_resume:

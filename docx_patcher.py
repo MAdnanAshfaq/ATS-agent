@@ -35,15 +35,30 @@ def _get_para_full_text(para) -> str:
     return "".join(run.text for run in para.runs)
 
 
+SYMBOL_FONTS = {
+    'symbol', 'symbolmt', 'wingdings', 'wingdings 2', 'wingdings 3',
+    'webdings', 'mt extra', 'marlett', 'ms outlook'
+}
+
+
+def _sanitize_run_font(run, fallback_font: str = "Calibri"):
+    """Reset symbol or private-use icon fonts to normal document font to prevent character corruption."""
+    if run and run.font and run.font.name:
+        if run.font.name.strip().lower() in SYMBOL_FONTS:
+            run.font.name = fallback_font
+
+
 def _set_para_text_preserve_format(para, new_text: str):
     """
     Replace paragraph text while preserving the formatting of runs.
     If the paragraph has a label prefix (e.g. bold 'Languages: '),
     it preserves run[0]'s label and formatting, and puts new text into run[1].
-    Otherwise, preserves run[0]'s formatting and puts new text in run[0].
+    Otherwise, preserves run formatting and puts new text in the appropriate run,
+    strictly sanitizing any Symbol/Wingdings font names to prevent gibberish characters.
     """
     if not para.runs:
-        para.add_run(new_text)
+        run = para.add_run(new_text)
+        _sanitize_run_font(run)
         return
 
     full_orig = _get_para_full_text(para).strip()
@@ -59,14 +74,31 @@ def _set_para_text_preserve_format(para, new_text: str):
             val = new_text
             if val.startswith(label_prefix):
                 val = val[len(label_prefix):].strip()
+            _sanitize_run_font(para.runs[0])
+            _sanitize_run_font(para.runs[1])
             para.runs[0].text = label_prefix + " "
             para.runs[1].text = val
             for r in para.runs[2:]:
                 r.text = ""
             return
 
+    # If run[0] is just a symbol / bullet glyph (or SymbolMT font) and run[1] has actual body font:
+    r0 = para.runs[0]
+    r0_is_symbol = bool(r0.font and r0.font.name and r0.font.name.strip().lower() in SYMBOL_FONTS)
+    r0_is_glyph = r0.text.strip() in ('•', '·', '▪', '-', '*', '▸', '►', '')
+
+    if len(para.runs) > 1 and (r0_is_symbol or r0_is_glyph):
+        r0.text = ""
+        target_run = para.runs[1]
+        _sanitize_run_font(target_run)
+        target_run.text = new_text
+        for run in para.runs[2:]:
+            run.text = ""
+        return
+
     # Standard replacement: keep formatting of run[0], clear others
-    para.runs[0].text = new_text
+    _sanitize_run_font(r0)
+    r0.text = new_text
     for run in para.runs[1:]:
         run.text = ""
 
@@ -124,7 +156,12 @@ def _get_all_paragraphs_from_doc(doc):
 
 def _is_section_header(text: str) -> bool:
     """Check if a paragraph text looks like a major section header."""
+    if not text:
+        return False
     norm = _normalize(text)
+    clean = re.sub(r'^[•·▪▸►\*0-9.\-\s]+', '', norm).strip()
+    clean = re.sub(r'[:|;]$', '', clean).strip()
+
     headers = {
         "professional summary", "summary", "executive summary", "career profile", "profile",
         "technical skills", "skills", "skills & competencies", "core competencies",
@@ -132,7 +169,22 @@ def _is_section_header(text: str) -> bool:
         "education", "academic background", "certifications", "licenses & certifications",
         "projects", "key projects"
     }
-    return norm in headers or (len(norm) < 30 and any(h == norm for h in headers))
+    if clean in headers:
+        return True
+
+    if len(clean) <= 45:
+        all_kws = (
+            "education", "academic", "degree", "degrees", "credential", "qualification",
+            "coursework", "training", "university",
+            "experience", "employment", "work history", "career history", "professional background",
+            "skills", "competencies", "technologies", "expertise", "proficiencies", "technical stack",
+            "summary", "executive summary", "career summary", "profile", "about me",
+            "certifications", "certificates", "projects", "awards", "honors", "publications", "affiliations"
+        )
+        if any(kw in clean for kw in all_kws):
+            return True
+
+    return False
 
 
 def patch_docx_with_rewritten_resume(
@@ -558,6 +610,50 @@ def patch_docx_with_rewritten_resume(
                 _delete_paragraph(extra_p)
 
     print(f"[Patcher] Total bullet replacements made: {total_replacements}")
+
+    # ── 5. Patch Education (High-Fidelity Preservation & In-Place Update) ────
+    rewritten_edu = rewritten_resume.get("education", [])
+    if rewritten_edu:
+        edu_header_idx = None
+        for i, para in enumerate(all_paras):
+            text = _normalize(_get_para_full_text(para))
+            if any(k in text for k in ("education", "academic", "degree", "degrees", "qualifications")) and len(text) < 45 and _is_section_header(text):
+                edu_header_idx = i
+                break
+
+        if edu_header_idx is not None:
+            edu_paras = []
+            for j in range(edu_header_idx + 1, min(edu_header_idx + 12, len(all_paras))):
+                cand_text = _get_para_full_text(all_paras[j]).strip()
+                if not cand_text:
+                    continue
+                if _is_section_header(cand_text):
+                    break
+                edu_paras.append(all_paras[j])
+
+            if edu_paras and len(rewritten_edu) > 0:
+                first_edu = rewritten_edu[0]
+                inst = sanitize_text(first_edu.get("institution", "")).strip()
+                deg = sanitize_text(first_edu.get("degree", "")).strip()
+                fld = sanitize_text(first_edu.get("field", "")).strip()
+                gdate = sanitize_text(first_edu.get("graduation_date", "")).strip()
+
+                for ep in edu_paras:
+                    ep_text = _get_para_full_text(ep).strip()
+                    ep_norm = ep_text.lower()
+                    # University / School line
+                    if inst and (any(w in ep_norm for w in ("university", "college", "institute", "school", "academy", "polytechnic")) or _fuzzy_match_score(ep_text, inst) > 0.25):
+                        _set_para_text_preserve_format(ep, inst)
+                        print(f"[Patcher] Preserved & patched education institution: {inst}")
+                    # Degree line
+                    elif deg and (any(w in ep_norm for w in ("bachelor", "master", "phd", "b.s", "m.s", "associate", "bba", "bs", "ms", "degree")) or _fuzzy_match_score(ep_text, deg) > 0.25):
+                        deg_line = f"{deg} in {fld}" if (deg and fld and not deg.lower().endswith("in")) else (deg or fld)
+                        if "\t" in ep_text and gdate:
+                            deg_line = f"{deg_line}\t{gdate}"
+                        elif gdate and not any(gdate in _get_para_full_text(other) for other in edu_paras):
+                            deg_line = f"{deg_line}  |  {gdate}"
+                        _set_para_text_preserve_format(ep, deg_line)
+                        print(f"[Patcher] Preserved & patched education degree: {deg_line}")
 
     # Final sweep: purge any stray empty bullet points or orphaned list markers across entire document
     for p in list(doc.paragraphs):

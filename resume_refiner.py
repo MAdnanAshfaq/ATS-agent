@@ -162,7 +162,15 @@ JSON Schema:
         "bullets": ["Bullet 1", "Bullet 2"]
       }
     ],
-    "education": [],
+    "education": [
+      {
+        "institution": "University / College",
+        "degree": "Degree Title",
+        "field": "Field of Study",
+        "graduation_date": "Year or Range",
+        "gpa": "Optional GPA"
+      }
+    ],
     "projects": [],
     "certifications": []
   }
@@ -330,6 +338,24 @@ Return ONLY valid JSON now.
             refined["contact"] = current_resume["contact"]
         if "experience" not in refined and "experience" in current_resume:
             refined["experience"] = current_resume["experience"]
+
+        # Guarantee education, certifications, and projects preservation
+        if not refined.get("education"):
+            refined["education"] = current_resume.get("education") or base_resume.get("education") or []
+        if not refined.get("certifications"):
+            refined["certifications"] = current_resume.get("certifications") or base_resume.get("certifications") or []
+        if not refined.get("projects"):
+            refined["projects"] = current_resume.get("projects") or base_resume.get("projects") or []
+
+        # Sanitize contact phone if contaminated with LinkedIn/URL/letters
+        if "contact" in refined and isinstance(refined["contact"], dict):
+            ct = refined["contact"]
+            if ct.get("phone"):
+                ph_str = str(ct["phone"])
+                if re.search(r'[a-zA-Z]', ph_str) or any(k in ph_str.lower() for k in ("linkedin", "http", "github", "www.", ".com")):
+                    if not ct.get("linkedin") and "linkedin" in ph_str.lower():
+                        ct["linkedin"] = ph_str
+                    ct["phone"] = ""
 
         # Deterministic handler for target_role adjustments (e.g. user asks to remove "Con Ii" from title under name)
         inst_lower = (instruction or "").lower()

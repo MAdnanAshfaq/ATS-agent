@@ -5012,24 +5012,74 @@ function extractResumeFromPreviewDoc() {
   const contactLines = doc.querySelectorAll('.contact-line');
   if (contactLines && contactLines.length > 0) {
     const contactObj = Object.assign({}, base.contact || {});
+    // Clean any prior corrupted phone values
+    if (contactObj.phone && (/[a-zA-Z]/.test(contactObj.phone) || contactObj.phone.includes('linkedin') || contactObj.phone.includes('http') || contactObj.phone.includes('github'))) {
+      if (!contactObj.linkedin && contactObj.phone.includes('linkedin')) {
+        contactObj.linkedin = contactObj.phone;
+      }
+      contactObj.phone = "";
+    }
+
     contactLines.forEach(cl => {
-      const mailto = cl.querySelector('a[href^="mailto:"]');
+      // Direct data-edit attribute matching
+      const mailto = cl.querySelector('[data-edit="contact-email"], a[href^="mailto:"]');
       if (mailto && mailto.innerText.trim()) contactObj.email = mailto.innerText.trim();
+
+      const phoneEl = cl.querySelector('[data-edit="contact-phone"], a[href^="tel:"]');
+      if (phoneEl && phoneEl.innerText.trim()) {
+        const phTxt = phoneEl.innerText.trim();
+        if (!phTxt.includes('linkedin') && !phTxt.includes('http') && !/[a-zA-Z]/.test(phTxt)) {
+          contactObj.phone = phTxt;
+        }
+      }
+
+      const locEl = cl.querySelector('[data-edit="contact-location"]');
+      if (locEl && locEl.innerText.trim()) contactObj.location = locEl.innerText.trim();
+
+      const liEl = cl.querySelector('[data-edit="contact-linkedin"]');
+      if (liEl && liEl.innerText.trim()) contactObj.linkedin = liEl.innerText.trim();
+
+      const ghEl = cl.querySelector('[data-edit="contact-github"]');
+      if (ghEl && ghEl.innerText.trim()) contactObj.github = ghEl.innerText.trim();
+
+      const pfEl = cl.querySelector('[data-edit="contact-portfolio"]');
+      if (pfEl && pfEl.innerText.trim()) contactObj.portfolio = pfEl.innerText.trim();
+
+      // General link scanning fallback
       cl.querySelectorAll('a').forEach(a => {
         const href = (a.getAttribute('href') || '').toLowerCase();
         const text = a.innerText.trim();
-        if (href.includes('linkedin.com') || text.includes('linkedin.com')) contactObj.linkedin = text;
-        else if (href.includes('github.com') || text.includes('github.com')) contactObj.github = text;
+        if (href.includes('linkedin.com') || text.toLowerCase().includes('linkedin')) {
+          contactObj.linkedin = text;
+        } else if (href.includes('github.com') || text.toLowerCase().includes('github')) {
+          contactObj.github = text;
+        } else if (href.startsWith('mailto:') || (text.includes('@') && !text.includes('/'))) {
+          contactObj.email = text;
+        }
       });
+
+      // Split text fallback
       const parts = cl.innerText.split('|').map(s => s.trim()).filter(Boolean);
       parts.forEach(p => {
-        if (/[\+]?\d[\d\s\-()]{7,}\d/.test(p)) contactObj.phone = p;
-        else if (p.includes('@') && !contactObj.email) contactObj.email = p;
-        else if (!p.includes('linkedin') && !p.includes('github') && !p.includes('http') && p.length > 2 && p.length < 50) {
-          if (!contactObj.location) contactObj.location = p;
+        const pLower = p.toLowerCase();
+        if (pLower.includes('linkedin')) {
+          if (!contactObj.linkedin) contactObj.linkedin = p;
+        } else if (pLower.includes('github')) {
+          if (!contactObj.github) contactObj.github = p;
+        } else if (p.includes('@') && !contactObj.email) {
+          contactObj.email = p;
+        } else if (!pLower.includes('linkedin') && !pLower.includes('github') && !pLower.includes('http') && !pLower.includes('.com')) {
+          const digitsOnly = p.replace(/\D/g, '');
+          const hasLetters = /[a-zA-Z]/.test(p);
+          if (digitsOnly.length >= 7 && digitsOnly.length <= 15 && !hasLetters) {
+            contactObj.phone = p;
+          } else if (p.length >= 2 && p.length <= 60 && !contactObj.location) {
+            contactObj.location = p;
+          }
         }
       });
     });
+
     if (Object.keys(contactObj).length > 0) {
       base.contact = contactObj;
     }
@@ -5165,6 +5215,84 @@ function extractResumeFromPreviewDoc() {
 
   if (extractedExp.length > 0) {
     base.experience = extractedExp;
+  }
+
+  // 6. Education Extraction
+  const extractedEdu = [];
+  let eduHeaderEl = null;
+  doc.querySelectorAll('.section-title').forEach(el => {
+    const txt = (el.innerText || '').toLowerCase();
+    const sec = el.getAttribute('data-section');
+    if (sec === 'education' || txt.includes('education') || txt.includes('academic background')) {
+      eduHeaderEl = el;
+    }
+  });
+
+  if (eduHeaderEl) {
+    let curr = eduHeaderEl.nextElementSibling;
+    let currentEduObj = null;
+
+    while (curr && !curr.classList.contains('section-title')) {
+      if (curr.classList.contains('entry-item')) {
+        const degEl = curr.querySelector('[data-edit="edu-degree"], .two-col-left');
+        const dateEl = curr.querySelector('[data-edit="edu-date"], .two-col-right');
+        const schoolEl = curr.querySelector('[data-edit="edu-school"], .sub-left');
+        const gpaEl = curr.querySelector('.gpa-line, [data-edit="edu-gpa"]');
+
+        let degTxt = degEl ? degEl.innerText.trim() : "";
+        let schoolTxt = schoolEl ? schoolEl.innerText.trim() : "";
+        let dateTxt = dateEl ? dateEl.innerText.trim() : "";
+        let gpaTxt = gpaEl ? gpaEl.innerText.replace(/gpa:?\s*/i, "").trim() : "";
+
+        if (degTxt || schoolTxt) {
+          let deg = degTxt;
+          let fld = "";
+          if (deg.toLowerCase().includes(" in ")) {
+            const spl = deg.split(/\s+in\s+/i);
+            deg = spl[0].trim();
+            fld = spl.slice(1).join(" in ").trim();
+          }
+          extractedEdu.push({
+            institution: schoolTxt,
+            degree: deg,
+            field: fld,
+            graduation_date: dateTxt,
+            gpa: gpaTxt
+          });
+        }
+      } else if (curr.classList.contains('two-col-line')) {
+        const degEl = curr.querySelector('.two-col-left');
+        const dateEl = curr.querySelector('.two-col-right');
+        if (degEl && degEl.innerText.trim()) {
+          let degTxt = degEl.innerText.trim();
+          let deg = degTxt;
+          let fld = "";
+          if (deg.toLowerCase().includes(" in ")) {
+            const spl = deg.split(/\s+in\s+/i);
+            deg = spl[0].trim();
+            fld = spl.slice(1).join(" in ").trim();
+          }
+          currentEduObj = {
+            institution: "",
+            degree: deg,
+            field: fld,
+            graduation_date: dateEl ? dateEl.innerText.trim() : "",
+            gpa: ""
+          };
+          extractedEdu.push(currentEduObj);
+        }
+      } else if (curr.classList.contains('sub-line') && currentEduObj) {
+        const sEl = curr.querySelector('.sub-left');
+        if (sEl && sEl.innerText.trim()) {
+          currentEduObj.institution = sEl.innerText.trim();
+        }
+      }
+      curr = curr.nextElementSibling;
+    }
+  }
+
+  if (extractedEdu.length > 0) {
+    base.education = extractedEdu;
   }
 
   return base;

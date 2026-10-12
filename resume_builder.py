@@ -211,30 +211,39 @@ def build_resume_docx(
     
     # ─── HEADER: Contact lines (matching authentic layout) ────────────────────
     contact_parts = []
-    if contact.get("email"):
-        contact_parts.append(contact["email"])
-    if contact.get("phone"):
-        contact_parts.append(contact["phone"])
-    if contact.get("location"):
-        contact_parts.append(contact["location"])
-    if contact.get("portfolio"):
-        contact_parts.append(contact["portfolio"])
-    if contact.get("github"):
-        contact_parts.append(contact["github"])
-    
+    seen_contacts = set()
+
+    def _add_contact(val, is_phone=False):
+        if not val:
+            return
+        val_str = sanitize_text(str(val)).strip()
+        if not val_str:
+            return
+        # If marked as phone, reject if it contains links or letters
+        if is_phone:
+            if any(k in val_str.lower() for k in ("linkedin", "http", "github", "www.", ".com")):
+                return
+            if re.search(r'[a-zA-Z]', val_str):
+                return
+        val_lower = val_str.lower().rstrip('/')
+        if val_lower in seen_contacts:
+            return
+        seen_contacts.add(val_lower)
+        contact_parts.append(val_str)
+
+    _add_contact(contact.get("email"))
+    _add_contact(contact.get("phone"), is_phone=True)
+    _add_contact(contact.get("location"))
+    _add_contact(contact.get("linkedin"))
+    _add_contact(contact.get("github"))
+    _add_contact(contact.get("portfolio"))
+
     if contact_parts:
         contact_para = doc.add_paragraph()
         contact_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        add_paragraph_spacing(contact_para, space_before=0, space_after=1)
+        add_paragraph_spacing(contact_para, space_before=0, space_after=3)
         run = contact_para.add_run("   |   ".join(contact_parts))
         set_font(run, size=9.5, color=(40, 40, 40))
-    
-    if contact.get("linkedin"):
-        li_para = doc.add_paragraph()
-        li_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        add_paragraph_spacing(li_para, space_before=0, space_after=4)
-        run_li = li_para.add_run(contact["linkedin"])
-        set_font(run_li, size=9.5, color=(40, 40, 40))
     
     # ─── Dynamic Section Headings ─────────────────────────────────────────────
     headings = resume.get("section_headings", {}) or {}

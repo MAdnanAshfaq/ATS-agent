@@ -260,6 +260,9 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
       border-radius: 2px;
       min-height: 1.1em;
     }}
+    body.editor-mode-active a {{
+      cursor: text !important;
+    }}
     body.editor-mode-active [contenteditable="true"]:hover {{
       outline: 1.5px dashed rgba(2, 132, 199, 0.45) !important;
       background: rgba(2, 132, 199, 0.04) !important;
@@ -282,20 +285,45 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
   </div>
   <script>
     function enableEditor(active) {{
-      var selector = "[data-edit], .section-title, .candidate-name, .target-role, .two-col-left, .two-col-right, .sub-left, .sub-right, .bullet-item, .summary-text, .skill-category-list";
+      var selector = "[data-edit], .section-title, .candidate-name, .target-role, .two-col-left, .two-col-right, .sub-left, .sub-right, .bullet-item, .summary-text, .skill-category-list, .skill-category-label, .contact-line, .contact-line a, .contact-line span:not(.contact-sep), .gpa-line, p, li, h1, h2, h3, h4";
       if (active) {{
         document.body.classList.add("editor-mode-active");
         document.querySelectorAll(selector).forEach(function(el) {{
-          el.setAttribute("contenteditable", "true");
-          el.setAttribute("spellcheck", "false");
+          if (!el.classList.contains("contact-sep") && el.tagName !== "UL") {{
+            el.setAttribute("contenteditable", "true");
+            el.setAttribute("spellcheck", "false");
+          }}
         }});
+        // Ensure every leaf text node inside resume sheet is editable so no section/word is locked
+        var sheet = document.querySelector(".resume-sheet");
+        if (sheet) {{
+          sheet.querySelectorAll("*").forEach(function(el) {{
+            if (el.classList.contains("contact-sep") || el.tagName === "UL" || el.children.length > 0) return;
+            if (el.innerText && el.innerText.trim().length > 0) {{
+              el.setAttribute("contenteditable", "true");
+              el.setAttribute("spellcheck", "false");
+            }}
+          }});
+        }}
       }} else {{
         document.body.classList.remove("editor-mode-active");
-        document.querySelectorAll(selector).forEach(function(el) {{
+        document.querySelectorAll('[contenteditable="true"]').forEach(function(el) {{
           el.removeAttribute("contenteditable");
         }});
       }}
     }}
+
+    // Intercept clicks on links in editor mode so clicking focuses text for inline editing instead of navigating away
+    document.addEventListener("click", function(e) {{
+      if (document.body.classList.contains("editor-mode-active")) {{
+        var a = e.target.closest("a");
+        if (a) {{
+          e.preventDefault();
+          e.stopPropagation();
+          a.focus();
+        }}
+      }}
+    }}, true);
 
     if (!window.matchMedia || !window.matchMedia('print').matches) {{
       enableEditor(true);
@@ -508,24 +536,24 @@ def resume_json_to_html(resume: dict, company: str = "", role: str = "") -> str:
     contact_parts = []
     if contact.get("email"):
         em = html.escape(contact["email"])
-        contact_parts.append(f'<a href="mailto:{em}">{em}</a>')
+        contact_parts.append(f'<a href="mailto:{em}" data-edit="contact-email">{em}</a>')
     if contact.get("phone"):
         ph = html.escape(contact["phone"])
-        contact_parts.append(f'<a href="tel:{ph}">{ph}</a>')
+        contact_parts.append(f'<a href="tel:{ph}" data-edit="contact-phone">{ph}</a>')
     if contact.get("location"):
-        contact_parts.append(f'<span>{html.escape(contact["location"])}</span>')
+        contact_parts.append(f'<span data-edit="contact-location">{html.escape(contact["location"])}</span>')
     if contact.get("portfolio"):
         pf = html.escape(contact["portfolio"])
         url = pf if pf.startswith("http") else f"https://{pf}"
-        contact_parts.append(f'<a href="{url}" target="_blank">{pf}</a>')
+        contact_parts.append(f'<a href="{url}" target="_blank" data-edit="contact-portfolio">{pf}</a>')
     if contact.get("github"):
         gh = html.escape(contact["github"])
         url = gh if gh.startswith("http") else f"https://{gh}"
-        contact_parts.append(f'<a href="{url}" target="_blank">{gh}</a>')
+        contact_parts.append(f'<a href="{url}" target="_blank" data-edit="contact-github">{gh}</a>')
     if contact.get("linkedin"):
         li = html.escape(contact["linkedin"])
         url = li if li.startswith("http") else f"https://{li}"
-        contact_parts.append(f'<a href="{url}" target="_blank">{li}</a>')
+        contact_parts.append(f'<a href="{url}" target="_blank" data-edit="contact-linkedin">{li}</a>')
 
     if contact_parts:
         sep = '<span class="contact-sep">|</span>'
@@ -555,7 +583,7 @@ def resume_json_to_html(resume: dict, company: str = "", role: str = "") -> str:
             if cat_skills:
                 skills_str = ", ".join(cat_skills)
                 body_parts.append(
-                    f'<div class="skill-category" data-cat="{html.escape(cat_name)}"><span class="skill-category-label">{html.escape(cat_name)}:</span> <span class="skill-category-list" data-edit="skills-list">{html.escape(skills_str)}</span></div>'
+                    f'<div class="skill-category" data-cat="{html.escape(cat_name)}"><span class="skill-category-label" data-edit="skill-cat-label">{html.escape(cat_name)}:</span> <span class="skill-category-list" data-edit="skills-list">{html.escape(skills_str)}</span></div>'
                 )
 
     # 4. Professional Experience
@@ -618,7 +646,7 @@ def resume_json_to_html(resume: dict, company: str = "", role: str = "") -> str:
             if inst and deg_title != inst:
                 body_parts.append(f'<div class="sub-line"><span class="sub-left" data-edit="edu-school">{html.escape(inst)}</span></div>')
             if gpa:
-                body_parts.append(f'<div style="font-size: 9.5pt; color: #374151;">GPA: {html.escape(gpa)}</div>')
+                body_parts.append(f'<div class="gpa-line" data-edit="edu-gpa" style="font-size: 9.5pt; color: #374151;">GPA: {html.escape(gpa)}</div>')
             body_parts.append('</div>')
 
     # 6. Certifications
@@ -766,12 +794,20 @@ def docx_to_html(docx_path: str, company: str = "", role: str = "") -> str:
                     c_html = []
                     for p in parts:
                         if "@" in p and not p.startswith("http"):
-                            c_html.append(f'<a href="mailto:{html.escape(p)}">{html.escape(p)}</a>')
-                        elif "http" in p or "linkedin" in p or "github" in p:
+                            c_html.append(f'<a href="mailto:{html.escape(p)}" data-edit="contact-email">{html.escape(p)}</a>')
+                        elif "linkedin" in p.lower():
                             url = p if p.startswith("http") else f"https://{p}"
-                            c_html.append(f'<a href="{url}" target="_blank">{html.escape(p)}</a>')
+                            c_html.append(f'<a href="{url}" target="_blank" data-edit="contact-linkedin">{html.escape(p)}</a>')
+                        elif "github" in p.lower():
+                            url = p if p.startswith("http") else f"https://{p}"
+                            c_html.append(f'<a href="{url}" target="_blank" data-edit="contact-github">{html.escape(p)}</a>')
+                        elif "http" in p:
+                            url = p if p.startswith("http") else f"https://{p}"
+                            c_html.append(f'<a href="{url}" target="_blank" data-edit="contact-portfolio">{html.escape(p)}</a>')
+                        elif re.match(r'^\+?[\d\s\-().]{7,}$', p):
+                            c_html.append(f'<a href="tel:{html.escape(p)}" data-edit="contact-phone">{html.escape(p)}</a>')
                         else:
-                            c_html.append(f'<span>{html.escape(p)}</span>')
+                            c_html.append(f'<span data-edit="contact-location">{html.escape(p)}</span>')
                     sep = '<span class="contact-sep">|</span>'
                     body_parts.append(f'<div class="contact-line" style="margin-bottom: 4px;">{sep.join(c_html)}</div>')
                     continue
@@ -853,12 +889,12 @@ def docx_to_html(docx_path: str, company: str = "", role: str = "") -> str:
             cat_label = raw_text[:colon_idx + 1]
             cat_rest = raw_text[colon_idx + 1:].strip()
             body_parts.append(
-                f'<div class="skill-category"><span class="skill-category-label">{html.escape(cat_label)}</span> {html.escape(cat_rest)}</div>'
+                f'<div class="skill-category"><span class="skill-category-label" data-edit="skill-cat-label">{html.escape(cat_label)}</span> <span class="skill-category-list" data-edit="skills-list">{html.escape(cat_rest)}</span></div>'
             )
             continue
 
         # Normal paragraph
-        body_parts.append(f'<p class="summary-text">{html.escape(raw_text)}</p>')
+        body_parts.append(f'<p class="summary-text" data-edit="summary">{html.escape(raw_text)}</p>')
 
     if header_open:
         body_parts.append("</div>")
