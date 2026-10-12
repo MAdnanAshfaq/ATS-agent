@@ -155,36 +155,44 @@ def _get_all_paragraphs_from_doc(doc):
 
 
 def _is_section_header(text: str) -> bool:
-    """Check if a paragraph text looks like a major section header."""
+    """
+    Check if a paragraph text looks like a major section header.
+    Strictly avoids false positives on educational degree lines, job titles, or date lines.
+    """
     if not text:
         return False
     norm = _normalize(text)
     clean = re.sub(r'^[•·▪▸►\*0-9.\-\s]+', '', norm).strip()
     clean = re.sub(r'[:|;]$', '', clean).strip()
 
-    headers = {
+    # Lines with tabs or graduation/employment years (e.g. 2019, 2021) are NEVER section headers
+    if '\t' in text or re.search(r'\b(19|20)\d{2}\b', clean):
+        return False
+
+    # Lines with degree phrases or job titles are NEVER section headers
+    if any(k in clean for k in ("bachelor", "master", "doctor", "phd", "degree in", "science in", "arts in", "engineer", "developer", "architect", "analyst")):
+        return False
+
+    exact_headers = {
         "professional summary", "summary", "executive summary", "career profile", "profile",
         "technical skills", "skills", "skills & competencies", "core competencies",
         "professional experience", "work experience", "experience", "employment history",
         "education", "academic background", "certifications", "licenses & certifications",
-        "projects", "key projects"
+        "projects", "key projects", "awards", "publications", "affiliations"
     }
-    if clean in headers:
+    if clean in exact_headers:
         return True
 
-    if len(clean) <= 45:
-        all_kws = (
-            "education", "academic", "degree", "degrees", "credential", "qualification",
-            "coursework", "training", "university",
-            "experience", "employment", "work history", "career history", "professional background",
-            "skills", "competencies", "technologies", "expertise", "proficiencies", "technical stack",
-            "summary", "executive summary", "career summary", "profile", "about me",
-            "certifications", "certificates", "projects", "awards", "honors", "publications", "affiliations"
+    if len(clean) <= 35:
+        primary_kws = (
+            "summary", "skills", "experience", "education",
+            "certifications", "certificates", "projects"
         )
-        if any(kw in clean for kw in all_kws):
+        if any(kw == clean or clean.startswith(kw) or clean.endswith(kw) for kw in primary_kws):
             return True
 
     return False
+
 
 
 def patch_docx_with_rewritten_resume(
@@ -284,6 +292,58 @@ def patch_docx_with_rewritten_resume(
                 # Explicit empty string: user requested title removal under their name
                 _set_para_text_preserve_format(all_paras[1], "")
                 print(f"[Patcher] Cleared target role subtitle under candidate name as requested")
+
+    # ── 1b. Harmonize Contact Header (Deduplicate & Eliminate Stray LinkedIn) ─
+    contact = rewritten_resume.get("contact", {})
+    if isinstance(contact, dict) and contact:
+        contact_parts = []
+        seen_items = set()
+
+        def _add_c(val, is_ph=False):
+            if not val:
+                return
+            s = sanitize_text(str(val)).strip()
+            if not s:
+                return
+            if is_ph:
+                if any(k in s.lower() for k in ("linkedin", "http", "github", "www.", ".com")) or re.search(r'[a-zA-Z]', s):
+                    return
+            norm = s.lower().rstrip('/')
+            if norm not in seen_items:
+                seen_items.add(norm)
+                contact_parts.append(s)
+
+        _add_c(contact.get("email"))
+        _add_c(contact.get("phone"), is_ph=True)
+        _add_c(contact.get("location"))
+        _add_c(contact.get("linkedin"))
+        _add_c(contact.get("github"))
+        _add_c(contact.get("portfolio"))
+
+        if contact_parts:
+            unified_contact = "   |   ".join(contact_parts)
+            contact_idx = 1
+            if len(all_paras) > 2:
+                p1_txt = _get_para_full_text(all_paras[1]).strip()
+                if p1_txt and "@" not in p1_txt and not p1_txt.startswith("+") and not any(k in p1_txt.lower() for k in ("linkedin", ".com", "|")):
+                    contact_idx = 2
+
+            # Locate first major section header
+            first_hdr_idx = len(all_paras)
+            for idx in range(contact_idx, len(all_paras)):
+                if _is_section_header(_get_para_full_text(all_paras[idx])):
+                    first_hdr_idx = idx
+                    break
+
+            if contact_idx < first_hdr_idx:
+                _set_para_text_preserve_format(all_paras[contact_idx], unified_contact)
+                all_paras[contact_idx].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                print(f"[Patcher] Harmonized unified contact line: {unified_contact}")
+
+                # Delete any extra contact/stray paragraphs before first header (e.g. duplicate LinkedIn on line 3)
+                for extra_p in list(all_paras[contact_idx + 1:first_hdr_idx]):
+                    _delete_paragraph(extra_p)
+                all_paras = list(_get_all_paragraphs_from_doc(doc))
 
     # ── 2. Patch Professional Summary ─────────────────────────────────────────
     rewritten_summary = rewritten_resume.get("summary", "").strip()
@@ -617,7 +677,7 @@ def patch_docx_with_rewritten_resume(
         edu_header_idx = None
         for i, para in enumerate(all_paras):
             text = _normalize(_get_para_full_text(para))
-            if any(k in text for k in ("education", "academic", "degree", "degrees", "qualifications")) and len(text) < 45 and _is_section_header(text):
+            if any(k in text for k in ("education", "academic background", "academic history")) and _is_section_header(text):
                 edu_header_idx = i
                 break
 
@@ -638,22 +698,36 @@ def patch_docx_with_rewritten_resume(
                 fld = sanitize_text(first_edu.get("field", "")).strip()
                 gdate = sanitize_text(first_edu.get("graduation_date", "")).strip()
 
+                # Clean any corrupted characters like '\ufffd'
+                deg = deg.replace('\ufffd', "'").replace('?', "'") if deg else deg
+
+                deg_patched = False
+                inst_patched = False
+
                 for ep in edu_paras:
                     ep_text = _get_para_full_text(ep).strip()
                     ep_norm = ep_text.lower()
-                    # University / School line
-                    if inst and (any(w in ep_norm for w in ("university", "college", "institute", "school", "academy", "polytechnic")) or _fuzzy_match_score(ep_text, inst) > 0.25):
-                        _set_para_text_preserve_format(ep, inst)
-                        print(f"[Patcher] Preserved & patched education institution: {inst}")
-                    # Degree line
-                    elif deg and (any(w in ep_norm for w in ("bachelor", "master", "phd", "b.s", "m.s", "associate", "bba", "bs", "ms", "degree")) or _fuzzy_match_score(ep_text, deg) > 0.25):
+                    is_deg = any(w in ep_norm for w in ("bachelor", "master", "phd", "b.s", "m.s", "associate", "bba", "bs", "ms", "degree", "diploma"))
+
+                    # Identify Degree line vs Institution line
+                    if (not deg_patched and is_deg) or (not deg_patched and not inst_patched and len(edu_paras) == 2 and not any(w in ep_norm for w in ("university", "college", "institute", "school"))):
                         deg_line = f"{deg} in {fld}" if (deg and fld and not deg.lower().endswith("in")) else (deg or fld)
                         if "\t" in ep_text and gdate:
                             deg_line = f"{deg_line}\t{gdate}"
                         elif gdate and not any(gdate in _get_para_full_text(other) for other in edu_paras):
                             deg_line = f"{deg_line}  |  {gdate}"
                         _set_para_text_preserve_format(ep, deg_line)
+                        deg_patched = True
                         print(f"[Patcher] Preserved & patched education degree: {deg_line}")
+                    elif not inst_patched and inst:
+                        _set_para_text_preserve_format(ep, inst)
+                        inst_patched = True
+                        print(f"[Patcher] Preserved & patched education institution: {inst}")
+                    elif not inst_patched and not inst:
+                        # If template had corrupted font string like 'P t t i T l' or single spaced letters:
+                        if re.match(r'^([A-Za-z]\s+)+[A-Za-z]$', ep_text) or any(c in ep_text for c in ('\ufffd', '')):
+                            _set_para_text_preserve_format(ep, "")
+
 
     # Final sweep: purge any stray empty bullet points or orphaned list markers across entire document
     for p in list(doc.paragraphs):

@@ -1792,6 +1792,154 @@ def download_master_resume():
     )
 
 
+def _ensure_clean_resume_file(target_path: Path, is_pdf: bool, is_docx: bool, user_data_dir: Path, user_output_dir: Path) -> Path:
+    """
+    Ensure the downloaded resume .docx or .pdf has no stale cache, no font corruption (e.g. 'P t t i T l'),
+    no doubled LinkedIn links, and has 100% clean formatting and real university names.
+    """
+    if not (is_pdf or is_docx):
+        return target_path
+
+    target_dir = target_path.parent if target_path.is_file() else target_path
+    json_path = target_dir / "tailored_resume.json"
+
+    # If tailored_resume.json does not exist locally, check NeonDB history for authenticated user
+    if not json_path.exists() and db_layer.is_db_available() and current_user.is_authenticated:
+        try:
+            hist = db_layer.db_get_history(current_user.username)
+            for h in hist:
+                t_json = h.get("tailored_resume") or h.get("resume_json")
+                if t_json:
+                    out_f = h.get("output_file", "")
+                    if target_dir.name.lower() in out_f.lower() or target_path.stem.lower() in out_f.lower():
+                        target_dir.mkdir(parents=True, exist_ok=True)
+                        with open(json_path, "w", encoding="utf-8") as jf:
+                            json.dump(t_json if isinstance(t_json, dict) else json.loads(t_json), jf, indent=2)
+                        break
+        except Exception as e:
+            print(f"[Download Clean] Note restoring from DB: {e}")
+
+    if not json_path.exists():
+        return target_path
+
+    try:
+        with open(json_path, "r", encoding="utf-8") as jf:
+            resume_data = json.load(jf)
+
+        # 1. Clean contact phone in JSON if corrupted with LinkedIn URL
+        dirty_json = False
+        if "contact" in resume_data and isinstance(resume_data["contact"], dict):
+            ct = resume_data["contact"]
+            ph = str(ct.get("phone") or "")
+            if ph and (any(k in ph.lower() for k in ("linkedin", "http", "github", "www.", ".com")) or re.search(r'[a-zA-Z]', ph)):
+                if not ct.get("linkedin") and "linkedin" in ph.lower():
+                    ct["linkedin"] = ph
+                ct["phone"] = ""
+                dirty_json = True
+
+        # 2. Guarantee institution in education
+        if "education" in resume_data and isinstance(resume_data["education"], list) and resume_data["education"]:
+            first_edu = resume_data["education"][0]
+            if not first_edu.get("institution"):
+                base_edu = []
+                user_res_path = user_data_dir / "base_resume.json"
+                if user_res_path.exists():
+                    try:
+                        with open(user_res_path, "r", encoding="utf-8") as rf:
+                            b_res = json.load(rf)
+                            base_edu = b_res.get("education", [])
+                    except Exception:
+                        pass
+                if base_edu and base_edu[0].get("institution"):
+                    first_edu["institution"] = base_edu[0]["institution"]
+                    dirty_json = True
+
+        if dirty_json:
+            with open(json_path, "w", encoding="utf-8") as jf:
+                json.dump(resume_data, jf, indent=2, ensure_ascii=False)
+
+        # 3. Check if target docx needs re-patching
+        docx_cand = target_path if target_path.suffix.lower() == ".docx" else target_path.with_suffix(".docx")
+        needs_rebuild = False
+
+        if request.args.get("t") or request.args.get("force") or request.args.get("refresh"):
+            needs_rebuild = True
+
+        if not docx_cand.exists():
+            needs_rebuild = True
+        else:
+            try:
+                import docx as docx_module
+                d_check = docx_module.Document(str(docx_cand))
+                for p in d_check.paragraphs:
+                    p_text = p.text
+                    if "P t t i T l" in p_text or "PTiiit" in p_text or "\ufffd" in p_text:
+                        needs_rebuild = True
+                        break
+            except Exception:
+                needs_rebuild = True
+
+        if needs_rebuild:
+            user_orig_docx = user_data_dir / "master_resume_original.docx"
+            orig_docx_path = user_orig_docx if user_orig_docx.exists() else (BASE_DIR / "master_resume_original.docx")
+            effective_role = resume_data.get("target_role") or "Resume"
+            effective_comp = target_dir.name.split("_")[0] if "_" in target_dir.name else "Company"
+
+            new_docx = None
+            if orig_docx_path.exists():
+                try:
+                    from docx_patcher import patch_docx_with_rewritten_resume
+                    new_docx = patch_docx_with_rewritten_resume(
+                        original_docx_path=str(orig_docx_path),
+                        rewritten_resume=resume_data,
+                        company=effective_comp,
+                        role=effective_role,
+                        output_dir=str(target_dir.parent if target_dir.parent != user_output_dir else target_dir),
+                    )
+                except Exception as pe:
+                    print(f"[Download Clean] Patcher note: {pe}")
+
+            if not new_docx or not os.path.exists(new_docx):
+                from resume_builder import build_resume_docx
+                new_docx = build_resume_docx(
+                    resume=resume_data,
+                    company=effective_comp,
+                    role=effective_role,
+                    output_dir=str(target_dir.parent if target_dir.parent != user_output_dir else target_dir),
+                )
+
+            if new_docx and os.path.exists(new_docx):
+                if str(docx_cand) != str(new_docx):
+                    try:
+                        shutil.copy2(new_docx, docx_cand)
+                    except Exception:
+                        pass
+                else:
+                    docx_cand = Path(new_docx)
+
+                if is_pdf or target_path.suffix.lower() == ".pdf":
+                    from resume_builder import convert_to_pdf
+                    pdf_res = convert_to_pdf(str(docx_cand))
+                    if not pdf_res or not os.path.exists(pdf_res):
+                        try:
+                            from resume_html import docx_to_html, generate_pdf_from_html
+                            cand_pdf = str(docx_cand.with_suffix(".pdf"))
+                            html_c = docx_to_html(str(docx_cand))
+                            if generate_pdf_from_html(html_c, cand_pdf):
+                                pdf_res = cand_pdf
+                        except Exception as pe:
+                            print(f"[Download Clean] HTML PDF note: {pe}")
+                    if pdf_res and os.path.exists(pdf_res):
+                        return Path(pdf_res).resolve()
+
+                return Path(docx_cand).resolve()
+
+    except Exception as e:
+        print(f"[Download Clean] Error ensuring clean resume: {e}")
+
+    return target_path
+
+
 @app.route("/api/download/<path:filepath>")
 @app.route("/download/<path:filepath>")
 @app.route("/api/<path:filepath>")
@@ -2058,6 +2206,9 @@ def download_file(filepath):
 
     if not target_path.exists() or not target_path.is_file():
         return jsonify({"error": f"File '{filepath}' not found"}), 404
+
+    # Ensure document is clean of font corruption, duplicate links, or stale template artifacts
+    target_path = _ensure_clean_resume_file(target_path, is_pdf_req, is_docx_req, user_data_dir, user_output_dir)
 
     # Determine correct download filename and MIME type
     download_name = target_path.name

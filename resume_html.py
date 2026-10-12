@@ -534,26 +534,59 @@ def resume_json_to_html(resume: dict, company: str = "", role: str = "") -> str:
 
     # Contact line
     contact_parts = []
-    if contact.get("email"):
-        em = html.escape(contact["email"])
+    seen_contacts = set()
+
+    email_val = contact.get("email")
+    if email_val:
+        em = html.escape(str(email_val).strip())
         contact_parts.append(f'<a href="mailto:{em}" data-edit="contact-email">{em}</a>')
-    if contact.get("phone"):
-        ph = html.escape(contact["phone"])
-        contact_parts.append(f'<a href="tel:{ph}" data-edit="contact-phone">{ph}</a>')
-    if contact.get("location"):
-        contact_parts.append(f'<span data-edit="contact-location">{html.escape(contact["location"])}</span>')
-    if contact.get("portfolio"):
-        pf = html.escape(contact["portfolio"])
-        url = pf if pf.startswith("http") else f"https://{pf}"
-        contact_parts.append(f'<a href="{url}" target="_blank" data-edit="contact-portfolio">{pf}</a>')
-    if contact.get("github"):
-        gh = html.escape(contact["github"])
-        url = gh if gh.startswith("http") else f"https://{gh}"
-        contact_parts.append(f'<a href="{url}" target="_blank" data-edit="contact-github">{gh}</a>')
-    if contact.get("linkedin"):
-        li = html.escape(contact["linkedin"])
-        url = li if li.startswith("http") else f"https://{li}"
-        contact_parts.append(f'<a href="{url}" target="_blank" data-edit="contact-linkedin">{li}</a>')
+        seen_contacts.add(em.lower())
+
+    phone_val = str(contact.get("phone") or "").strip()
+    if phone_val:
+        # Check if phone is polluted with LinkedIn URL or letters
+        if any(k in phone_val.lower() for k in ("linkedin", "http", "github", "www.", ".com")) or re.search(r'[a-zA-Z]', phone_val):
+            if not contact.get("linkedin") and "linkedin" in phone_val.lower():
+                contact["linkedin"] = phone_val
+            phone_val = ""
+        elif phone_val.lower() not in seen_contacts:
+            ph = html.escape(phone_val)
+            contact_parts.append(f'<a href="tel:{ph}" data-edit="contact-phone">{ph}</a>')
+            seen_contacts.add(phone_val.lower())
+
+    loc_val = contact.get("location")
+    if loc_val:
+        loc_str = str(loc_val).strip()
+        if loc_str.lower() not in seen_contacts:
+            contact_parts.append(f'<span data-edit="contact-location">{html.escape(loc_str)}</span>')
+            seen_contacts.add(loc_str.lower())
+
+    li_val = contact.get("linkedin")
+    if li_val:
+        li_str = str(li_val).strip()
+        if li_str.lower().rstrip('/') not in seen_contacts:
+            li_esc = html.escape(li_str)
+            url = li_str if li_str.startswith("http") else f"https://{li_str}"
+            contact_parts.append(f'<a href="{url}" target="_blank" data-edit="contact-linkedin">{li_esc}</a>')
+            seen_contacts.add(li_str.lower().rstrip('/'))
+
+    gh_val = contact.get("github")
+    if gh_val:
+        gh_str = str(gh_val).strip()
+        if gh_str.lower().rstrip('/') not in seen_contacts:
+            gh_esc = html.escape(gh_str)
+            url = gh_str if gh_str.startswith("http") else f"https://{gh_str}"
+            contact_parts.append(f'<a href="{url}" target="_blank" data-edit="contact-github">{gh_esc}</a>')
+            seen_contacts.add(gh_str.lower().rstrip('/'))
+
+    pf_val = contact.get("portfolio")
+    if pf_val:
+        pf_str = str(pf_val).strip()
+        if pf_str.lower().rstrip('/') not in seen_contacts:
+            pf_esc = html.escape(pf_str)
+            url = pf_str if pf_str.startswith("http") else f"https://{pf_str}"
+            contact_parts.append(f'<a href="{url}" target="_blank" data-edit="contact-portfolio">{pf_esc}</a>')
+            seen_contacts.add(pf_str.lower().rstrip('/'))
 
     if contact_parts:
         sep = '<span class="contact-sep">|</span>'
@@ -733,6 +766,7 @@ def docx_to_html(docx_path: str, company: str = "", role: str = "") -> str:
     header_open = False
     header_done = False
     candidate_name_done = False
+    seen_contact_items = set()
 
     try:
         paras = list(_get_all_paragraphs_from_doc(doc))
@@ -793,23 +827,33 @@ def docx_to_html(docx_path: str, company: str = "", role: str = "") -> str:
                     parts = [p.strip() for p in re.split(r'\s*\|\s*', raw_text) if p.strip()]
                     c_html = []
                     for p in parts:
+                        norm_p = p.lower().rstrip('/')
+                        if norm_p in seen_contact_items:
+                            continue
                         if "@" in p and not p.startswith("http"):
+                            seen_contact_items.add(norm_p)
                             c_html.append(f'<a href="mailto:{html.escape(p)}" data-edit="contact-email">{html.escape(p)}</a>')
                         elif "linkedin" in p.lower():
+                            seen_contact_items.add(norm_p)
                             url = p if p.startswith("http") else f"https://{p}"
                             c_html.append(f'<a href="{url}" target="_blank" data-edit="contact-linkedin">{html.escape(p)}</a>')
                         elif "github" in p.lower():
+                            seen_contact_items.add(norm_p)
                             url = p if p.startswith("http") else f"https://{p}"
                             c_html.append(f'<a href="{url}" target="_blank" data-edit="contact-github">{html.escape(p)}</a>')
                         elif "http" in p:
+                            seen_contact_items.add(norm_p)
                             url = p if p.startswith("http") else f"https://{p}"
                             c_html.append(f'<a href="{url}" target="_blank" data-edit="contact-portfolio">{html.escape(p)}</a>')
                         elif re.match(r'^\+?[\d\s\-().]{7,}$', p):
+                            seen_contact_items.add(norm_p)
                             c_html.append(f'<a href="tel:{html.escape(p)}" data-edit="contact-phone">{html.escape(p)}</a>')
                         else:
+                            seen_contact_items.add(norm_p)
                             c_html.append(f'<span data-edit="contact-location">{html.escape(p)}</span>')
-                    sep = '<span class="contact-sep">|</span>'
-                    body_parts.append(f'<div class="contact-line" style="margin-bottom: 4px;">{sep.join(c_html)}</div>')
+                    if c_html:
+                        sep = '<span class="contact-sep">|</span>'
+                        body_parts.append(f'<div class="contact-line" style="margin-bottom: 4px;">{sep.join(c_html)}</div>')
                     continue
                 elif len(raw_text) < 65 and not is_bullet and not any(k in raw_text.lower() for k in ("experience", "education", "summary", "skills", "projects")):
                     # Target role subtitle directly under name
