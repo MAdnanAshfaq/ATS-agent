@@ -55,20 +55,22 @@ def is_key_invalid_error(e: Exception) -> bool:
 
 
 def extract_retry_delay(err: Exception) -> float:
-    """Extract Google's requested backoff delay in seconds (default 10s)."""
+    """Extract Google's requested backoff delay in seconds."""
     msg = str(err)
-    m = re.search(r"retry in\s+([\d\.]+)\s*s", msg, re.IGNORECASE)
-    if m:
-        try:
-            return min(float(m.group(1)) + 1.5, 45.0)
-        except Exception:
-            pass
     m2 = re.search(r"retryDelay['\"]?:\s*['\"]?(\d+)s?", msg, re.IGNORECASE)
     if m2:
         try:
-            return min(float(m2.group(1)) + 1.5, 45.0)
+            return float(m2.group(1))
         except Exception:
             pass
+    m_hms = re.search(r"retry in\s+(?:(\d+)h)?(?:(\d+)m)?(?:([\d\.]+)s)?", msg, re.IGNORECASE)
+    if m_hms and any(m_hms.groups()):
+        h = float(m_hms.group(1) or 0)
+        m = float(m_hms.group(2) or 0)
+        s = float(m_hms.group(3) or 0)
+        tot = h * 3600.0 + m * 60.0 + s
+        if tot > 0:
+            return tot
     return 10.0
 
 
@@ -89,12 +91,10 @@ _MODEL_LOCK = threading.Lock()
 DEFAULT_MODELS_CASCADE = [
     "gemini-3.5-flash",
     "gemini-3.5-flash-lite",
-    "gemma-4-26b-a4b-it",
-    "gemini-3.7-flash",
-    "gemma-4-31b-it",
     "gemini-flash-latest",
+    "gemini-3.7-flash",
+    "gemini-3.8-flash",
     "gemini-3.6-flash",
-    "gemini-2.5-flash",
 ]
 
 
@@ -138,7 +138,7 @@ def get_standard_genai_config(
 
 
 def record_model_failure(model_name: str, error: Exception):
-    """Mark a model as temporarily spiked/cooling down (e.g. 5 minutes on 503, or rate-limited)."""
+    """Mark a model as temporarily spiked/cooling down (e.g. 5 seconds on 503, or rate-limited)."""
     if not model_name:
         return
     err_str = str(error).upper()
@@ -149,12 +149,17 @@ def record_model_failure(model_name: str, error: Exception):
             _MODEL_COOLDOWNS[model_name] = now + 86400.0
             print(f"[Model Cooldown] ⚠️ '{model_name}' not available on this API key (404 Not Found). Skipping.")
         elif "503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str:
-            _MODEL_COOLDOWNS[model_name] = now + 45.0  # 45s momentary cooldown
-            print(f"[Model Cooldown] ⚠️ '{model_name}' spiked (503 High Demand). Deprioritizing for 45s.")
+            _MODEL_COOLDOWNS[model_name] = now + 5.0  # 5s momentary cooldown
+            print(f"[Model Cooldown] ⚠️ '{model_name}' spiked (503 High Demand). Deprioritizing for 5s.")
         elif "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
             delay = extract_retry_delay(error)
-            _MODEL_COOLDOWNS[model_name] = now + max(delay, 45.0)
-            print(f"[Model Cooldown] ⚠️ '{model_name}' rate limited. Deprioritizing for {max(delay, 45.0):.0f}s.")
+            # If Google reports a quota lock (e.g. daily limit 34795s), cool down for that period
+            cool_duration = max(delay, 60.0)
+            _MODEL_COOLDOWNS[model_name] = now + cool_duration
+            if cool_duration > 300:
+                print(f"[Model Cooldown] ⚠️ '{model_name}' quota exhausted for {cool_duration/3600.0:.1f} hours. Deprioritizing.")
+            else:
+                print(f"[Model Cooldown] ⚠️ '{model_name}' rate limited. Deprioritizing for {cool_duration:.0f}s.")
 
 
 def record_model_success(model_name: str):

@@ -184,7 +184,7 @@ def run_writer_phase(
     role: str,
     custom_bullets: str,
     client: genai.Client,
-    model_name: str = "gemini-2.5-flash",
+    model_name: str = "gemini-3.5-flash",
     keyword_contexts: Optional[dict[str, str]] = None,
     ats_profile: Any = None,
 ) -> dict[str, Any]:
@@ -327,35 +327,41 @@ Draft the optimized resume now as valid JSON."""
     for attempt in range(1, max_attempts + 1):
         models = get_candidate_models()
         for model_name in models:
-            try:
-                current_client = get_gemini_client()
-                response = current_client.models.generate_content(
-                    model=model_name,
-                    contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
-                    config=get_standard_genai_config(model_name=model_name, max_output_tokens=4096, temperature=0.3),
-                )
-                raw_text = extract_clean_text(response)
-                if not raw_text:
-                    raise ValueError(f"Model {model_name} returned empty text or only thought tokens")
-                record_model_success(model_name)
-                parsed = json.loads(_clean_json(raw_text))
-                return deterministic_voice_cleanup(parsed)
-            except Exception as e:
-                last_err = e
-                record_model_failure(model_name, e)
-                err_str = str(e).upper()
-                print(f"[Dani's Engine - Writer] {model_name} note: {e}")
+            for m_attempt in range(2):
+                try:
+                    current_client = get_gemini_client()
+                    response = current_client.models.generate_content(
+                        model=model_name,
+                        contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
+                        config=get_standard_genai_config(model_name=model_name, max_output_tokens=4096, temperature=0.3),
+                    )
+                    raw_text = extract_clean_text(response)
+                    if not raw_text:
+                        raise ValueError(f"Model {model_name} returned empty text or only thought tokens")
+                    record_model_success(model_name)
+                    parsed = json.loads(_clean_json(raw_text))
+                    return deterministic_voice_cleanup(parsed)
+                except Exception as e:
+                    last_err = e
+                    err_str = str(e).upper()
+                    print(f"[Dani's Engine - Writer] {model_name} note: {e}")
 
-                if is_key_invalid_error(e):
-                    mark_key_dead(get_active_key(), reason="API key invalid")
-                    if get_all_gemini_keys():
-                        rotate_key(reason="Purged invalid key")
+                    if is_key_invalid_error(e):
+                        mark_key_dead(get_active_key(), reason="API key invalid")
+                        if get_all_gemini_keys():
+                            rotate_key(reason="Purged invalid key")
+                        break
+
+                    if ("503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str) and m_attempt == 0:
+                        time.sleep(1.5)
+                        continue
+
+                    record_model_failure(model_name, e)
+                    if "404" in err_str or "NOT_FOUND" in err_str:
+                        break
+
+                    time.sleep(0.5)
                     break
-
-                if "404" in err_str or "NOT_FOUND" in err_str:
-                    continue
-
-                time.sleep(0.5)
 
         # If all models on the current active key failed, rotate to the backup key
         keys = get_all_gemini_keys()

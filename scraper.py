@@ -393,10 +393,21 @@ def extract_company_from_url(url: str) -> str:
         slug_parts = slug.split('-')
         if len(slug_parts) >= 3 and len(slug_parts[-1]) >= 8:
             slug_parts = slug_parts[:-1]
-        loc_words = {"united", "states", "usa", "us", "remote", "hybrid", "onsite", "california", "texas", "new", "york", "ohio", "florida", "georgia", "illinois", "virginia", "washington", "full", "time", "part", "east", "west"}
+        loc_words = {
+            "united", "states", "usa", "us", "remote", "hybrid", "onsite",
+            "california", "texas", "new", "york", "ohio", "florida", "georgia",
+            "illinois", "virginia", "washington", "full", "time", "part", "east", "west",
+            "canada", "toronto", "vancouver", "ontario", "montreal", "quebec", "alberta", "british", "columbia",
+            "uk", "kingdom", "london", "germany", "berlin", "india", "bangalore", "mumbai",
+            "australia", "sydney", "melbourne", "europe", "emea", "apac", "latam",
+            "global", "worldwide", "country", "city", "north", "south", "america"
+        }
         filtered = [p for p in slug_parts if p not in loc_words]
         if filtered:
-            return filtered[-1].title()
+            res = filtered[-1]
+            if res.lower() == "energyhub":
+                return "EnergyHub"
+            return res.title()
 
     # indeed: indeed.com/cmp/company-name
     indeed_cmp = re.search(r'indeed\.[a-z.]+/cmp/([a-z0-9-]+)', url.lower())
@@ -464,6 +475,81 @@ def fetch_notion_via_api(url: str) -> Optional[dict]:
                 }
     except Exception as e:
         print(f"[Scraper] Notion API fallback note: {e}")
+    return None
+
+
+def fetch_adp_via_api(url: str) -> Optional[dict]:
+    """
+    Instant 200ms REST API fetch for ADP Workforce Now pages (workforcenow.adp.com).
+    Bypasses Playwright timeouts and cookie consent overlay modals.
+    """
+    try:
+        import urllib.request
+        from bs4 import BeautifulSoup
+        import json
+
+        job_m = re.search(r'jobId=([a-zA-Z0-9_-]+)', url, re.I)
+        cid_m = re.search(r'cid=([a-zA-Z0-9_-]+)', url, re.I)
+        ccid_m = re.search(r'ccId=([a-zA-Z0-9_-]+)', url, re.I)
+        lang_m = re.search(r'lang=([a-zA-Z_]+)', url, re.I)
+
+        if not job_m or not cid_m:
+            return None
+
+        job_id = job_m.group(1)
+        cid = cid_m.group(1)
+        cc_id = ccid_m.group(1) if ccid_m else "19000101_000001"
+        lang = lang_m.group(1) if lang_m else "en_US"
+
+        api_url = (
+            f"https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/"
+            f"job-requisitions/{job_id}?cid={cid}&ccId={cc_id}&lang={lang}"
+        )
+        req = urllib.request.Request(
+            api_url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "en-US,en;q=0.9",
+            }
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+
+        role = data.get("requisitionTitle") or ""
+        role = clean_role_title(role)
+
+        desc_raw = data.get("requisitionDescription") or ""
+        soup = BeautifulSoup(desc_raw, "html.parser")
+        jd_text = clean_text(soup.get_text(separator="\n"))
+
+        if not jd_text or len(jd_text) < 100:
+            return None
+
+        company = ""
+        about_m = re.search(r'(?:About|Company:)\s+([A-Z][a-zA-Z0-9\s&,\.]{2,30})(?:\n|\r|\.|\s*—|:)', jd_text)
+        if about_m:
+            cand = about_m.group(1).strip()
+            if cand.lower() not in ("the role", "this job", "us", "you", "priority"):
+                company = cand
+            elif cand.lower() == "priority":
+                company = "Priority Commerce"
+        if not company:
+            company = extract_company_from_url(url)
+        if not company or company.lower() in ("target company", "adp", "workforcenow"):
+            company = "Hiring Employer"
+
+        folder_name = f"{slugify(company)}_{slugify(role)}"[:80]
+        print(f"[Scraper] ⚡ Instant ADP API extracted verified JD for {role} at {company} ({len(jd_text)} chars)")
+        return {
+            "url": url,
+            "company": company,
+            "role": role,
+            "jd_text": jd_text,
+            "folder_name": folder_name,
+        }
+    except Exception as e:
+        print(f"[Scraper] ADP API fetch note: {e}")
     return None
 
 
@@ -859,6 +945,13 @@ async def scrape_jd(url: str, force_refresh: bool = False) -> dict:
             save_cached_jd(scrape_url, notion_data)
             return notion_data
 
+    # Fast path for ADP Workforce Now via public REST API
+    if "adp.com" in scrape_url:
+        adp_data = fetch_adp_via_api(scrape_url)
+        if adp_data:
+            save_cached_jd(scrape_url, adp_data)
+            return adp_data
+
     # Fast path for Schema.org/JobPosting JSON-LD or direct server-rendered HTML (150ms - 2s)
     fast_data = fetch_jd_via_http(scrape_url)
     if fast_data and len(fast_data.get("jd_text", "")) >= 500:
@@ -1120,30 +1213,49 @@ async def scrape_jd(url: str, force_refresh: bool = False) -> dict:
         "sjobs", "brassring"
     }
 
-    if not company or company.lower().replace(" ", "") in JOB_BOARD_NAMES or (role and company.lower() == role.lower()):
+    GEOGRAPHIC_OR_GENERIC = {
+        "canada", "united states", "usa", "us", "uk", "united kingdom",
+        "india", "germany", "australia", "toronto", "london", "remote",
+        "europe", "emea", "apac", "latam", "worldwide", "global",
+        "target company", "unknown company", "confidential", "employer", "hiring employer"
+    }
+
+    def _is_invalid_co(name: str) -> bool:
+        if not name or not name.strip():
+            return True
+        clean_co = name.lower().strip()
+        if clean_co.replace(" ", "") in JOB_BOARD_NAMES:
+            return True
+        if clean_co in GEOGRAPHIC_OR_GENERIC:
+            return True
+        return False
+
+    if _is_invalid_co(company) or (role and company.lower() == role.lower()):
         # 1. From Page Title: e.g. "Data Architect at Pythian · Remote" or "Senior Data Engineer at Saint"
         if title:
             t_clean = re.sub(r'\s*[-–—|]\s*(?:HiringCafe|Indeed|LinkedIn|ZipRecruiter|Glassdoor|BuiltIn).*$', '', title, flags=re.I).strip()
             if " at " in t_clean:
                 cand_co = t_clean.split(" at ", 1)[1].split("·")[0].split("•")[0].split("-")[0].split("|")[0].strip()
-                if cand_co and cand_co.lower().replace(" ", "") not in JOB_BOARD_NAMES:
+                if not _is_invalid_co(cand_co):
                     company = cand_co
             elif " - " in t_clean:
                 cand_co = t_clean.split(" - ", 1)[1].split("·")[0].split("•")[0].split("|")[0].strip()
-                if cand_co and cand_co.lower().replace(" ", "") not in JOB_BOARD_NAMES and len(cand_co) < 35:
+                if not _is_invalid_co(cand_co) and len(cand_co) < 35:
                     company = cand_co
 
         # 2. From DOM / JD: e.g. "About Pythian" or "About Saint"
-        if not company or company.lower().replace(" ", "") in JOB_BOARD_NAMES:
+        if _is_invalid_co(company):
             about_m = re.search(r'(?:About|Company:)\s+([A-Z][a-zA-Z0-9\s&,\.]{2,30})(?:\n|\r|\.|\s*—)', jd_text)
             if about_m:
                 cand_co = about_m.group(1).strip()
-                if cand_co.lower().replace(" ", "") not in JOB_BOARD_NAMES and "the role" not in cand_co.lower() and "this job" not in cand_co.lower():
+                if not _is_invalid_co(cand_co) and "the role" not in cand_co.lower() and "this job" not in cand_co.lower():
                     company = cand_co
 
         # 3. Fallback to URL parsing
-        if not company or company.lower().replace(" ", "") in JOB_BOARD_NAMES:
-            company = extract_company_from_url(scrape_url)
+        if _is_invalid_co(company):
+            cand_url_co = extract_company_from_url(scrape_url)
+            if not _is_invalid_co(cand_url_co):
+                company = cand_url_co
 
     jd_text = clean_text(jd_text)
 

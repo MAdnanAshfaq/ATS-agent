@@ -12,6 +12,7 @@ import json
 import os
 import re
 import sys
+import time
 from google import genai
 from google.genai import types
 
@@ -322,49 +323,72 @@ Return ONLY a valid JSON object matching this schema:
   "summary_match": false
 }}"""
 
+        from gemini_client import (
+            get_candidate_models,
+            record_model_failure,
+            record_model_success,
+            extract_clean_text,
+            get_standard_genai_config,
+        )
+
         def _call_gemini(client):
-            models = ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-flash-latest", "gemini-2.5-flash"]
+            models = get_candidate_models()
             resp = None
             last_err = None
             for m in models:
-                try:
-                    resp = client.models.generate_content(
-                        model=m,
-                        contents=prompt,
-                        config=types.GenerateContentConfig(
+                # Up to 2 attempts per model with short delay if 503 load spike occurs
+                for attempt in range(2):
+                    try:
+                        cfg = types.GenerateContentConfig(
                             temperature=0.1,
                             response_mime_type="application/json",
                             thinking_config=types.ThinkingConfig(thinking_budget=0),
-                        ),
-                    )
-                    if resp and resp.text:
-                        print(f"[LLM Matcher] [OK] Extracted ATS matrix with {m} (JSON mode)")
-                        return resp
-                except Exception as model_err:
-                    print(f"[LLM Matcher] {m} JSON mode note: {str(model_err)[:120]}")
-                    last_err = model_err
-                    continue
+                        ) if ("gemma" not in m and "lite" not in m) else types.GenerateContentConfig(
+                            temperature=0.1,
+                            response_mime_type="application/json",
+                        )
+                        resp = client.models.generate_content(
+                            model=m,
+                            contents=prompt,
+                            config=cfg,
+                        )
+                        raw = extract_clean_text(resp)
+                        if raw:
+                            record_model_success(m)
+                            print(f"[LLM Matcher] [OK] Extracted ATS matrix with {m} (JSON mode)")
+                            return resp
+                    except Exception as model_err:
+                        last_err = model_err
+                        err_str = str(model_err)
+                        if ("503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str.upper()) and attempt == 0:
+                            time.sleep(1.5)
+                            continue
+                        record_model_failure(m, model_err)
+                        print(f"[LLM Matcher] {m} JSON mode note: {err_str[:120]}")
+                        break
 
             # Fallback to plain text mode
             for m in models:
                 try:
+                    cfg = get_standard_genai_config(model_name=m, temperature=0.1)
                     resp = client.models.generate_content(
                         model=m,
                         contents=prompt,
-                        config=types.GenerateContentConfig(
-                            temperature=0.1,
-                            thinking_config=types.ThinkingConfig(thinking_budget=0),
-                        ),
+                        config=cfg,
                     )
-                    if resp and resp.text:
+                    raw = extract_clean_text(resp)
+                    if raw:
+                        record_model_success(m)
                         print(f"[LLM Matcher] [OK] Extracted ATS matrix with {m} (Plain text mode)")
                         return resp
                 except Exception as model_err:
+                    record_model_failure(m, model_err)
                     print(f"[LLM Matcher] {m} plain text note: {str(model_err)[:120]}")
                     last_err = model_err
                     continue
 
-            if last_err and ("429" in str(last_err) or "RESOURCE_EXHAUSTED" in str(last_err)):
+            # Must raise last error so execute_with_failover triggers key rotation and retries
+            if last_err:
                 raise last_err
 
             return resp
@@ -372,8 +396,8 @@ Return ONLY a valid JSON object matching this schema:
         response = execute_with_failover(_call_gemini)
 
         parsed = {}
-        if response and response.text:
-            raw_text = response.text.strip()
+        raw_text = extract_clean_text(response)
+        if raw_text:
             if raw_text.startswith("```"):
                 raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
                 raw_text = re.sub(r"\s*```$", "", raw_text)
