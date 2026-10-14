@@ -1459,7 +1459,7 @@ function renderHistoryCards(apps, query = "") {
           <strong class="text-emerald">+${deltaScore}%</strong>
         </div>
       </div>
-        <a href="/editor/${encodeURIComponent(historyDocxRel).replace(/%2F/g, '/')}" target="_blank" class="btn btn-primary btn-sm" style="background: linear-gradient(135deg, #2563eb, #7c3aed); color: #fff; font-weight: 600; border: none; display: inline-flex; align-items: center; gap: 4px; text-decoration: none;" title="Open in Canva-Grade Visual PDF Studio Editor">
+        <a href="/editor/${encodeURIComponent(historyDocxRel).replace(/%2F/g, '/')}" class="btn btn-primary btn-sm" style="background: linear-gradient(135deg, #2563eb, #7c3aed); color: #fff; font-weight: 600; border: none; display: inline-flex; align-items: center; gap: 4px; text-decoration: none;" title="Open in Canva-Grade Visual PDF Studio Editor">
           <i class="fa-solid fa-wand-magic-sparkles"></i> Studio
         </a>
         <button class="btn btn-blue btn-sm" onclick="openPreviewModal('${escapeHtml(historyDocxRel)}', '${escapeHtml(app.company)}', '${escapeHtml(app.role)}')" title="Preview resume in browser before downloading">
@@ -5881,13 +5881,12 @@ function previewCurrentResume() {
     showToast("Please run an application first or select an item from History to preview", "warning");
     return;
   }
-  const company = window.lastResult.company || "Tailored Resume";
-  const role = window.lastResult.role || "Document Preview";
-  openPreviewModal(window.lastResult.relative_path, company, role);
+  const cleanPath = (window.lastResult.relative_path || '').replace(/\\/g, '/');
+  window.location.href = `/editor/${encodeURIComponent(cleanPath).replace(/%2F/g, '/')}`;
 }
 
 function previewMasterResume() {
-  window.open("/editor/master", "_blank");
+  window.location.href = "/editor/master";
 }
 
 function toggleMasterDownloadDropdown(event) {
@@ -7810,22 +7809,12 @@ async function weaveJDResponsibilities() {
 /* ── LIVE EDIT MODAL ───────────────────────────────────────────────────────── */
 
 function openLiveEditModal() {
-  const modal = document.getElementById("live-edit-modal");
-  if (!modal) return;
-
-  const resume = (window.lastResult && window.lastResult.tailored_resume) || null;
-  if (!resume) {
-    showToast("Please generate a tailored resume first, then open Live Edit.", "warning");
+  if (window.lastResult && window.lastResult.relative_path) {
+    const cleanPath = (window.lastResult.relative_path || '').replace(/\\/g, '/');
+    window.location.href = `/editor/${encodeURIComponent(cleanPath).replace(/%2F/g, '/')}`;
     return;
   }
-
-  _renderLiveEditSections(resume);
-
-  const statusEl = document.getElementById("live-edit-status");
-  if (statusEl) statusEl.style.display = "none";
-
-  modal.style.display = "flex";
-  document.body.style.overflow = "hidden";
+  window.location.href = "/editor/master";
 }
 
 function closeLiveEditModal() {
