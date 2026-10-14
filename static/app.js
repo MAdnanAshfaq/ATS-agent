@@ -1459,7 +1459,9 @@ function renderHistoryCards(apps, query = "") {
           <strong class="text-emerald">+${deltaScore}%</strong>
         </div>
       </div>
-      <div class="history-actions">
+        <a href="/editor/${encodeURIComponent(historyDocxRel).replace(/%2F/g, '/')}" target="_blank" class="btn btn-primary btn-sm" style="background: linear-gradient(135deg, #2563eb, #7c3aed); color: #fff; font-weight: 600; border: none; display: inline-flex; align-items: center; gap: 4px; text-decoration: none;" title="Open in Canva-Grade Visual PDF Studio Editor">
+          <i class="fa-solid fa-wand-magic-sparkles"></i> Studio
+        </a>
         <button class="btn btn-blue btn-sm" onclick="openPreviewModal('${escapeHtml(historyDocxRel)}', '${escapeHtml(app.company)}', '${escapeHtml(app.role)}')" title="Preview resume in browser before downloading">
           <i class="fa-solid fa-eye"></i> Preview
         </button>
@@ -5885,7 +5887,7 @@ function previewCurrentResume() {
 }
 
 function previewMasterResume() {
-  openPreviewModal("master_resume", "Master Resume Profile", "Authentic Candidate Base Profile");
+  window.open("/editor/master", "_blank");
 }
 
 function toggleMasterDownloadDropdown(event) {
