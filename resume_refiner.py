@@ -373,14 +373,40 @@ Return ONLY valid JSON now.
                 # Also strip any leftover leveling tags
                 refined["target_role"] = re.sub(r'[\s\-–—|/,]*\b(?:con|cons|consultant|tier|grade|band|ic)\s*(?:i{1,3}|iv|v|\d+)\b.*$', '', refined["target_role"], flags=re.I).strip(' -–—|/,:;')
 
-        # Normalize experience entries (ensure title exists and multi-role is preserved)
+        # Normalize experience entries (ensure title, dates, and location are 100% preserved)
         ref_exp = refined.get("experience", [])
-        for exp_e in ref_exp:
-            if isinstance(exp_e, dict) and not exp_e.get("title") and exp_e.get("role"):
-                exp_e["title"] = exp_e["role"]
+        base_exp = base_resume.get("experience", [])
+        for i, exp_e in enumerate(ref_exp):
+            if isinstance(exp_e, dict):
+                if not exp_e.get("title") and exp_e.get("role"):
+                    exp_e["title"] = exp_e["role"]
+                # Backfill dates if omitted
+                cur_dates = str(exp_e.get("dates") or exp_e.get("date") or exp_e.get("period") or exp_e.get("duration") or "").strip()
+                if not cur_dates:
+                    c_name = exp_e.get("company", "").strip().lower()
+                    for orig_e in base_exp:
+                        orig_c = orig_e.get("company", "").strip().lower()
+                        if orig_c and (orig_c in c_name or c_name in orig_c):
+                            cur_dates = str(orig_e.get("dates") or orig_e.get("date") or "").strip()
+                            if not exp_e.get("location"):
+                                exp_e["location"] = orig_e.get("location", "")
+                            break
+                    if not cur_dates and i < len(base_exp):
+                        cur_dates = str(base_exp[i].get("dates") or base_exp[i].get("date") or "").strip()
+                        if not exp_e.get("location"):
+                            exp_e["location"] = base_exp[i].get("location", "")
+                if cur_dates:
+                    exp_e["dates"] = cur_dates.replace(" - ", " – ")
+
+                if not exp_e.get("location"):
+                    c_name = exp_e.get("company", "").strip().lower()
+                    for orig_e in base_exp:
+                        orig_c = orig_e.get("company", "").strip().lower()
+                        if orig_c and (orig_c in c_name or c_name in orig_c):
+                            exp_e["location"] = orig_e.get("location", "")
+                            break
 
         # Preserve any past jobs from base_resume that LLM might have omitted
-        base_exp = base_resume.get("experience", [])
         existing_companies = {e.get("company", "").lower().strip() for e in ref_exp if isinstance(e, dict)}
         for orig_e in base_exp:
             orig_comp = orig_e.get("company", "").lower().strip()

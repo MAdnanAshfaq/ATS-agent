@@ -637,16 +637,42 @@ def rewrite_resume(
 
             merged["skills"] = final_skills
 
-            # ── DATE NORMALIZATION (Current role must specify 'Present') ──
+            # ── DATE & LOCATION PRESERVATION & NORMALIZATION ──
             for i, exp_entry in enumerate(rewritten_exp):
-                dates = exp_entry.get("dates", "")
+                # 1. Backfill dates if omitted by LLM
+                dates = str(exp_entry.get("dates") or exp_entry.get("date") or exp_entry.get("period") or exp_entry.get("duration") or "").strip()
+                if not dates:
+                    # Match by company in base_exp
+                    c_name = exp_entry.get("company", "").strip().lower()
+                    for orig_e in base_exp:
+                        orig_c = orig_e.get("company", "").strip().lower()
+                        if orig_c and (orig_c in c_name or c_name in orig_c):
+                            dates = str(orig_e.get("dates") or orig_e.get("date") or "").strip()
+                            if not exp_entry.get("location"):
+                                exp_entry["location"] = orig_e.get("location", "")
+                            break
+                    # If still empty, match by index
+                    if not dates and i < len(base_exp):
+                        dates = str(base_exp[i].get("dates") or base_exp[i].get("date") or "").strip()
+                        if not exp_entry.get("location"):
+                            exp_entry["location"] = base_exp[i].get("location", "")
+
                 if i == 0 and dates:
-                    # If ends with current year (e.g. "2021 - 2026" or "2021-2026") without "Present"
                     if re.search(r'[-–—]\s*202[4-6]$', dates.strip()) and not re.search(r'\b(present|current)\b', dates, re.IGNORECASE):
                         start_part = re.split(r'[-–—]', dates)[0].strip()
-                        exp_entry["dates"] = f"{start_part} – Present"
-                    elif " - " in dates:
-                        exp_entry["dates"] = dates.replace(" - ", " – ")
+                        dates = f"{start_part} – Present"
+                if " - " in dates:
+                    dates = dates.replace(" - ", " – ")
+                exp_entry["dates"] = dates
+
+                # Also ensure location is backfilled if missing
+                if not exp_entry.get("location"):
+                    c_name = exp_entry.get("company", "").strip().lower()
+                    for orig_e in base_exp:
+                        orig_c = orig_e.get("company", "").strip().lower()
+                        if orig_c and (orig_c in c_name or c_name in orig_c):
+                            exp_entry["location"] = orig_e.get("location", "")
+                            break
 
             merged["experience"] = rewritten_exp
 

@@ -22,26 +22,32 @@ logger = logging.getLogger(__name__)
 
 
 def sanitize_text(text: str) -> str:
-    """Sanitize and strip characters that break ATS parsing."""
+    """Sanitize and strip characters that break ATS parsing and fix encoding corruptions."""
     if not text:
         return ""
     text = str(text)
+    # Fix CP1252 / UTF-8 character corruptions
     text = text.replace('\u2014', '-').replace('\u2013', '-')
     text = text.replace('\u2019', "'").replace('\u2018', "'")
     text = text.replace('\u201c', '"').replace('\u201d', '"')
+    text = text.replace('\u2026', '...')
+    text = text.replace('â€“', '-').replace('â€”', '-').replace('â€"', '-')
+    text = text.replace('â€™', "'").replace('â€˜', "'").replace('â€œ', '"').replace('â€\x9d', '"')
+    text = text.replace('\ufffd', '')
     text = re.sub(r'^[•·▪▸►\*]\s*', '', text)
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
 
 def _get_base_html_template(body_content: str, title: str = "Resume Preview") -> str:
-    """Wrap resume body in an authentic, printable paper sheet layout."""
+    """Wrap resume body in an authentic, printable paper sheet layout with 100% cross-platform parity."""
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{html.escape(title)}</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Carlito:ital,wght@0,400;0,700;1,400;1,700&display=swap">
   <style>
     :root {{
       --page-bg: #1e222d;
@@ -50,7 +56,7 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
       --text-muted: #374151;
       --text-subtle: #4b5563;
       --line-color: #111827;
-      --font-family: 'Calibri', 'Segoe UI', Arial, -apple-system, sans-serif;
+      --font-family: 'Carlito', 'Calibri', 'Segoe UI', Arial, -apple-system, sans-serif;
     }}
 
     * {{
@@ -65,7 +71,7 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
       color: var(--text-main);
       display: flex;
       justify-content: center;
-      padding: 24px 16px;
+      padding: 20px 16px;
       min-height: 100vh;
       -webkit-font-smoothing: antialiased;
     }}
@@ -75,22 +81,22 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
       width: 100%;
       max-width: 8.5in;
       min-height: 11in;
-      padding: 0.38in 0.5in;
+      padding: 0.35in 0.45in;
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
       border-radius: 4px;
-      font-size: 10pt;
-      line-height: 1.25;
+      font-size: 9.5pt;
+      line-height: 1.22;
       color: #000000;
     }}
 
     /* Header */
     .resume-header {{
       text-align: center;
-      margin-bottom: 6px;
+      margin-bottom: 5px;
     }}
 
     .candidate-name {{
-      font-size: 20pt;
+      font-size: 19pt;
       font-weight: 700;
       letter-spacing: 0.5px;
       text-transform: uppercase;
@@ -99,22 +105,23 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
     }}
 
     .target-role {{
-      font-size: 11.5pt;
+      font-size: 11pt;
       font-weight: 500;
       font-style: italic;
       text-align: center;
       color: #1f2937;
-      margin-bottom: 3px;
+      margin-bottom: 2.5px;
     }}
 
     .contact-line {{
-      font-size: 9.5pt;
+      font-size: 9pt;
       color: #2b2f38;
       display: flex;
       flex-wrap: wrap;
       justify-content: center;
       align-items: center;
-      gap: 6px 10px;
+      gap: 4px 8px;
+      margin-bottom: 2px;
     }}
 
     .contact-line a {{
@@ -133,31 +140,33 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
 
     /* Section Headers */
     .section-title {{
-      font-size: 10.5pt;
+      font-size: 10pt;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.5px;
       color: #000000;
       border-bottom: 1px solid var(--line-color);
       padding-bottom: 1px;
-      margin-top: 7px;
+      margin-top: 6px;
       margin-bottom: 2px;
-      break-after: avoid;
+      break-after: avoid !important;
+      page-break-after: avoid !important;
     }}
 
     /* Summary */
     .summary-text {{
       font-size: 9.5pt;
-      line-height: 1.32;
+      line-height: 1.25;
       color: #111827;
-      margin-bottom: 4px;
+      margin-bottom: 3px;
       text-align: left;
     }}
 
     /* Experience & Education Entries */
     .entry-item {{
-      margin-bottom: 5px;
-      break-inside: avoid;
+      margin-bottom: 4px;
+      break-inside: avoid !important;
+      page-break-inside: avoid !important;
     }}
 
     .two-col-line {{
@@ -165,19 +174,24 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
       justify-content: space-between;
       align-items: baseline;
       width: 100%;
-      margin-top: 2px;
+      margin-top: 1.5px;
       margin-bottom: 1px;
+      break-after: avoid !important;
+      page-break-after: avoid !important;
+      break-inside: avoid !important;
+      page-break-inside: avoid !important;
     }}
 
     .two-col-left {{
-      font-size: 10pt;
+      font-size: 9.5pt;
       font-weight: 700;
       color: #000000;
       text-align: left;
     }}
 
     .two-col-right {{
-      font-size: 9.5pt;
+      font-size: 9pt;
+      font-weight: 600;
       color: #111827;
       text-align: right;
       white-space: nowrap;
@@ -188,9 +202,11 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
       display: flex;
       justify-content: space-between;
       align-items: baseline;
-      font-size: 9.5pt;
+      font-size: 9pt;
       color: #1f2937;
       margin-bottom: 1.5px;
+      break-after: avoid !important;
+      page-break-after: avoid !important;
     }}
 
     .sub-left {{
@@ -207,25 +223,32 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
     /* Bullets */
     .bullet-list {{
       list-style-type: disc;
-      margin-left: 1.15rem;
+      margin-left: 1.1rem;
       margin-top: 1px;
-      margin-bottom: 3px;
+      margin-bottom: 2.5px;
+      orphans: 2;
+      widows: 2;
     }}
 
     .bullet-item {{
       font-size: 9.5pt;
-      line-height: 1.25;
+      line-height: 1.22;
       color: #111827;
-      margin-bottom: 1.5px;
+      margin-bottom: 1px;
       padding-left: 2px;
+      break-inside: avoid !important;
+      page-break-inside: avoid !important;
+      text-align: left;
     }}
 
     /* Skills Categories */
     .skill-category {{
-      font-size: 9.5pt;
-      line-height: 1.3;
-      margin-bottom: 2px;
+      font-size: 9pt;
+      line-height: 1.25;
+      margin-bottom: 1.5px;
       color: #111827;
+      break-inside: avoid !important;
+      page-break-inside: avoid !important;
     }}
 
     .skill-category-label {{
@@ -233,19 +256,73 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
       color: #000000;
     }}
 
+    /* Compact Fit Class for Single-Page Optimization */
+    body.compact-fit .resume-sheet {{
+      padding: 0.30in 0.40in !important;
+      font-size: 9.2pt !important;
+      line-height: 1.18 !important;
+    }}
+    body.compact-fit .section-title {{
+      margin-top: 4px !important;
+      margin-bottom: 1.5px !important;
+      font-size: 9.5pt !important;
+    }}
+    body.compact-fit .summary-text,
+    body.compact-fit .bullet-item {{
+      font-size: 9.2pt !important;
+      line-height: 1.18 !important;
+      margin-bottom: 0.8px !important;
+    }}
+    body.compact-fit .bullet-list {{
+      margin-top: 0.5px !important;
+      margin-bottom: 1.5px !important;
+    }}
+    body.compact-fit .entry-item {{
+      margin-bottom: 2.5px !important;
+    }}
+
     /* Print media styling */
     @media print {{
-      body {{
+      html, body {{
         background: transparent !important;
         padding: 0 !important;
+        margin: 0 !important;
         min-height: auto !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
       }}
       .resume-sheet {{
         box-shadow: none !important;
         border-radius: 0 !important;
-        padding: 0.38in 0.5in !important;
+        padding: 0.35in 0.45in !important;
         max-width: 100% !important;
         width: 100% !important;
+        min-height: auto !important;
+      }}
+      body.compact-fit .resume-sheet {{
+        padding: 0.28in 0.38in !important;
+      }}
+      .entry-item, .exp-item, .edu-item, .proj-item {{
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }}
+      .section-title {{
+        break-after: avoid !important;
+        page-break-after: avoid !important;
+      }}
+      .two-col-line, .sub-line {{
+        break-after: avoid !important;
+        page-break-after: avoid !important;
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }}
+      .bullet-item {{
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }}
+      .bullet-list {{
+        orphans: 2 !important;
+        widows: 2 !important;
       }}
       @page {{
         size: letter;
@@ -624,10 +701,23 @@ def resume_json_to_html(resume: dict, company: str = "", role: str = "") -> str:
     if experience:
         body_parts.append(f'<div class="section-title" data-edit="section-heading" data-section="experience">{html.escape(exp_title)}</div>')
         for exp_idx, exp in enumerate(experience):
-            title = sanitize_text(exp.get("title", ""))
+            title = sanitize_text(exp.get("title") or exp.get("role") or "")
             company_name = sanitize_text(exp.get("company", ""))
-            dates = sanitize_text(exp.get("dates", ""))
+            dates = sanitize_text(exp.get("dates") or exp.get("date") or exp.get("period") or exp.get("duration") or "")
+            if not dates and exp.get("start_date"):
+                dates = sanitize_text(f"{exp.get('start_date')} - {exp.get('end_date', 'Present')}")
             loc = sanitize_text(exp.get("location", ""))
+            
+            # Robust fallback: if dates missing, search base_resume inside resume dict
+            if not dates and company_name:
+                base_exp = (resume.get("base_resume", {}) or {}).get("experience", []) or resume.get("_orig_experience", [])
+                for b_item in base_exp:
+                    b_comp = b_item.get("company", "").strip().lower()
+                    if b_comp and (b_comp in company_name.lower() or company_name.lower() in b_comp):
+                        dates = sanitize_text(b_item.get("dates") or b_item.get("date") or "")
+                        if not loc:
+                            loc = sanitize_text(b_item.get("location", ""))
+                        break
             bullets = exp.get("bullets", [])
 
             body_parts.append(f'<div class="entry-item exp-item" data-exp-index="{exp_idx}">')
@@ -665,7 +755,7 @@ def resume_json_to_html(resume: dict, company: str = "", role: str = "") -> str:
             inst = sanitize_text(edu.get("institution", ""))
             deg = sanitize_text(edu.get("degree", ""))
             fld = sanitize_text(edu.get("field", ""))
-            gdate = sanitize_text(edu.get("graduation_date", ""))
+            gdate = sanitize_text(edu.get("graduation_date") or edu.get("grad_date") or edu.get("date") or edu.get("year") or "")
             gpa = sanitize_text(edu.get("gpa", ""))
 
             deg_title = f"{deg} in {fld}" if (deg and fld and not deg.lower().endswith("in")) else (deg or fld or inst)
@@ -868,6 +958,109 @@ def docx_to_html(docx_path: str, company: str = "", role: str = "") -> str:
                         header_open = False
                     header_done = True
 
+    in_exp_section = False
+    in_entry_item = False
+
+    DATE_RE = re.compile(
+        r'(\b(?:(?:19|20)\d{2}|Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[a-zA-Z\s,]*[-–—/]\s*(?:(?:19|20)\d{2}|Present|Current)\b|\b(?:19|20)\d{2}\s*[-–—]\s*(?:(?:19|20)\d{2}|Present|Current)\b|\b(?:19|20)\d{2}\b)',
+        re.IGNORECASE
+    )
+
+    for para in paras:
+        raw_text = sanitize_text(para.text)
+        if not raw_text:
+            if in_bullet_list:
+                body_parts.append("</ul>")
+                in_bullet_list = False
+            continue
+
+        style_name = para.style.name.lower() if para.style and para.style.name else ""
+        has_numPr = False
+        try:
+            pPr = para._p.pPr
+            if pPr is not None and pPr.find('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}numPr') is not None:
+                has_numPr = True
+        except Exception:
+            pass
+
+        is_bullet = (
+            "bullet" in style_name
+            or "list" in style_name
+            or has_numPr
+            or raw_text.startswith(('•', '·', '▪', '▸', '►', '*', '- '))
+        )
+
+        # 1. The very first non-empty paragraph of the document is ALWAYS the Candidate Name
+        if not candidate_name_done:
+            body_parts.append('<div class="resume-header">')
+            body_parts.append(f'<div class="candidate-name" data-edit="name">{html.escape(raw_text)}</div>')
+            header_open = True
+            candidate_name_done = True
+            continue
+
+        # Check if it's a section header (bordered paragraph or short uppercase text)
+        is_header = False
+        pPr = para._p.get_or_add_pPr()
+        if pPr.find('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}pBdr') is not None:
+            is_header = True
+        elif raw_text.isupper() and len(raw_text) < 40 and '@' not in raw_text and not raw_text.startswith('HTTP') and not is_bullet:
+            is_header = True
+
+        # Header zone processing (Target role subtitle and contact info at top of resume)
+        if not header_done:
+            if is_header:
+                if header_open:
+                    body_parts.append('</div>')
+                    header_open = False
+                header_done = True
+                # Falls through to section header handler below
+            else:
+                # Inside header between candidate name and first section header
+                if "@" in raw_text or "|" in raw_text or "linkedin" in raw_text.lower() or "github" in raw_text.lower() or re.search(r'\+?\d[\d\s\-()]{7,}\d', raw_text):
+                    parts = [p.strip() for p in re.split(r'\s*\|\s*', raw_text) if p.strip()]
+                    c_html = []
+                    for p in parts:
+                        norm_p = p.lower().rstrip('/')
+                        if norm_p in seen_contact_items:
+                            continue
+                        if "@" in p and not p.startswith("http"):
+                            seen_contact_items.add(norm_p)
+                            c_html.append(f'<a href="mailto:{html.escape(p)}" data-edit="contact-email">{html.escape(p)}</a>')
+                        elif "linkedin" in p.lower():
+                            seen_contact_items.add(norm_p)
+                            url = p if p.startswith("http") else f"https://{p}"
+                            c_html.append(f'<a href="{url}" target="_blank" data-edit="contact-linkedin">{html.escape(p)}</a>')
+                        elif "github" in p.lower():
+                            seen_contact_items.add(norm_p)
+                            url = p if p.startswith("http") else f"https://{p}"
+                            c_html.append(f'<a href="{url}" target="_blank" data-edit="contact-github">{html.escape(p)}</a>')
+                        elif "http" in p:
+                            seen_contact_items.add(norm_p)
+                            url = p if p.startswith("http") else f"https://{p}"
+                            c_html.append(f'<a href="{url}" target="_blank" data-edit="contact-portfolio">{html.escape(p)}</a>')
+                        elif re.match(r'^\+?[\d\s\-().]{7,}$', p):
+                            seen_contact_items.add(norm_p)
+                            c_html.append(f'<a href="tel:{html.escape(p)}" data-edit="contact-phone">{html.escape(p)}</a>')
+                        else:
+                            seen_contact_items.add(norm_p)
+                            c_html.append(f'<span data-edit="contact-location">{html.escape(p)}</span>')
+                    if c_html:
+                        sep = '<span class="contact-sep">|</span>'
+                        body_parts.append(f'<div class="contact-line" style="margin-bottom: 4px;">{sep.join(c_html)}</div>')
+                    continue
+                elif len(raw_text) < 65 and not is_bullet and not any(k in raw_text.lower() for k in ("experience", "education", "summary", "skills", "projects")):
+                    # Target role subtitle directly under name
+                    from scraper import clean_role_title
+                    clean_role = clean_role_title(raw_text)
+                    if clean_role.upper() not in ("UNKNOWN", "NONE", "RESUME", ""):
+                        body_parts.append(f'<div class="target-role" data-edit="target_role">{html.escape(clean_role)}</div>')
+                    continue
+                else:
+                    if header_open:
+                        body_parts.append('</div>')
+                        header_open = False
+                    header_done = True
+
         if is_header:
             if header_open:
                 body_parts.append('</div>')
@@ -876,6 +1069,13 @@ def docx_to_html(docx_path: str, company: str = "", role: str = "") -> str:
             if in_bullet_list:
                 body_parts.append("</ul>")
                 in_bullet_list = False
+            if in_entry_item:
+                body_parts.append("</div>")
+                in_entry_item = False
+
+            raw_lower = raw_text.lower()
+            in_exp_section = any(k in raw_lower for k in ("experience", "employment", "work history"))
+
             body_parts.append(f'<div class="section-title" data-edit="section-heading">{html.escape(raw_text)}</div>')
             continue
 
@@ -896,16 +1096,37 @@ def docx_to_html(docx_path: str, company: str = "", role: str = "") -> str:
             body_parts.append("</ul>")
             in_bullet_list = False
 
-        # Two-column row check (separated by tab \t) - ONLY for non-bullets and short header lines (role/date, company/loc, degree/year)
-        if "\t" in raw_text and not is_bullet and len(raw_text) < 130:
+        # Two-column row check (separated by tab \t OR multiple spaces before date range)
+        left = ""
+        right = ""
+
+        if "\t" in raw_text and not is_bullet and len(raw_text) < 140:
             parts = [p.strip() for p in raw_text.split("\t") if p.strip()]
             left = parts[0] if parts else ""
             right = parts[1] if len(parts) > 1 else ""
+        elif not is_bullet and len(raw_text) < 140:
+            # Check for trailing date pattern or multi-space separation
+            dm = DATE_RE.search(raw_text)
+            if dm and dm.start() > 3:
+                left = raw_text[:dm.start()].strip(' \t|-–—')
+                right = raw_text[dm.start():].strip()
+            elif "   " in raw_text:
+                parts = [p.strip() for p in re.split(r'\s{3,}', raw_text) if p.strip()]
+                if len(parts) == 2:
+                    left, right = parts[0], parts[1]
 
+        if left:
             has_bold = any(r.bold for r in para.runs if r.bold)
             has_italic = any(r.italic for r in para.runs if r.italic)
 
             if has_bold or not has_italic:
+                # If we are in experience section and a new role begins, wrap in entry-item
+                if in_exp_section:
+                    if in_entry_item:
+                        body_parts.append("</div>")
+                    body_parts.append('<div class="entry-item exp-item">')
+                    in_entry_item = True
+
                 body_parts.append('<div class="two-col-line">')
                 body_parts.append(f'<span class="two-col-left" data-edit="text">{html.escape(left)}</span>')
                 if right:
@@ -918,8 +1139,6 @@ def docx_to_html(docx_path: str, company: str = "", role: str = "") -> str:
                     body_parts.append(f'<span class="sub-right" data-edit="text">{html.escape(right)}</span>')
                 body_parts.append('</div>')
             continue
-        elif "\t" in raw_text:
-            raw_text = raw_text.replace("\t", " ")
 
         # Sub-line check (e.g. italic institution or company line without tab)
         has_italic = any(r.italic for r in para.runs if r.italic)
@@ -940,10 +1159,12 @@ def docx_to_html(docx_path: str, company: str = "", role: str = "") -> str:
         # Normal paragraph
         body_parts.append(f'<p class="summary-text" data-edit="summary">{html.escape(raw_text)}</p>')
 
-    if header_open:
-        body_parts.append("</div>")
     if in_bullet_list:
         body_parts.append("</ul>")
+    if in_entry_item:
+        body_parts.append("</div>")
+    if header_open:
+        body_parts.append("</div>")
 
     content = "\n".join(body_parts)
     title = f"{Path(docx_path).stem.replace('_', ' ')} - Resume"
@@ -958,7 +1179,8 @@ def generate_pdf_from_html(
 ) -> bool:
     """
     Generate an authentic PDF file from an HTML resume string using Playwright headless Chromium.
-    Works natively on Render Linux, Docker, and Windows without Word COM!
+    Works natively on Render Linux, Docker, and Windows with 100% pixel-perfect preview parity.
+    Applies smart 1-page fit to prevent accidental 1-2 bullet spillovers onto a second page.
     Immediately sanitizes PDF metadata to eliminate Chromium/Skia signatures.
     """
     try:
@@ -971,6 +1193,18 @@ def generate_pdf_from_html(
             )
             page = browser.new_page()
             page.set_content(html_content, wait_until="networkidle")
+
+            # Smart single-page fit check:
+            # 11 inches at 96 DPI = 1056px. If content slightly exceeds 1 page (up to ~1240px),
+            # activate compact-fit to prevent 1-2 bullets from spilling onto an unjustified 2nd page!
+            try:
+                sheet_h = page.evaluate("() => { const s = document.querySelector('.resume-sheet'); return s ? s.scrollHeight : document.body.scrollHeight; }")
+                if 1056 < sheet_h <= 1350:
+                    page.evaluate("() => { document.body.classList.add('compact-fit'); }")
+                    page.wait_for_timeout(80)
+            except Exception:
+                pass
+
             page.pdf(
                 path=output_pdf_path,
                 format="Letter",

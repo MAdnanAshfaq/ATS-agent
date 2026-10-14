@@ -29,6 +29,10 @@ test_*.py
 !tests/**
 scratch/
 seed_neon.py
+diag_*.py
+fix_*.py
+analyze_page.py
+Recording*.js
 
 # Personal documents, cover letters, and PDFs (never commit)
 *.pdf

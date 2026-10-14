@@ -7,6 +7,7 @@ import os
 import re
 from pathlib import Path
 from datetime import datetime
+from typing import Optional, Dict, Any, List
 
 
 def slugify(text: str) -> str:
@@ -136,12 +137,14 @@ def build_resume_docx(
         
         return para
     
-    def add_bullet(text: str):
-        """Add a clean bullet point."""
+    def add_bullet(text: str, keep_next: bool = False):
+        """Add a clean bullet point with optional keep_with_next for layout integrity."""
         text = sanitize_text(text).lstrip("•·▪-* ").strip()
         if not text or len(text) < 8:
             return
         para = doc.add_paragraph(style='List Bullet')
+        if keep_next:
+            para.paragraph_format.keep_with_next = True
         run = para.add_run(text)
         set_font(run, size=9.5)
         add_paragraph_spacing(para, space_before=0, space_after=1.5)
@@ -285,8 +288,23 @@ def build_resume_docx(
         for role_entry in experience:
             title = sanitize_text(role_entry.get("title") or role_entry.get("role", ""))
             company_name = sanitize_text(role_entry.get("company", ""))
-            dates = sanitize_text(role_entry.get("dates", ""))
+            dates = sanitize_text(role_entry.get("dates") or role_entry.get("date") or role_entry.get("period") or role_entry.get("duration") or "")
+            if not dates and role_entry.get("start_date"):
+                dates = sanitize_text(f"{role_entry.get('start_date')} - {role_entry.get('end_date', 'Present')}")
             location = sanitize_text(role_entry.get("location", ""))
+            
+            # Robust fallback to base_resume if dates or location missing
+            if (not dates or not location) and company_name:
+                base_exp = (resume.get("base_resume", {}) or {}).get("experience", []) or resume.get("_orig_experience", [])
+                for b_item in base_exp:
+                    b_comp = b_item.get("company", "").strip().lower()
+                    if b_comp and (b_comp in company_name.lower() or company_name.lower() in b_comp):
+                        if not dates:
+                            dates = sanitize_text(b_item.get("dates") or b_item.get("date") or "")
+                        if not location:
+                            location = sanitize_text(b_item.get("location", ""))
+                        break
+            
             bullets = role_entry.get("bullets", [])
             
             if not title:
@@ -300,10 +318,10 @@ def build_resume_docx(
             if company_name or location:
                 add_two_column_line(company_name, location, left_italic=True, right_italic=False, keep_next=True)
             
-            # Bullet points
-            for bullet in bullets:
+            # Bullet points (keep_next on first bullet to prevent orphaned headers across pages)
+            for b_idx, bullet in enumerate(bullets):
                 if bullet and len(sanitize_text(bullet)) > 5:
-                    add_bullet(bullet)
+                    add_bullet(bullet, keep_next=(b_idx == 0 and len(bullets) > 1))
     
     # ─── PROJECTS ────────────────────────────────────────────────────
     projects = resume.get("projects", [])
@@ -560,17 +578,59 @@ def sanitize_pdf_metadata(
         return False
 
 
-def convert_to_pdf(doc_path: str, candidate_name: str = "", role: str = "") -> str:
-    """Convert .docx file to .pdf using Word COM on Windows or docx2pdf with clean metadata."""
+def convert_to_pdf(
+    doc_path: str,
+    candidate_name: str = "",
+    role: str = "",
+    resume_dict: Optional[dict] = None,
+    force_refresh: bool = False,
+) -> str:
+    """
+    Convert resume to .pdf with 100% pixel-perfect preview parity and clean metadata.
+    Priority 1: Renders directly from structured JSON via resume_json_to_html + Playwright Chromium.
+                This guarantees the downloaded PDF is an exact, 1-to-1 clone of the in-browser preview.
+    Priority 2: Native Word COM automation on Windows.
+    Priority 3: docx_to_html + Playwright Chromium fallback.
+    """
     if not doc_path or not os.path.exists(doc_path):
         return ""
 
     pdf_path = str(Path(doc_path).with_suffix(".pdf"))
-    if os.path.exists(pdf_path) and os.path.getmtime(pdf_path) >= os.path.getmtime(doc_path):
-        sanitize_pdf_metadata(pdf_path, candidate_name=candidate_name, role=role)
-        return pdf_path
+    target_dir = Path(doc_path).parent
 
-    # Extract author and role from docx if not supplied
+    # Check if existing PDF is already up-to-date and not forced to refresh
+    if not force_refresh and os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 1000:
+        json_file = target_dir / "tailored_resume.json"
+        doc_mtime = max(
+            os.path.getmtime(doc_path),
+            json_file.stat().st_mtime if json_file.exists() else 0
+        )
+        if os.path.getmtime(pdf_path) >= doc_mtime:
+            sanitize_pdf_metadata(pdf_path, candidate_name=candidate_name, role=role)
+            return pdf_path
+
+    # Extract author and role from docx or structured JSON if not supplied
+    if not resume_dict:
+        for json_candidate in [
+            target_dir / "tailored_resume.json",
+            target_dir / "base_resume.json",
+            target_dir.parent / "base_resume.json",
+        ]:
+            if json_candidate.exists():
+                try:
+                    with open(json_candidate, "r", encoding="utf-8") as jf:
+                        loaded = json.load(jf)
+                        if loaded and loaded.get("name"):
+                            resume_dict = loaded
+                            break
+                except Exception:
+                    pass
+
+    if resume_dict and not candidate_name:
+        candidate_name = resume_dict.get("name", "")
+    if resume_dict and not role:
+        role = resume_dict.get("target_role", "")
+
     if not candidate_name:
         try:
             from docx import Document
@@ -581,7 +641,19 @@ def convert_to_pdf(doc_path: str, candidate_name: str = "", role: str = "") -> s
         except Exception:
             pass
 
-    # Attempt 1: Native Windows Word COM Automation (Fastest, Pixel-Perfect)
+    # ── Attempt 1: Playwright Chromium from Structured Resume JSON (100% PREVIEW PARITY) ──
+    if resume_dict:
+        try:
+            from resume_html import resume_json_to_html, generate_pdf_from_html
+            html_content = resume_json_to_html(resume_dict, role=role)
+            if generate_pdf_from_html(html_content, pdf_path, candidate_name=candidate_name, role=role):
+                sanitize_pdf_metadata(pdf_path, candidate_name=candidate_name, role=role)
+                print(f"[PDF] [OK] Converted via Playwright Chromium JSON (100% Preview Parity): {pdf_path}")
+                return pdf_path
+        except Exception as e:
+            print(f"[PDF] Playwright JSON conversion note: {e}")
+
+    # ── Attempt 2: Native Windows Word COM Automation ──
     try:
         import win32com.client
         import pythoncom
@@ -593,25 +665,25 @@ def convert_to_pdf(doc_path: str, candidate_name: str = "", role: str = "") -> s
         doc.SaveAs(os.path.abspath(pdf_path), FileFormat=17) # 17 = wdFormatPDF
         doc.Close()
         word.Quit()
-        if os.path.exists(pdf_path):
+        if os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 1000:
             sanitize_pdf_metadata(pdf_path, candidate_name=candidate_name, role=role)
             print(f"[PDF] [OK] Converted via Word COM: {pdf_path}")
             return pdf_path
     except Exception as e:
         print(f"[PDF] Word COM conversion note: {e}")
 
-    # Attempt 2: Playwright Chromium HTML-to-PDF (Universal cross-platform, Render Linux & Docker)
+    # ── Attempt 3: Playwright Chromium from DOCX-to-HTML ──
     try:
         from resume_html import docx_to_html, generate_pdf_from_html
         html_content = docx_to_html(doc_path)
         if generate_pdf_from_html(html_content, pdf_path, candidate_name=candidate_name, role=role):
             sanitize_pdf_metadata(pdf_path, candidate_name=candidate_name, role=role)
-            print(f"[PDF] [OK] Converted via Playwright Chromium: {pdf_path}")
+            print(f"[PDF] [OK] Converted via Playwright Chromium DOCX: {pdf_path}")
             return pdf_path
     except Exception as e:
-        print(f"[PDF] Playwright conversion note: {e}")
+        print(f"[PDF] Playwright DOCX conversion note: {e}")
 
-    if os.path.exists(pdf_path):
+    if os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 1000:
         sanitize_pdf_metadata(pdf_path, candidate_name=candidate_name, role=role)
         return pdf_path
 

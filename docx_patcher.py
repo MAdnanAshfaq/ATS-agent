@@ -267,6 +267,12 @@ def patch_docx_with_rewritten_resume(
     all_paras = list(_get_all_paragraphs_from_doc(doc))
     print(f"[Patcher] Found {len(all_paras)} paragraphs in original DOCX")
 
+    # Enforce keep_with_next on all major section headers to prevent orphaned headers across page breaks
+    for p in all_paras:
+        p_txt = _get_para_full_text(p).strip()
+        if _is_section_header(p_txt):
+            p.paragraph_format.keep_with_next = True
+
     # ── 1. Patch Target Role (if present in header) ───────────────────────────
     if "target_role" in rewritten_resume:
         target_role = rewritten_resume["target_role"]
@@ -589,9 +595,11 @@ def patch_docx_with_rewritten_resume(
 
         # Header lines can span 1 or 2 paragraphs (e.g. Title line + Company line)
         content_start = anchor_idx + 1
+        all_paras[anchor_idx].paragraph_format.keep_with_next = True
         if content_start < end_idx:
             next_p_text = _normalize(_get_para_full_text(all_paras[content_start]))
             if (comp and comp in next_p_text) or (title and title in next_p_text) or any(loc in next_p_text for loc in ("remote", "usa", "ca", "ny", "tx")):
+                all_paras[content_start].paragraph_format.keep_with_next = True
                 content_start += 1
 
         # Update role dates if present in exp and different from template (e.g. 2021 - 2026 -> 2021 – Present)

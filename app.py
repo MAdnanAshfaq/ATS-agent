@@ -1722,7 +1722,7 @@ def _build_crafted_master_resume(
         pdf_res = None
         try:
             from resume_builder import convert_to_pdf
-            pdf_res = convert_to_pdf(gen_docx, candidate_name=cand_name, role="Master Resume")
+            pdf_res = convert_to_pdf(gen_docx, candidate_name=cand_name, role="Master Resume", resume_dict=resume_dict, force_refresh=True)
         except Exception as pe:
             print(f"[Master Download] convert_to_pdf note: {pe}")
 
@@ -1854,6 +1854,52 @@ def _ensure_clean_resume_file(target_path: Path, is_pdf: bool, is_docx: bool, us
                     first_edu["institution"] = base_edu[0]["institution"]
                     dirty_json = True
 
+        # 2b. Guarantee dates and locations in experience entries (auto-heal missing dates)
+        if "experience" in resume_data and isinstance(resume_data["experience"], list):
+            base_exp = []
+            user_res_path = user_data_dir / "base_resume.json"
+            if user_res_path.exists():
+                try:
+                    with open(user_res_path, "r", encoding="utf-8") as rf:
+                        b_res = json.load(rf)
+                        base_exp = b_res.get("experience", [])
+                except Exception:
+                    pass
+
+            for i, exp_item in enumerate(resume_data["experience"]):
+                if not isinstance(exp_item, dict):
+                    continue
+                cur_dates = str(exp_item.get("dates") or exp_item.get("date") or exp_item.get("period") or exp_item.get("duration") or "").strip()
+                if not cur_dates:
+                    c_name = exp_item.get("company", "").strip().lower()
+                    for orig_e in base_exp:
+                        orig_c = orig_e.get("company", "").strip().lower()
+                        if orig_c and (orig_c in c_name or c_name in orig_c):
+                            cur_dates = str(orig_e.get("dates") or orig_e.get("date") or "").strip()
+                            if not exp_item.get("location"):
+                                exp_item["location"] = orig_e.get("location", "")
+                                dirty_json = True
+                            break
+                    if not cur_dates and i < len(base_exp):
+                        cur_dates = str(base_exp[i].get("dates") or base_exp[i].get("date") or "").strip()
+                        if not exp_item.get("location"):
+                            exp_item["location"] = base_exp[i].get("location", "")
+                            dirty_json = True
+
+                if cur_dates:
+                    if exp_item.get("dates") != cur_dates:
+                        exp_item["dates"] = cur_dates
+                        dirty_json = True
+
+                if not exp_item.get("location"):
+                    c_name = exp_item.get("company", "").strip().lower()
+                    for orig_e in base_exp:
+                        orig_c = orig_e.get("company", "").strip().lower()
+                        if orig_c and (orig_c in c_name or c_name in orig_c):
+                            exp_item["location"] = orig_e.get("location", "")
+                            dirty_json = True
+                            break
+
         if dirty_json:
             with open(json_path, "w", encoding="utf-8") as jf:
                 json.dump(resume_data, jf, indent=2, ensure_ascii=False)
@@ -1919,20 +1965,19 @@ def _ensure_clean_resume_file(target_path: Path, is_pdf: bool, is_docx: bool, us
 
                 if is_pdf or target_path.suffix.lower() == ".pdf":
                     from resume_builder import convert_to_pdf
-                    pdf_res = convert_to_pdf(str(docx_cand))
-                    if not pdf_res or not os.path.exists(pdf_res):
-                        try:
-                            from resume_html import docx_to_html, generate_pdf_from_html
-                            cand_pdf = str(docx_cand.with_suffix(".pdf"))
-                            html_c = docx_to_html(str(docx_cand))
-                            if generate_pdf_from_html(html_c, cand_pdf):
-                                pdf_res = cand_pdf
-                        except Exception as pe:
-                            print(f"[Download Clean] HTML PDF note: {pe}")
+                    pdf_res = convert_to_pdf(str(docx_cand), resume_dict=resume_data, force_refresh=True)
                     if pdf_res and os.path.exists(pdf_res):
                         return Path(pdf_res).resolve()
 
                 return Path(docx_cand).resolve()
+
+        # If needs_rebuild was false but PDF was requested or dirty_json was healed
+        if is_pdf or target_path.suffix.lower() == ".pdf":
+            from resume_builder import convert_to_pdf
+            should_refresh = dirty_json or not target_path.exists() or bool(request.args.get("refresh") or request.args.get("force"))
+            pdf_res = convert_to_pdf(str(docx_cand), resume_dict=resume_data, force_refresh=should_refresh)
+            if pdf_res and os.path.exists(pdf_res):
+                return Path(pdf_res).resolve()
 
     except Exception as e:
         print(f"[Download Clean] Error ensuring clean resume: {e}")
@@ -4326,6 +4371,29 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
             if sec in base_resume and (sec not in cleaned_resume or not cleaned_resume[sec]):
                 cleaned_resume[sec] = base_resume[sec]
 
+        # Ensure experience dates and locations are intact in cleaned_resume
+        if "experience" in cleaned_resume and isinstance(cleaned_resume["experience"], list):
+            base_exp = base_resume.get("experience", [])
+            for i, exp_item in enumerate(cleaned_resume["experience"]):
+                if not isinstance(exp_item, dict):
+                    continue
+                cur_dates = str(exp_item.get("dates") or exp_item.get("date") or exp_item.get("period") or exp_item.get("duration") or "").strip()
+                if not cur_dates:
+                    c_name = exp_item.get("company", "").strip().lower()
+                    for orig_e in base_exp:
+                        orig_c = orig_e.get("company", "").strip().lower()
+                        if orig_c and (orig_c in c_name or c_name in orig_c):
+                            cur_dates = str(orig_e.get("dates") or orig_e.get("date") or "").strip()
+                            if not exp_item.get("location"):
+                                exp_item["location"] = orig_e.get("location", "")
+                            break
+                    if not cur_dates and i < len(base_exp):
+                        cur_dates = str(base_exp[i].get("dates") or base_exp[i].get("date") or "").strip()
+                        if not exp_item.get("location"):
+                            exp_item["location"] = base_exp[i].get("location", "")
+                if cur_dates:
+                    exp_item["dates"] = cur_dates
+
         orig_docx_path = BASE_DIR / "master_resume_original.docx"
         user_data_dir = _resume_path.parent
         user_orig_docx = user_data_dir / "master_resume_original.docx"
@@ -4385,12 +4453,12 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
             except Exception as json_err:
                 print(f"[Pipeline] Note saving tailored_resume.json: {json_err}")
 
-            # Convert to PDF
+            # Convert to PDF directly from cleaned_resume for 100% preview parity
             _pdf_path = None
             try:
                 from resume_builder import convert_to_pdf
-                _pdf_path = convert_to_pdf(_doc_path)
-                send_log(7, "PDF Builder", "Converted document to PDF successfully!", status="success")
+                _pdf_path = convert_to_pdf(_doc_path, candidate_name=cleaned_resume.get("name"), role=role, resume_dict=cleaned_resume, force_refresh=True)
+                send_log(7, "PDF Builder", "Converted document to PDF successfully (100% preview parity)!", status="success")
             except Exception as pdf_err:
                 print(f"[Pipeline] PDF conversion note: {pdf_err}")
 
