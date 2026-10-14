@@ -173,14 +173,62 @@
 
       <!-- AI Panel -->
       <div class="sidebar-panel" id="panelAi">
-        <div class="sidebar-section-title">AI Tools</div>
-        <p style="font-size: 11px; color: var(--editor-text-muted); margin-bottom: 12px;">
-          Select a text block, then use these tools to enhance it.
-        </p>
-        <button class="sidebar-add-btn" id="aiEnhance"><span class="icon">✨</span> Enhance with Metrics</button>
-        <button class="sidebar-add-btn" id="aiConcise"><span class="icon">📐</span> Make Concise</button>
-        <button class="sidebar-add-btn" id="aiAtsOptimize"><span class="icon">🎯</span> ATS Keyword Optimize</button>
-        <button class="sidebar-add-btn" id="aiTone"><span class="icon">🎙️</span> Professional Tone</button>
+        <div class="sidebar-section-title" style="display:flex; justify-content:space-between; align-items:center;">
+          <span>AI Polish Studio</span>
+          <span style="font-size:9px; background:rgba(99,102,241,0.2); color:#818cf8; padding:2px 6px; border-radius:4px; font-weight:700;">GEMINI 2.5</span>
+        </div>
+
+        <!-- Target / Selection Indicator -->
+        <div class="ai-target-card" id="aiTargetCard" style="background: var(--editor-surface-2); border: 1px solid var(--editor-border); border-radius: 6px; padding: 8px 10px; margin-bottom: 12px;">
+          <div style="font-size: 10px; color: var(--editor-text-dim); text-transform: uppercase; font-weight: 600; margin-bottom: 4px; display: flex; align-items: center; gap: 5px;">
+            <i class="fa-solid fa-crosshairs" style="color:#38bdf8;"></i> Target Content:
+          </div>
+          <div id="aiSelectedPreview" style="font-size: 11.5px; color: var(--editor-text); line-height: 1.4; max-height: 54px; overflow-y: auto; font-style: italic;">
+            Click any bullet or section on the artboard to target it.
+          </div>
+        </div>
+
+        <!-- Quick 1-Click Polish Actions -->
+        <div class="sidebar-section-title" style="margin-top:0;">Quick Enhancements</div>
+        <button class="sidebar-add-btn" id="aiBtnMetrics" title="Add quantified metrics, percentages and dollar figures">
+          <span class="icon">📈</span> Inject Quantified Metrics
+        </button>
+        <button class="sidebar-add-btn" id="aiBtnVerbs" title="Front-load active power verbs and eliminate weak passive phrasing">
+          <span class="icon">⚡</span> Strong Action Verbs
+        </button>
+        <button class="sidebar-add-btn" id="aiBtnAts" title="Maximize industry keywords and competency density">
+          <span class="icon">🎯</span> ATS Keyword Optimize
+        </button>
+        <button class="sidebar-add-btn" id="aiBtnConcise" title="Tighten sentence and eliminate filler words">
+          <span class="icon">✂️</span> Make Concise &amp; Punchy
+        </button>
+        <button class="sidebar-add-btn" id="aiBtnTone" title="Elevate vocabulary to executive workplace standard">
+          <span class="icon">🎙️</span> Executive Tone
+        </button>
+
+        <!-- Custom Prompt Instruction -->
+        <div class="sidebar-section-title" style="margin-top:14px;">Custom AI Instruction</div>
+        <textarea id="aiCustomPrompt" class="toolbar-size-input" style="width:100%; height:64px; padding:8px; font-size:11.5px; border-radius:6px; background:var(--editor-surface-2); border:1px solid var(--editor-border); color:var(--editor-text); resize:none; font-family:'Inter', sans-serif; box-sizing:border-box; margin-bottom:8px;" placeholder="e.g. Focus on cloud pipeline automation, Kafka, and cost reduction..."></textarea>
+        <button class="sidebar-add-btn" id="aiBtnRunCustom" style="background: linear-gradient(135deg, rgba(37,99,235,0.25), rgba(124,58,237,0.25)); border-color: rgba(59,130,246,0.5); color: #93c5fd; font-weight:600; justify-content:center;">
+          <i class="fa-solid fa-wand-magic-sparkles" style="color:#60a5fa; font-size:12px;"></i> Run Custom AI Polish
+        </button>
+
+        <!-- Live Before / After Diff Result Card -->
+        <div id="aiDiffCard" style="display:none; margin-top:14px; background: var(--editor-surface-2); border: 1px solid rgba(16,185,129,0.3); border-radius: 8px; padding: 10px;">
+          <div style="font-size:10px; font-weight:700; color:#10b981; text-transform:uppercase; margin-bottom:6px; display:flex; align-items:center; gap:5px;">
+            <i class="fa-solid fa-sparkles"></i> AI Polished Result:
+          </div>
+          <div id="aiPolishedText" style="font-size:12px; color:var(--editor-text); line-height:1.5; padding:8px; background:rgba(0,0,0,0.25); border-radius:4px; margin-bottom:10px; max-height:120px; overflow-y:auto;">
+          </div>
+          <div style="display:flex; gap:6px;">
+            <button id="aiBtnApply" style="flex:1; padding:7px; background:#10b981; color:#fff; border:none; border-radius:6px; font-weight:700; font-size:11.5px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:5px;">
+              <i class="fa-solid fa-check"></i> Apply
+            </button>
+            <button id="aiBtnDiscard" style="padding:7px 12px; background:rgba(255,255,255,0.06); color:var(--editor-text-muted); border:1px solid var(--editor-border); border-radius:6px; font-size:11.5px; cursor:pointer;">
+              Discard
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -370,6 +418,9 @@
       </div>
     </div>
     <div class="bottombar-right">
+      <button class="bottombar-download-btn" id="btnPrintNative" style="background: rgba(255,255,255,0.08); color: var(--editor-text); border: 1px solid var(--editor-border); margin-right: 8px;" title="Print immediately to PDF via browser (Ctrl+P)">
+        <i class="fa-solid fa-print"></i> Instant Print
+      </button>
       <button class="bottombar-download-btn" id="btnDownloadPdf">
         <i class="fa-solid fa-download"></i> Download PDF
       </button>
@@ -409,7 +460,7 @@
         <span>Section Gap</span>
         <span class="spacing-slider-value" id="valSectionGap">6px</span>
       </div>
-      <input type="range" class="spacing-slider" id="sliderSectionGap" min="0" max="20" value="6">
+      <input type="range" class="spacing-slider" id="sliderSectionGap" min="0" max="24" value="6">
     </div>
     <div class="spacing-slider-row">
       <div class="spacing-slider-label">
@@ -445,6 +496,7 @@
       resumePath: "{{ resume_path }}",
       saveUrl: "/api/editor/save",
       exportPdfUrl: "/api/editor/export-pdf",
+      aiPolishUrl: "/api/editor/ai-polish",
       backUrl: "/"
     };
   </script>

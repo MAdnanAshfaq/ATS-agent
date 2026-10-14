@@ -1313,10 +1313,27 @@ def generate_pdf_from_html(
         with sync_playwright() as p:
             browser = p.chromium.launch(
                 headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu"]
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-gpu",
+                    "--disable-dev-shm-usage",
+                    "--disable-extensions",
+                    "--disable-background-networking",
+                    "--disable-default-apps",
+                    "--disable-sync",
+                    "--no-first-run",
+                    "--metrics-recording-only",
+                ]
             )
             page = browser.new_page()
-            page.set_content(html_content, wait_until="networkidle")
+            page.set_content(html_content, wait_until="load")
+
+            # Fast font-ready check: wait up to 1.2s for active webfonts without stalling on networkidle
+            try:
+                page.evaluate("() => Promise.race([document.fonts ? document.fonts.ready : Promise.resolve(), new Promise(r => setTimeout(r, 1200))])")
+            except Exception:
+                pass
 
             # Smart single-page fit check:
             # 11 inches at 96 DPI = 1056px. If content slightly exceeds 1 page (up to ~1240px),
@@ -1325,7 +1342,7 @@ def generate_pdf_from_html(
                 sheet_h = page.evaluate("() => { const s = document.querySelector('.resume-sheet'); return s ? s.scrollHeight : document.body.scrollHeight; }")
                 if 1056 < sheet_h <= 1350:
                     page.evaluate("() => { document.body.classList.add('compact-fit'); }")
-                    page.wait_for_timeout(80)
+                    page.wait_for_timeout(60)
             except Exception:
                 pass
 

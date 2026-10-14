@@ -563,6 +563,10 @@
       const blockId = blockEl.getAttribute('data-block-id');
       store.selectBlock(blockId);
       InspectorController.syncWithSelectedBlock(blockEl);
+      const firstTarget = blockEl.querySelector('.bullet-item, .summary-text, .section-title, .role-title');
+      if (firstTarget && typeof AiPolishController !== 'undefined') {
+        AiPolishController.setTarget(firstTarget, firstTarget.innerText);
+      }
     }
 
     static clearSelection() {
@@ -570,6 +574,9 @@
       InlineEditor.stopEditing();
       store.clearSelection();
       InspectorController.showEmpty();
+      if (typeof AiPolishController !== 'undefined') {
+        AiPolishController.setTarget(null, '');
+      }
     }
   }
 
@@ -617,6 +624,10 @@
       // Make element editable
       element.setAttribute('contenteditable', 'true');
       element.focus();
+
+      if (typeof AiPolishController !== 'undefined') {
+        AiPolishController.setTarget(element, element.innerText);
+      }
 
       // Clean paste event to prevent styled HTML garbage
       element.onpaste = (e) => {
@@ -1328,68 +1339,164 @@
     }
 
     static initAiTools() {
-      const runAiOnSelection = (transformFn, label) => {
-        const blockId = store.state.selectedBlockId;
-        if (!blockId) {
-          alert('Please click on a resume block first to apply AI enhancement.');
+      AiPolishController.init();
+    }
+  }
+
+
+  // ═══════════════════════════════════════════════════════════════════
+  // 9B. REAL GEMINI AI POLISH CONTROLLER (Embedded in Studio Editor)
+  // ═══════════════════════════════════════════════════════════════════
+
+  class AiPolishController {
+    static currentTargetEl = null;
+    static currentTargetText = '';
+    static lastPolishedText = '';
+
+    static setTarget(element, text) {
+      this.currentTargetEl = element;
+      this.currentTargetText = (text || (element ? element.innerText : '')).trim();
+      const preview = document.getElementById('aiSelectedPreview');
+      if (preview) {
+        if (this.currentTargetText) {
+          preview.innerText = `"${this.currentTargetText.slice(0, 120)}${this.currentTargetText.length > 120 ? '...' : ''}"`;
+          preview.style.fontStyle = 'normal';
+          preview.style.color = 'var(--editor-text)';
+        } else {
+          preview.innerText = 'Click any bullet or section on the artboard to target it.';
+          preview.style.fontStyle = 'italic';
+          preview.style.color = 'var(--editor-text-muted)';
+        }
+      }
+    }
+
+    static async runPolish(mode, customInstruction = '', btnEl = null) {
+      if (!this.currentTargetText) {
+        const firstBullet = document.querySelector('.bullet-item') || document.querySelector('.summary-text');
+        if (firstBullet) {
+          this.setTarget(firstBullet, firstBullet.innerText);
+        } else {
+          alert('Please click on a bullet or text block on your resume first.');
           return;
         }
-        const blockEl = document.querySelector(`[data-block-id="${blockId}"]`);
-        if (!blockEl) return;
+      }
 
-        const bullets = blockEl.querySelectorAll('.bullet-item');
-        if (bullets.length > 0) {
-          bullets.forEach(b => {
-            b.innerText = transformFn(b.innerText);
-          });
-        } else {
-          const textEl = blockEl.querySelector('.summary-text') || blockEl;
-          textEl.innerText = transformFn(textEl.innerText);
+      const origBtnHtml = btnEl ? btnEl.innerHTML : '';
+      if (btnEl) {
+        btnEl.disabled = true;
+        btnEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Polishing...';
+      }
+
+      const diffCard = document.getElementById('aiDiffCard');
+      const diffText = document.getElementById('aiPolishedText');
+
+      try {
+        const config = window.EDITOR_CONFIG || {};
+        const url = config.aiPolishUrl || '/api/editor/ai-polish';
+
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: this.currentTargetText,
+            mode: mode,
+            instruction: customInstruction,
+            target_role: store.state.resume?.target_role || ''
+          })
+        });
+
+        const data = await resp.json();
+        if (!data.success) {
+          throw new Error(data.error || 'Failed to polish text with AI.');
         }
-        InlineEditor.syncDomToResumeJson();
-        store.pushSnapshot(`AI: ${label}`);
-      };
 
-      const btnEnhance = document.getElementById('aiEnhance');
-      if (btnEnhance) {
-        btnEnhance.addEventListener('click', () => {
-          runAiOnSelection(txt => {
-            if (!txt.includes('%') && !txt.includes('$')) {
-              return `${txt.replace(/\.$/, '')}, driving a 30% increase in overall efficiency.`;
-            }
-            return txt;
-          }, 'Enhance with Metrics');
+        this.lastPolishedText = data.polished;
+
+        if (diffCard && diffText) {
+          diffText.innerText = data.polished;
+          diffCard.style.display = 'block';
+          diffCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      } catch (err) {
+        console.error('[AI Polish] Error:', err);
+        alert('AI Polish Error: ' + err.message);
+      } finally {
+        if (btnEl) {
+          btnEl.disabled = false;
+          btnEl.innerHTML = origBtnHtml;
+        }
+      }
+    }
+
+    static applyPolish() {
+      if (!this.lastPolishedText || !this.currentTargetEl) return;
+      this.currentTargetEl.innerText = this.lastPolishedText;
+      InlineEditor.syncDomToResumeJson();
+      store.pushSnapshot('AI Polish applied');
+
+      const updated = this.lastPolishedText;
+      this.setTarget(this.currentTargetEl, updated);
+
+      const diffCard = document.getElementById('aiDiffCard');
+      if (diffCard) diffCard.style.display = 'none';
+
+      // Visual pulse
+      this.currentTargetEl.style.transition = 'background 0.3s ease';
+      this.currentTargetEl.style.background = 'rgba(16, 185, 129, 0.25)';
+      setTimeout(() => {
+        if (this.currentTargetEl) this.currentTargetEl.style.background = '';
+      }, 1200);
+    }
+
+    static discardPolish() {
+      this.lastPolishedText = '';
+      const diffCard = document.getElementById('aiDiffCard');
+      if (diffCard) diffCard.style.display = 'none';
+    }
+
+    static init() {
+      const bMetrics = document.getElementById('aiBtnMetrics');
+      if (bMetrics) bMetrics.addEventListener('click', () => this.runPolish('metrics', '', bMetrics));
+
+      const bVerbs = document.getElementById('aiBtnVerbs');
+      if (bVerbs) bVerbs.addEventListener('click', () => this.runPolish('action_verbs', '', bVerbs));
+
+      const bAts = document.getElementById('aiBtnAts');
+      if (bAts) bAts.addEventListener('click', () => this.runPolish('ats', '', bAts));
+
+      const bConcise = document.getElementById('aiBtnConcise');
+      if (bConcise) bConcise.addEventListener('click', () => this.runPolish('concise', '', bConcise));
+
+      const bTone = document.getElementById('aiBtnTone');
+      if (bTone) bTone.addEventListener('click', () => this.runPolish('tone', '', bTone));
+
+      const bCustom = document.getElementById('aiBtnRunCustom');
+      const customPrompt = document.getElementById('aiCustomPrompt');
+      if (bCustom) {
+        bCustom.addEventListener('click', () => {
+          const inst = (customPrompt?.value || '').trim();
+          if (!inst) {
+            alert('Please type an instruction for the AI (e.g. "Add metrics for cloud architecture").');
+            return;
+          }
+          this.runPolish('custom', inst, bCustom);
         });
       }
 
-      const btnConcise = document.getElementById('aiConcise');
-      if (btnConcise) {
-        btnConcise.addEventListener('click', () => {
-          runAiOnSelection(txt => {
-            return txt.replace(/\b(in order to|as a way to|responsible for|tasked with)\b/gi, 'to')
-                      .replace(/\s+/g, ' ')
-                      .trim();
-          }, 'Make Concise');
-        });
-      }
+      const bApply = document.getElementById('aiBtnApply');
+      if (bApply) bApply.addEventListener('click', () => this.applyPolish());
 
-      const btnAts = document.getElementById('aiAtsOptimize');
-      if (btnAts) {
-        btnAts.addEventListener('click', () => {
-          runAiOnSelection(txt => {
-            const strongVerbs = ['Orchestrated', 'Spearheaded', 'Engineered', 'Architected', 'Accelerated'];
-            const randomVerb = strongVerbs[Math.floor(Math.random() * strongVerbs.length)];
-            return txt.replace(/^[A-Z][a-z]+ed\b/, randomVerb);
-          }, 'ATS Keyword Optimize');
-        });
-      }
+      const bDiscard = document.getElementById('aiBtnDiscard');
+      if (bDiscard) bDiscard.addEventListener('click', () => this.discardPolish());
 
-      const btnTone = document.getElementById('aiTone');
-      if (btnTone) {
-        btnTone.addEventListener('click', () => {
-          runAiOnSelection(txt => {
-            return txt.replace(/\b(helped with|did|worked on)\b/gi, 'delivered critical contributions towards');
-          }, 'Professional Tone');
+      // Auto-target when user clicks any text inside the artboard
+      const artboard = document.getElementById('editorArtboard');
+      if (artboard) {
+        artboard.addEventListener('click', (e) => {
+          const target = e.target.closest('.bullet-item, .summary-text, .section-title, .role-title, .two-col-left, .two-col-line');
+          if (target && target.innerText.trim()) {
+            this.setTarget(target, target.innerText);
+          }
         });
       }
     }
@@ -1684,15 +1791,32 @@
   class PdfExporter {
     static init() {
       const btnDownload = document.getElementById('btnDownloadPdf');
+      const btnPrint = document.getElementById('btnPrintNative');
+
+      // 1. Instant Print / Save as PDF (0 seconds, uses native browser dialog + print CSS)
+      if (btnPrint) {
+        btnPrint.addEventListener('click', () => {
+          InlineEditor.stopEditing();
+          window.print();
+        });
+      }
+
       if (!btnDownload) return;
 
+      // 2. Headless Chromium Server Render (1:1 Playwright Vector PDF)
       btnDownload.addEventListener('click', async () => {
-        // Commit any active inline edit before exporting
         InlineEditor.stopEditing();
 
         const origHtml = btnDownload.innerHTML;
-        btnDownload.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating PDF...';
+        let seconds = 0;
+        btnDownload.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Rendering PDF (<span id="pdfSec">0</span>s)...';
         btnDownload.disabled = true;
+
+        const timer = setInterval(() => {
+          seconds++;
+          const secSpan = document.getElementById('pdfSec');
+          if (secSpan) secSpan.innerText = seconds;
+        }, 1000);
 
         const config = window.EDITOR_CONFIG || {};
         const payload = {
@@ -1730,6 +1854,7 @@
           console.error('[PdfExporter] Failed:', err);
           alert(`PDF Generation Error: ${err.message}`);
         } finally {
+          clearInterval(timer);
           btnDownload.innerHTML = origHtml;
           btnDownload.disabled = false;
         }

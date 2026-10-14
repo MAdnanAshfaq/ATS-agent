@@ -2685,6 +2685,86 @@ def api_editor_export_pdf():
     )
 
 
+@app.route("/api/editor/ai-polish", methods=["POST"])
+@login_required
+def api_editor_ai_polish():
+    """
+    AI Polish endpoint for Studio Editor.
+    Takes text + mode (metrics, action_verbs, ats, concise, tone, or custom instruction)
+    and uses Gemini to polish it with high burstiness, strong impact, and ATS optimization.
+    """
+    data = request.get_json() or {}
+    text = (data.get("text") or "").strip()
+    mode = data.get("mode", "metrics")
+    custom_instruction = (data.get("instruction") or "").strip()
+    target_role = (data.get("target_role") or "").strip()
+
+    if not text:
+        return jsonify({"success": False, "error": "No text provided for AI polish."}), 400
+
+    from gemini_client import execute_with_failover
+
+    prompt_map = {
+        "metrics": (
+            "You are a Fortune 500 executive resume coach. Enhance the following resume bullet/text "
+            "by injecting realistic, high-impact quantified metrics, percentages, throughput numbers, or dollar values. "
+            "Follow the Google X-Y-Z formula: Accomplished [X] as measured by [Y], by doing [Z]. "
+            "Keep the phrasing concise, authoritative, professional, and ATS-friendly. "
+            "Return ONLY the polished bullet text, without preamble, quotes, or conversational explanations."
+        ),
+        "action_verbs": (
+            "You are an elite career strategist. Rewrite the following resume text by front-loading strong, "
+            "active power verbs (e.g., Spearheaded, Orchestrated, Engineered, Architected, Accelerated, Overhauled). "
+            "Eliminate weak phrases like 'Responsible for', 'Helped with', or 'Worked on'. "
+            "Return ONLY the polished bullet text, without preamble, quotes, or conversational explanations."
+        ),
+        "ats": (
+            f"You are an ATS optimization algorithm expert. Rewrite this resume content to maximize keyword relevance "
+            f"{f'for the role of {target_role}' if target_role else 'for top modern tech/business roles'}. "
+            "Incorporate high-frequency industry standard competencies and technical skills naturally into the sentence. "
+            "Return ONLY the polished text, without preamble, quotes, or conversational explanations."
+        ),
+        "concise": (
+            "You are an executive editor. Make the following resume bullet tight, punchy, and concise. "
+            "Eliminate all fluff, wordiness, redundant adjectives, and passive voice while preserving core impact and numbers. "
+            "Return ONLY the polished text, without preamble, quotes, or conversational explanations."
+        ),
+        "tone": (
+            "You are an executive copywriter. Elevate the tone of the following resume text to sound highly polished, "
+            "sophisticated, and leadership-oriented. Use crisp business vocabulary. "
+            "Return ONLY the polished text, without preamble, quotes, or conversational explanations."
+        ),
+        "custom": (
+            f"You are an elite resume editor. Rewrite the following resume text following this specific instruction:\n"
+            f"Instruction: {custom_instruction}\n"
+            "Return ONLY the revised text, without preamble, quotes, or conversational explanations."
+        )
+    }
+
+    system_instruction = prompt_map.get(mode, prompt_map["metrics"])
+    full_prompt = f"{system_instruction}\n\nORIGINAL TEXT:\n{text}\n\nPOLISHED TEXT:"
+
+    try:
+        def call_gemini(client):
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=full_prompt,
+            )
+            return response.text
+
+        polished = execute_with_failover(call_gemini)
+        polished = (polished or "").strip().strip('"').strip("'")
+        return jsonify({
+            "success": True,
+            "original": text,
+            "polished": polished,
+            "mode": mode
+        })
+    except Exception as e:
+        logger.error(f"[AI Polish] Error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/download_launcher")
 def download_launcher():
     """Download the Start_Agent.bat script for local desktop self-hosting."""
