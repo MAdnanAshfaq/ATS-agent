@@ -39,24 +39,69 @@ def sanitize_text(text: str) -> str:
     return text.strip()
 
 
-def _get_base_html_template(body_content: str, title: str = "Resume Preview") -> str:
+def _get_base_html_template(body_content: str, title: str = "Resume Preview", editor_styles: dict = None) -> str:
     """Wrap resume body in an authentic, printable paper sheet layout with 100% cross-platform parity."""
+    styles = editor_styles or {}
+    typo = styles.get("typography", {})
+    spacing = styles.get("spacing", {})
+    colors = styles.get("colors", {})
+    page = styles.get("page", {})
+
+    font_family = typo.get("fontFamily") or "'Carlito', 'Calibri', 'Segoe UI', Arial, -apple-system, sans-serif"
+    if font_family in ("Carlito", "Arial", "Georgia", "Garamond", "Roboto", "Inter", "Lato", "Open Sans", "Times New Roman", "Playfair Display", "Montserrat"):
+        font_family = f"'{font_family}', 'Calibri', 'Segoe UI', Arial, sans-serif"
+    font_size = typo.get("fontSize") or "9.5pt"
+    if isinstance(font_size, (int, float)) or (isinstance(font_size, str) and font_size.replace(".", "").isdigit()):
+        font_size = f"{font_size}pt"
+    line_height = str(typo.get("lineHeight") or "1.22")
+    letter_spacing = str(typo.get("letterSpacing") or "0px")
+
+    section_gap = spacing.get("sectionGap") or "6px"
+    if isinstance(section_gap, (int, float)) or (isinstance(section_gap, str) and section_gap.isdigit()):
+        section_gap = f"{section_gap}px"
+    entry_gap = spacing.get("entryGap") or "4px"
+    if isinstance(entry_gap, (int, float)) or (isinstance(entry_gap, str) and entry_gap.isdigit()):
+        entry_gap = f"{entry_gap}px"
+    bullet_gap = spacing.get("bulletGap") or "1px"
+    if isinstance(bullet_gap, (int, float)) or (isinstance(bullet_gap, str) and bullet_gap.isdigit()):
+        bullet_gap = f"{bullet_gap}px"
+
+    text_color = colors.get("text") or "#000000"
+    line_color = colors.get("border") or colors.get("line") or "#111827"
+    link_color = colors.get("link") or "#1a56db"
+
+    margin_t = page.get("marginTop") or "0.35in"
+    margin_b = page.get("marginBottom") or "0.35in"
+    margin_l = page.get("marginLeft") or "0.45in"
+    margin_r = page.get("marginRight") or "0.45in"
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{html.escape(title)}</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Carlito:ital,wght@0,400;0,700;1,400;1,700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Carlito:ital,wght@0,400;0,700;1,400;1,700&family=Inter:wght@400;500;600;700&family=Roboto:wght@400;500;700&family=Lato:wght@400;700&family=Open+Sans:wght@400;600;700&family=Playfair+Display:wght@400;700&family=Montserrat:wght@400;600;700&display=swap">
   <style>
     :root {{
       --page-bg: #1e222d;
       --paper-bg: #ffffff;
-      --text-main: #111827;
+      --text-main: {text_color};
       --text-muted: #374151;
       --text-subtle: #4b5563;
-      --line-color: #111827;
-      --font-family: 'Carlito', 'Calibri', 'Segoe UI', Arial, -apple-system, sans-serif;
+      --line-color: {line_color};
+      --font-family: {font_family};
+      --resume-base-size: {font_size};
+      --resume-line-height: {line_height};
+      --resume-letter-spacing: {letter_spacing};
+      --resume-section-gap: {section_gap};
+      --resume-entry-gap: {entry_gap};
+      --resume-bullet-gap: {bullet_gap};
+      --resume-link-color: {link_color};
+      --paper-margin-t: {margin_t};
+      --paper-margin-b: {margin_b};
+      --paper-margin-l: {margin_l};
+      --paper-margin-r: {margin_r};
     }}
 
     * {{
@@ -81,12 +126,13 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
       width: 100%;
       max-width: 8.5in;
       min-height: 11in;
-      padding: 0.35in 0.45in;
+      padding: var(--paper-margin-t) var(--paper-margin-r) var(--paper-margin-b) var(--paper-margin-l);
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
       border-radius: 4px;
-      font-size: 9.5pt;
-      line-height: 1.22;
-      color: #000000;
+      font-size: var(--resume-base-size);
+      line-height: var(--resume-line-height);
+      letter-spacing: var(--resume-letter-spacing);
+      color: var(--text-main);
     }}
 
     /* Header */
@@ -125,7 +171,7 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
     }}
 
     .contact-line a {{
-      color: #1a56db;
+      color: var(--resume-link-color);
       text-decoration: none;
     }}
 
@@ -144,10 +190,10 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      color: #000000;
+      color: var(--text-main);
       border-bottom: 1px solid var(--line-color);
       padding-bottom: 1px;
-      margin-top: 6px;
+      margin-top: var(--resume-section-gap);
       margin-bottom: 2px;
       break-after: avoid !important;
       page-break-after: avoid !important;
@@ -155,16 +201,17 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
 
     /* Summary */
     .summary-text {{
-      font-size: 9.5pt;
-      line-height: 1.25;
-      color: #111827;
+      font-size: var(--resume-base-size);
+      line-height: var(--resume-line-height);
+      letter-spacing: var(--resume-letter-spacing);
+      color: var(--text-main);
       margin-bottom: 3px;
       text-align: left;
     }}
 
     /* Experience & Education Entries */
     .entry-item {{
-      margin-bottom: 4px;
+      margin-bottom: var(--resume-entry-gap);
       break-inside: avoid !important;
       page-break-inside: avoid !important;
     }}
@@ -183,9 +230,9 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
     }}
 
     .two-col-left {{
-      font-size: 9.5pt;
+      font-size: var(--resume-base-size);
       font-weight: 700;
-      color: #000000;
+      color: var(--text-main);
       text-align: left;
     }}
 
@@ -231,10 +278,11 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
     }}
 
     .bullet-item {{
-      font-size: 9.5pt;
-      line-height: 1.22;
-      color: #111827;
-      margin-bottom: 1px;
+      font-size: var(--resume-base-size);
+      line-height: var(--resume-line-height);
+      letter-spacing: var(--resume-letter-spacing);
+      color: var(--text-main);
+      margin-bottom: var(--resume-bullet-gap);
       padding-left: 2px;
       break-inside: avoid !important;
       page-break-inside: avoid !important;
@@ -582,13 +630,23 @@ def _get_base_html_template(body_content: str, title: str = "Resume Preview") ->
 </html>"""
 
 
-def resume_json_to_html(resume: dict, company: str = "", role: str = "") -> str:
+def resume_json_to_html(
+    resume: dict,
+    company: str = "",
+    role: str = "",
+    editor_styles: dict = None,
+    editable: bool = False,
+) -> str:
     """
     Convert a structured resume dictionary (base_resume.json / tailored_resume.json)
-    into a high-fidelity HTML document.
+    into a high-fidelity HTML document with 100% pixel-perfect editor and PDF parity.
+    Supports dynamic style overrides (fonts, sizes, gaps, margins) and section reordering.
     """
     if not isinstance(resume, dict):
-        return _get_base_html_template("<p>Invalid resume data.</p>")
+        return _get_base_html_template("<p>Invalid resume data.</p>", editor_styles=editor_styles)
+
+    if editor_styles is None:
+        editor_styles = resume.get("editor_styles") or {}
 
     name = sanitize_text(resume.get("name", "Candidate Name"))
     contact = resume.get("contact", {})
@@ -603,11 +661,14 @@ def resume_json_to_html(resume: dict, company: str = "", role: str = "") -> str:
 
     body_parts = []
 
-    # 1. Header
-    body_parts.append('<div class="resume-header">')
-    body_parts.append(f'<div class="candidate-name" data-edit="name">{html.escape(name.upper())}</div>')
+    # 1. Header Block
+    header_lines = []
+    if editable:
+        header_lines.append('<div class="editor-block" data-block-id="header" data-block-type="header">')
+    header_lines.append('<div class="resume-header">')
+    header_lines.append(f'<div class="candidate-name" data-edit="name">{html.escape(name.upper())}</div>')
     if clean_role:
-        body_parts.append(f'<div class="target-role" data-edit="target_role">{html.escape(clean_role)}</div>')
+        header_lines.append(f'<div class="target-role" data-edit="target_role">{html.escape(clean_role)}</div>')
 
     # Contact line
     contact_parts = []
@@ -621,7 +682,6 @@ def resume_json_to_html(resume: dict, company: str = "", role: str = "") -> str:
 
     phone_val = str(contact.get("phone") or "").strip()
     if phone_val:
-        # Check if phone is polluted with LinkedIn URL or letters
         if any(k in phone_val.lower() for k in ("linkedin", "http", "github", "www.", ".com")) or re.search(r'[a-zA-Z]', phone_val):
             if not contact.get("linkedin") and "linkedin" in phone_val.lower():
                 contact["linkedin"] = phone_val
@@ -667,8 +727,11 @@ def resume_json_to_html(resume: dict, company: str = "", role: str = "") -> str:
 
     if contact_parts:
         sep = '<span class="contact-sep">|</span>'
-        body_parts.append(f'<div class="contact-line">{sep.join(contact_parts)}</div>')
-    body_parts.append('</div>')  # /resume-header
+        header_lines.append(f'<div class="contact-line">{sep.join(contact_parts)}</div>')
+    header_lines.append('</div>')  # /resume-header
+    if editable:
+        header_lines.append('</div>')  # /editor-block
+    body_parts.append("\n".join(header_lines))
 
     headings = resume.get("section_headings", {})
     summary_title = sanitize_text(headings.get("summary", "Professional Summary")) or "Professional Summary"
@@ -678,28 +741,47 @@ def resume_json_to_html(resume: dict, company: str = "", role: str = "") -> str:
     cert_title = sanitize_text(headings.get("certifications", "Certifications")) or "Certifications"
     proj_title = sanitize_text(headings.get("projects", "Key Projects")) or "Key Projects"
 
-    # 2. Professional Summary
-    if summary:
-        body_parts.append(f'<div class="section-title" data-edit="section-heading" data-section="summary">{html.escape(summary_title)}</div>')
-        body_parts.append(f'<p class="summary-text" data-edit="summary">{html.escape(summary)}</p>')
+    # Section renderers
+    def _render_summary() -> str:
+        if not summary:
+            return ""
+        lines = []
+        if editable:
+            lines.append('<div class="editor-block" data-block-id="section-summary" data-block-type="summary">')
+        lines.append(f'<div class="section-title" data-edit="section-heading" data-section="summary">{html.escape(summary_title)}</div>')
+        lines.append(f'<p class="summary-text" data-edit="summary">{html.escape(summary)}</p>')
+        if editable:
+            lines.append('</div>')
+        return "\n".join(lines)
 
-    # 3. Technical Skills
-    skills = resume.get("skills", [])
-    if skills:
-        body_parts.append(f'<div class="section-title" data-edit="section-heading" data-section="skills">{html.escape(skills_title)}</div>')
+    def _render_skills() -> str:
+        skills = resume.get("skills", [])
+        if not skills:
+            return ""
+        lines = []
+        if editable:
+            lines.append('<div class="editor-block" data-block-id="section-skills" data-block-type="skills">')
+        lines.append(f'<div class="section-title" data-edit="section-heading" data-section="skills">{html.escape(skills_title)}</div>')
         from resume_builder import _categorize_skills
         categorized = _categorize_skills(skills)
         for cat_name, cat_skills in categorized.items():
             if cat_skills:
                 skills_str = ", ".join(cat_skills)
-                body_parts.append(
+                lines.append(
                     f'<div class="skill-category" data-cat="{html.escape(cat_name)}"><span class="skill-category-label" data-edit="skill-cat-label">{html.escape(cat_name)}:</span> <span class="skill-category-list" data-edit="skills-list">{html.escape(skills_str)}</span></div>'
                 )
+        if editable:
+            lines.append('</div>')
+        return "\n".join(lines)
 
-    # 4. Professional Experience
-    experience = resume.get("experience", [])
-    if experience:
-        body_parts.append(f'<div class="section-title" data-edit="section-heading" data-section="experience">{html.escape(exp_title)}</div>')
+    def _render_experience() -> str:
+        experience = resume.get("experience", [])
+        if not experience:
+            return ""
+        lines = []
+        if editable:
+            lines.append('<div class="editor-block" data-block-id="section-experience" data-block-type="experience">')
+        lines.append(f'<div class="section-title" data-edit="section-heading" data-section="experience">{html.escape(exp_title)}</div>')
         for exp_idx, exp in enumerate(experience):
             title = sanitize_text(exp.get("title") or exp.get("role") or "")
             company_name = sanitize_text(exp.get("company", ""))
@@ -707,7 +789,7 @@ def resume_json_to_html(resume: dict, company: str = "", role: str = "") -> str:
             if not dates and exp.get("start_date"):
                 dates = sanitize_text(f"{exp.get('start_date')} - {exp.get('end_date', 'Present')}")
             loc = sanitize_text(exp.get("location", ""))
-            
+
             # Robust fallback: if dates missing, search base_resume inside resume dict
             if not dates and company_name:
                 base_exp = (resume.get("base_resume", {}) or {}).get("experience", []) or resume.get("_orig_experience", [])
@@ -720,37 +802,43 @@ def resume_json_to_html(resume: dict, company: str = "", role: str = "") -> str:
                         break
             bullets = exp.get("bullets", [])
 
-            body_parts.append(f'<div class="entry-item exp-item" data-exp-index="{exp_idx}">')
-            # Title on left, Dates on right
-            body_parts.append('<div class="two-col-line">')
-            body_parts.append(f'<span class="two-col-left role-title" data-edit="exp-title">{html.escape(title)}</span>')
+            entry_wrap = f'<div class="entry-item exp-item" data-exp-index="{exp_idx}">'
+            if editable:
+                entry_wrap = f'<div class="entry-item exp-item editor-block" data-block-id="exp-{exp_idx}" data-block-type="experience-entry" data-exp-index="{exp_idx}">'
+            lines.append(entry_wrap)
+            lines.append('<div class="two-col-line">')
+            lines.append(f'<span class="two-col-left role-title" data-edit="exp-title">{html.escape(title)}</span>')
             if dates:
-                body_parts.append(f'<span class="two-col-right role-dates" data-edit="exp-dates">{html.escape(dates)}</span>')
-            body_parts.append('</div>')
+                lines.append(f'<span class="two-col-right role-dates" data-edit="exp-dates">{html.escape(dates)}</span>')
+            lines.append('</div>')
 
-            # Company on left, Location on right
             if company_name or loc:
-                body_parts.append('<div class="sub-line">')
-                body_parts.append(f'<span class="sub-left role-company" data-edit="exp-company">{html.escape(company_name)}</span>')
+                lines.append('<div class="sub-line">')
+                lines.append(f'<span class="sub-left role-company" data-edit="exp-company">{html.escape(company_name)}</span>')
                 if loc:
-                    body_parts.append(f'<span class="sub-right role-location" data-edit="exp-loc">{html.escape(loc)}</span>')
-                body_parts.append('</div>')
+                    lines.append(f'<span class="sub-right role-location" data-edit="exp-loc">{html.escape(loc)}</span>')
+                lines.append('</div>')
 
-            # Bullets
             if bullets:
-                body_parts.append('<ul class="bullet-list" data-edit="bullet-list">')
+                lines.append('<ul class="bullet-list" data-edit="bullet-list">')
                 for b in bullets:
                     b_clean = sanitize_text(b)
                     if b_clean and len(b_clean) > 5:
-                        body_parts.append(f'<li class="bullet-item" data-edit="bullet">{html.escape(b_clean)}</li>')
-                body_parts.append('</ul>')
+                        lines.append(f'<li class="bullet-item" data-edit="bullet">{html.escape(b_clean)}</li>')
+                lines.append('</ul>')
+            lines.append('</div>')  # /entry-item
+        if editable:
+            lines.append('</div>')
+        return "\n".join(lines)
 
-            body_parts.append('</div>')  # /entry-item
-
-    # 5. Education
-    education = resume.get("education", [])
-    if education:
-        body_parts.append(f'<div class="section-title" data-edit="section-heading" data-section="education">{html.escape(edu_title)}</div>')
+    def _render_education() -> str:
+        education = resume.get("education", [])
+        if not education:
+            return ""
+        lines = []
+        if editable:
+            lines.append('<div class="editor-block" data-block-id="section-education" data-block-type="education">')
+        lines.append(f'<div class="section-title" data-edit="section-heading" data-section="education">{html.escape(edu_title)}</div>')
         for edu in education:
             inst = sanitize_text(edu.get("institution", ""))
             deg = sanitize_text(edu.get("degree", ""))
@@ -759,53 +847,89 @@ def resume_json_to_html(resume: dict, company: str = "", role: str = "") -> str:
             gpa = sanitize_text(edu.get("gpa", ""))
 
             deg_title = f"{deg} in {fld}" if (deg and fld and not deg.lower().endswith("in")) else (deg or fld or inst)
-            body_parts.append('<div class="entry-item">')
-            body_parts.append('<div class="two-col-line">')
-            body_parts.append(f'<span class="two-col-left" data-edit="edu-degree">{html.escape(deg_title)}</span>')
+            lines.append('<div class="entry-item">')
+            lines.append('<div class="two-col-line">')
+            lines.append(f'<span class="two-col-left" data-edit="edu-degree">{html.escape(deg_title)}</span>')
             if gdate:
-                body_parts.append(f'<span class="two-col-right" data-edit="edu-date">{html.escape(gdate)}</span>')
-            body_parts.append('</div>')
+                lines.append(f'<span class="two-col-right" data-edit="edu-date">{html.escape(gdate)}</span>')
+            lines.append('</div>')
 
             if inst and deg_title != inst:
-                body_parts.append(f'<div class="sub-line"><span class="sub-left" data-edit="edu-school">{html.escape(inst)}</span></div>')
+                lines.append(f'<div class="sub-line"><span class="sub-left" data-edit="edu-school">{html.escape(inst)}</span></div>')
             if gpa:
-                body_parts.append(f'<div class="gpa-line" data-edit="edu-gpa" style="font-size: 9.5pt; color: #374151;">GPA: {html.escape(gpa)}</div>')
-            body_parts.append('</div>')
+                lines.append(f'<div class="gpa-line" data-edit="edu-gpa" style="font-size: 9.5pt; color: #374151;">GPA: {html.escape(gpa)}</div>')
+            lines.append('</div>')
+        if editable:
+            lines.append('</div>')
+        return "\n".join(lines)
 
-    # 6. Certifications
-    certs = resume.get("certifications", [])
-    if certs:
-        body_parts.append(f'<div class="section-title" data-edit="section-heading" data-section="certifications">{html.escape(cert_title)}</div>')
-        body_parts.append('<ul class="bullet-list">')
+    def _render_certifications() -> str:
+        certs = resume.get("certifications", [])
+        if not certs:
+            return ""
+        lines = []
+        if editable:
+            lines.append('<div class="editor-block" data-block-id="section-certifications" data-block-type="certifications">')
+        lines.append(f'<div class="section-title" data-edit="section-heading" data-section="certifications">{html.escape(cert_title)}</div>')
+        lines.append('<ul class="bullet-list">')
         for c in certs:
             c_clean = sanitize_text(c)
             if c_clean:
-                body_parts.append(f'<li class="bullet-item" data-edit="bullet">{html.escape(c_clean)}</li>')
-        body_parts.append('</ul>')
+                lines.append(f'<li class="bullet-item" data-edit="bullet">{html.escape(c_clean)}</li>')
+        lines.append('</ul>')
+        if editable:
+            lines.append('</div>')
+        return "\n".join(lines)
 
-    # 7. Projects (if present)
-    projects = resume.get("projects", [])
-    if projects:
-        body_parts.append(f'<div class="section-title" data-edit="section-heading" data-section="projects">{html.escape(proj_title)}</div>')
+    def _render_projects() -> str:
+        projects = resume.get("projects", [])
+        if not projects:
+            return ""
+        lines = []
+        if editable:
+            lines.append('<div class="editor-block" data-block-id="section-projects" data-block-type="projects">')
+        lines.append(f'<div class="section-title" data-edit="section-heading" data-section="projects">{html.escape(proj_title)}</div>')
         for p in projects:
             pname = sanitize_text(p.get("name", ""))
             pdesc = sanitize_text(p.get("description", ""))
             pbullets = p.get("bullets", [])
-            body_parts.append('<div class="entry-item">')
-            body_parts.append(f'<div class="two-col-left" data-edit="proj-name">{html.escape(pname)}</div>')
+            lines.append('<div class="entry-item">')
+            lines.append(f'<div class="two-col-left" data-edit="proj-name">{html.escape(pname)}</div>')
             if pdesc:
-                body_parts.append(f'<p class="summary-text" data-edit="proj-desc" style="margin-bottom:2px;">{html.escape(pdesc)}</p>')
+                lines.append(f'<p class="summary-text" data-edit="proj-desc" style="margin-bottom:2px;">{html.escape(pdesc)}</p>')
             if pbullets:
-                body_parts.append('<ul class="bullet-list">')
+                lines.append('<ul class="bullet-list">')
                 for b in pbullets:
                     b_clean = sanitize_text(b)
                     if b_clean:
-                        body_parts.append(f'<li class="bullet-item" data-edit="bullet">{html.escape(b_clean)}</li>')
-                body_parts.append('</ul>')
-            body_parts.append('</div>')
+                        lines.append(f'<li class="bullet-item" data-edit="bullet">{html.escape(b_clean)}</li>')
+                lines.append('</ul>')
+            lines.append('</div>')
+        if editable:
+            lines.append('</div>')
+        return "\n".join(lines)
+
+    section_renderers = {
+        "summary": _render_summary,
+        "skills": _render_skills,
+        "experience": _render_experience,
+        "education": _render_education,
+        "certifications": _render_certifications,
+        "projects": _render_projects,
+    }
+
+    order = (editor_styles or {}).get("sectionOrder") or [
+        "summary", "skills", "experience", "education", "certifications", "projects"
+    ]
+    for sec_id in order:
+        renderer = section_renderers.get(sec_id)
+        if renderer:
+            sec_html = renderer()
+            if sec_html:
+                body_parts.append(sec_html)
 
     content = "\n".join(body_parts)
-    return _get_base_html_template(content, title=f"{name} - Resume")
+    return _get_base_html_template(content, title=f"{name} - Resume", editor_styles=editor_styles)
 
 
 def _iter_table_paragraphs(table):

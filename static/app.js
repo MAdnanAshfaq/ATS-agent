@@ -5361,6 +5361,10 @@ async function savePreviewEdits(optionalInstruction = "") {
       if (data.relative_path && extBtn) {
         extBtn.href = `/api/preview/${encodeURIComponent(data.relative_path).replace(/%2F/g, '/')}${cacheBuster}`;
       }
+      const studioBtn = document.getElementById("preview-studio-editor-btn");
+      if (data.relative_path && studioBtn) {
+        studioBtn.href = `/editor/${encodeURIComponent(data.relative_path).replace(/%2F/g, '/')}`;
+      }
 
       const badge = document.getElementById("preview-unsaved-badge");
       if (badge) badge.style.display = "none";
@@ -5563,6 +5567,10 @@ function openPreviewModal(filePath, company = "Tailored Resume", role = "Documen
   if (pdfBtn) pdfBtn.href = pdfDownloadUrl;
   if (docxBtn) docxBtn.href = docxDownloadUrl;
   if (extBtn) extBtn.href = previewUrl;
+  const studioBtn = document.getElementById("preview-studio-editor-btn");
+  if (studioBtn) {
+    studioBtn.href = `/editor/${encodeURIComponent(cleanPath).replace(/%2F/g, '/')}`;
+  }
 
   if (loader) {
     loader.style.display = "flex";

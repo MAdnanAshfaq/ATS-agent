@@ -2438,6 +2438,253 @@ def preview_file(filepath):
     )
 
 
+# ══════════════════════════════════════════════════════════════════
+# CANVA-GRADE VISUAL PDF RESUME EDITOR ROUTES
+# ══════════════════════════════════════════════════════════════════
+
+@app.route("/editor/<path:filepath>")
+@login_required
+def visual_editor_page(filepath):
+    """
+    Serve the Canva-grade visual PDF resume editor studio.
+    Loads the structured JSON resume data and provides 1:1 pixel parity editing.
+    """
+    user_output_dir = get_user_output_dir()
+    user_resume_path = get_user_resume_path()
+
+    import urllib.parse
+    clean_fp = urllib.parse.unquote(filepath).replace("\\", "/").strip("/")
+
+    resume_data = None
+
+    # Case A: Master Resume
+    if clean_fp in ("master", "master_resume", "master_resume.docx", "master.docx", "master.json", "master.pdf"):
+        if user_resume_path.exists():
+            try:
+                with open(user_resume_path, "r", encoding="utf-8") as f:
+                    resume_data = json.load(f)
+            except Exception as e:
+                logger.error(f"[Editor] Master load error: {e}")
+
+        if not resume_data:
+            user_data_dir = current_user.data_dir if current_user.is_authenticated else BASE_DIR
+            user_orig_docx = user_data_dir / "master_resume_original.docx"
+            if user_orig_docx.exists():
+                try:
+                    from pdf_to_resume import parse_resume_pdf
+                    resume_data = parse_resume_pdf(str(user_orig_docx))
+                except Exception as e:
+                    logger.error(f"[Editor] Master original docx parse error: {e}")
+
+    # Case B: Specific file path or job folder
+    if not resume_data:
+        candidate = (user_output_dir / clean_fp).resolve()
+        if candidate.is_dir():
+            tj = candidate / "tailored_resume.json"
+            if tj.exists():
+                candidate = tj
+        elif candidate.suffix.lower() != ".json":
+            tj = candidate.parent / "tailored_resume.json"
+            if tj.exists():
+                candidate = tj
+
+        if candidate.exists() and candidate.name == "tailored_resume.json":
+            try:
+                with open(candidate, "r", encoding="utf-8") as f:
+                    resume_data = json.load(f)
+            except Exception as e:
+                logger.error(f"[Editor] File load error: {e}")
+        else:
+            # Check if direct file is a docx/pdf from an older build
+            orig_doc = (user_output_dir / clean_fp).resolve()
+            if not orig_doc.exists() and (BASE_DIR / clean_fp).exists():
+                orig_doc = (BASE_DIR / clean_fp).resolve()
+
+            if orig_doc.is_dir():
+                docx_files = list(orig_doc.glob("*.docx"))
+                if docx_files:
+                    orig_doc = docx_files[0]
+
+            if orig_doc.exists() and orig_doc.suffix.lower() in (".docx", ".pdf"):
+                try:
+                    from pdf_to_resume import parse_resume_pdf
+                    resume_data = parse_resume_pdf(str(orig_doc))
+                    # Auto-persist as tailored_resume.json for future visual editing
+                    tj_save = orig_doc.parent / "tailored_resume.json" if orig_doc.is_file() else orig_doc / "tailored_resume.json"
+                    with open(tj_save, "w", encoding="utf-8") as f:
+                        json.dump(resume_data, f, indent=2, ensure_ascii=False)
+                except Exception as e:
+                    logger.error(f"[Editor] Legacy docx/pdf auto-parse error: {e}")
+
+            if not resume_data:
+                matches = list(user_output_dir.rglob("tailored_resume.json"))
+                if matches:
+                    folder_name = Path(clean_fp).stem.split(".")[0]
+                    matched = [m for m in matches if folder_name.lower() in str(m).lower()]
+                    pick = matched[0] if matched else matches[0]
+                    try:
+                        with open(pick, "r", encoding="utf-8") as f:
+                            resume_data = json.load(f)
+                    except Exception as e:
+                        logger.error(f"[Editor] Subfolder match load error: {e}")
+
+    # Fallback to master if still not found
+    if not resume_data and user_resume_path.exists():
+        try:
+            with open(user_resume_path, "r", encoding="utf-8") as f:
+                resume_data = json.load(f)
+        except Exception:
+            pass
+
+    if not resume_data:
+        resume_data = {
+            "name": getattr(current_user, "username", "Candidate Name"),
+            "contact": {},
+            "summary": "Experienced professional with a strong track record of success.",
+            "skills": ["Communication", "Problem Solving", "Project Management"],
+            "experience": [],
+            "education": []
+        }
+
+    # Ensure editor_styles exists with sensible Canva-grade defaults
+    if "editor_styles" not in resume_data or not isinstance(resume_data["editor_styles"], dict):
+        resume_data["editor_styles"] = {
+            "page": {
+                "size": "Letter",
+                "marginTop": "0.35in",
+                "marginBottom": "0.35in",
+                "marginLeft": "0.45in",
+                "marginRight": "0.45in"
+            },
+            "typography": {
+                "fontFamily": "Carlito",
+                "fontSize": "9.5pt",
+                "lineHeight": "1.22",
+                "letterSpacing": "0px"
+            },
+            "spacing": {
+                "sectionGap": "6px",
+                "entryGap": "4px",
+                "bulletGap": "1px"
+            },
+            "colors": {
+                "text": "#000000",
+                "accent": "#111827",
+                "border": "#111827",
+                "link": "#1a56db"
+            },
+            "sectionOrder": ["summary", "skills", "experience", "education", "certifications", "projects"]
+        }
+
+    return render_template(
+        "editor.html",
+        resume_json=json.dumps(resume_data),
+        resume_path=clean_fp
+    )
+
+
+@app.route("/api/editor/save", methods=["POST"])
+@login_required
+def api_editor_save():
+    """
+    Persist changes made in the Canva-grade visual editor to disk.
+    Updates the target tailored_resume.json (or base_resume.json for master).
+    """
+    data = request.get_json() or {}
+    rel_path = data.get("resume_path", "").strip()
+    resume_obj = data.get("resume") or {}
+    editor_styles = data.get("editor_styles")
+
+    if not resume_obj or not isinstance(resume_obj, dict):
+        return jsonify({"success": False, "error": "Invalid resume payload."}), 400
+
+    if editor_styles and isinstance(editor_styles, dict):
+        resume_obj["editor_styles"] = editor_styles
+
+    user_output_dir = get_user_output_dir()
+    user_resume_path = get_user_resume_path()
+    clean_fp = rel_path.replace("\\", "/").strip("/")
+
+    is_master = clean_fp in ("master", "master_resume", "master_resume.docx", "master.docx", "master.json")
+
+    if is_master:
+        target_json = user_resume_path
+    else:
+        candidate = (user_output_dir / clean_fp).resolve()
+        if candidate.is_dir():
+            candidate = candidate / "tailored_resume.json"
+        elif candidate.suffix.lower() != ".json":
+            candidate = candidate.parent / "tailored_resume.json"
+
+        if candidate.exists():
+            target_json = candidate
+        else:
+            folder_stem = Path(clean_fp).stem.split(".")[0]
+            matches = list(user_output_dir.rglob("tailored_resume.json"))
+            matched = [m for m in matches if folder_stem.lower() in str(m).lower()]
+            if matched:
+                target_json = matched[0]
+            elif matches:
+                target_json = matches[0]
+            else:
+                target_json = user_resume_path
+
+    try:
+        target_json.parent.mkdir(parents=True, exist_ok=True)
+        with open(target_json, "w", encoding="utf-8") as f:
+            json.dump(resume_obj, f, indent=2, ensure_ascii=False)
+        return jsonify({"success": True, "saved_to": str(target_json.name)})
+    except Exception as e:
+        logger.error(f"[Editor] Save failed: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/editor/export-pdf", methods=["POST"])
+@login_required
+def api_editor_export_pdf():
+    """
+    Generate an authentic PDF from visual editor state with 100% pixel-perfect parity.
+    Uses Playwright headless Chromium on the exact HTML/CSS rendered in the editor.
+    """
+    import uuid
+    data = request.get_json() or {}
+    resume_obj = data.get("resume") or {}
+    editor_styles = data.get("editor_styles") or resume_obj.get("editor_styles") or {}
+
+    if not resume_obj or not isinstance(resume_obj, dict):
+        return jsonify({"error": "Invalid resume payload"}), 400
+
+    from resume_html import resume_json_to_html, generate_pdf_from_html
+    name = resume_obj.get("name", "Candidate")
+
+    # Render exact HTML with custom style overrides
+    html_content = resume_json_to_html(resume_obj, editor_styles=editor_styles)
+
+    user_output_dir = get_user_output_dir()
+    clean_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', name).strip('_') or "Candidate"
+    tmp_pdf_dir = user_output_dir / ".temp_exports"
+    tmp_pdf_dir.mkdir(parents=True, exist_ok=True)
+    pdf_filename = f"{clean_name}_Resume.pdf"
+    output_pdf_path = tmp_pdf_dir / f"{uuid.uuid4().hex[:8]}_{pdf_filename}"
+
+    success = generate_pdf_from_html(
+        html_content=html_content,
+        output_pdf_path=str(output_pdf_path),
+        candidate_name=name,
+        role=resume_obj.get("target_role", "")
+    )
+
+    if not success or not output_pdf_path.exists():
+        return jsonify({"error": "PDF generation failed via Playwright engine."}), 500
+
+    return send_file(
+        str(output_pdf_path),
+        as_attachment=True,
+        download_name=pdf_filename,
+        mimetype="application/pdf"
+    )
+
+
 @app.route("/api/download_launcher")
 def download_launcher():
     """Download the Start_Agent.bat script for local desktop self-hosting."""

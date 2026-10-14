@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Resume Editor — ATS Agent Studio</title>
+  <meta name="description" content="Canva-grade visual resume editor with pixel-perfect PDF export">
+  <link rel="icon" href="/static/favicon-v2.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Carlito:ital,wght@0,400;0,700;1,400;1,700&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="/static/editor.css">
+</head>
+<body class="editor-page">
+
+  <!-- ═══════════════ TOP TOOLBAR ═══════════════ -->
+  <div class="editor-toolbar" id="editorToolbar">
+    <!-- Back / Logo -->
+    <button class="toolbar-back-btn" id="btnBack" title="Back to Dashboard">
+      <i class="fa-solid fa-arrow-left"></i>
+      <span>Editor</span>
+    </button>
+
+    <div class="toolbar-divider"></div>
+
+    <!-- Font Family -->
+    <div class="toolbar-group" id="toolbarFontGroup">
+      <select class="toolbar-font-select" id="fontFamilySelect" title="Font Family">
+        <option value="Carlito" style="font-family:Carlito">Carlito (≡ Calibri)</option>
+        <option value="Arial" style="font-family:Arial">Arial</option>
+        <option value="Georgia" style="font-family:Georgia">Georgia</option>
+        <option value="Garamond" style="font-family:Garamond">Garamond</option>
+        <option value="Roboto" style="font-family:Roboto">Roboto</option>
+        <option value="Inter" style="font-family:Inter">Inter</option>
+        <option value="Lato" style="font-family:Lato">Lato</option>
+        <option value="Open Sans" style="font-family:'Open Sans'">Open Sans</option>
+        <option value="Times New Roman" style="font-family:'Times New Roman'">Times New Roman</option>
+        <option value="Playfair Display" style="font-family:'Playfair Display'">Playfair Display</option>
+        <option value="Montserrat" style="font-family:Montserrat">Montserrat</option>
+      </select>
+    </div>
+
+    <!-- Font Size -->
+    <div class="toolbar-group">
+      <button class="toolbar-stepper" id="btnSizeDec" title="Decrease Size">−</button>
+      <input type="number" class="toolbar-size-input" id="fontSizeInput" value="9.5" min="6" max="28" step="0.5" title="Font Size (pt)">
+      <button class="toolbar-stepper" id="btnSizeInc" title="Increase Size">+</button>
+    </div>
+
+    <div class="toolbar-divider"></div>
+
+    <!-- Text Formatting -->
+    <div class="toolbar-group">
+      <button class="toolbar-btn" id="btnBold" title="Bold (Ctrl+B)"><b>B</b></button>
+      <button class="toolbar-btn" id="btnItalic" title="Italic (Ctrl+I)"><i>I</i></button>
+      <button class="toolbar-btn" id="btnUnderline" title="Underline (Ctrl+U)" style="text-decoration: underline">U</button>
+      <button class="toolbar-btn" id="btnStrike" title="Strikethrough" style="text-decoration: line-through">S</button>
+    </div>
+
+    <div class="toolbar-divider"></div>
+
+    <!-- Color -->
+    <div class="toolbar-group">
+      <button class="toolbar-btn toolbar-color-btn" id="btnTextColor" title="Text Color">
+        A
+        <div class="toolbar-color-swatch" id="colorSwatch"></div>
+      </button>
+    </div>
+
+    <div class="toolbar-divider"></div>
+
+    <!-- Alignment -->
+    <div class="toolbar-group">
+      <button class="toolbar-btn" id="btnAlignLeft" title="Align Left"><i class="fa-solid fa-align-left" style="font-size:12px"></i></button>
+      <button class="toolbar-btn" id="btnAlignCenter" title="Align Center"><i class="fa-solid fa-align-center" style="font-size:12px"></i></button>
+      <button class="toolbar-btn" id="btnAlignRight" title="Align Right"><i class="fa-solid fa-align-right" style="font-size:12px"></i></button>
+      <button class="toolbar-btn" id="btnAlignJustify" title="Justify"><i class="fa-solid fa-align-justify" style="font-size:12px"></i></button>
+    </div>
+
+    <div class="toolbar-divider"></div>
+
+    <!-- Lists -->
+    <div class="toolbar-group">
+      <button class="toolbar-btn" id="btnBulletList" title="Bullet List"><i class="fa-solid fa-list-ul" style="font-size:12px"></i></button>
+      <button class="toolbar-btn" id="btnOrderedList" title="Numbered List"><i class="fa-solid fa-list-ol" style="font-size:12px"></i></button>
+    </div>
+
+    <div class="toolbar-divider"></div>
+
+    <!-- Spacing -->
+    <div class="toolbar-group">
+      <button class="toolbar-btn toolbar-btn-text" id="btnSpacing" title="Spacing Controls">
+        <i class="fa-solid fa-arrows-up-down" style="font-size:12px"></i>
+        <span>Spacing</span>
+      </button>
+    </div>
+
+    <div class="toolbar-divider"></div>
+
+    <!-- Case -->
+    <div class="toolbar-group">
+      <button class="toolbar-btn toolbar-btn-text" id="btnCase" title="Change Case">aA</button>
+    </div>
+
+    <!-- Right-aligned: Undo/Redo/More -->
+    <div style="flex:1"></div>
+    <div class="toolbar-group">
+      <button class="toolbar-btn" id="btnUndo" title="Undo (Ctrl+Z)"><i class="fa-solid fa-rotate-left" style="font-size:13px"></i></button>
+      <button class="toolbar-btn" id="btnRedo" title="Redo (Ctrl+Y)"><i class="fa-solid fa-rotate-right" style="font-size:13px"></i></button>
+    </div>
+  </div>
+
+  <!-- ═══════════════ MAIN BODY ═══════════════ -->
+  <div class="editor-body">
+
+    <!-- ═══ LEFT SIDEBAR ═══ -->
+    <div class="editor-sidebar" id="editorSidebar">
+      <div class="sidebar-tabs">
+        <button class="sidebar-tab active" data-tab="sections">Sections</button>
+        <button class="sidebar-tab" data-tab="design">Design</button>
+        <button class="sidebar-tab" data-tab="ai">AI</button>
+      </div>
+
+      <!-- Sections Panel -->
+      <div class="sidebar-panel active" id="panelSections">
+        <div class="sidebar-section-title">Add Section</div>
+        <button class="sidebar-add-btn" data-add="summary"><span class="icon">📝</span> Professional Summary</button>
+        <button class="sidebar-add-btn" data-add="experience"><span class="icon">💼</span> Experience Entry</button>
+        <button class="sidebar-add-btn" data-add="education"><span class="icon">🎓</span> Education Entry</button>
+        <button class="sidebar-add-btn" data-add="skill"><span class="icon">⚡</span> Skills Category</button>
+        <button class="sidebar-add-btn" data-add="certification"><span class="icon">🏅</span> Certification</button>
+        <button class="sidebar-add-btn" data-add="project"><span class="icon">🚀</span> Project</button>
+
+        <div class="sidebar-section-title">Section Order</div>
+        <div id="sectionOrderList" style="font-size:11px; color: var(--editor-text-muted); padding: 4px 0;">
+          <div style="padding: 6px 8px; background: var(--editor-surface-2); border-radius: 4px; margin-bottom: 3px; display:flex; align-items:center; gap:6px; cursor:grab">
+            <i class="fa-solid fa-grip-vertical" style="font-size:10px; opacity:0.4"></i> Summary
+          </div>
+          <div style="padding: 6px 8px; background: var(--editor-surface-2); border-radius: 4px; margin-bottom: 3px; display:flex; align-items:center; gap:6px; cursor:grab">
+            <i class="fa-solid fa-grip-vertical" style="font-size:10px; opacity:0.4"></i> Technical Skills
+          </div>
+          <div style="padding: 6px 8px; background: var(--editor-surface-2); border-radius: 4px; margin-bottom: 3px; display:flex; align-items:center; gap:6px; cursor:grab">
+            <i class="fa-solid fa-grip-vertical" style="font-size:10px; opacity:0.4"></i> Experience
+          </div>
+          <div style="padding: 6px 8px; background: var(--editor-surface-2); border-radius: 4px; margin-bottom: 3px; display:flex; align-items:center; gap:6px; cursor:grab">
+            <i class="fa-solid fa-grip-vertical" style="font-size:10px; opacity:0.4"></i> Education
+          </div>
+          <div style="padding: 6px 8px; background: var(--editor-surface-2); border-radius: 4px; margin-bottom: 3px; display:flex; align-items:center; gap:6px; cursor:grab">
+            <i class="fa-solid fa-grip-vertical" style="font-size:10px; opacity:0.4"></i> Certifications
+          </div>
+        </div>
+      </div>
+
+      <!-- Design Panel -->
+      <div class="sidebar-panel" id="panelDesign">
+        <div class="sidebar-section-title">Templates</div>
+        <div class="template-card active" data-template="ats-classic">
+          <div class="template-card-name">ATS Classic</div>
+          <div class="template-card-desc">Clean, compact, optimized for ATS parsing. Carlito 9.5pt.</div>
+        </div>
+        <div class="template-card" data-template="executive">
+          <div class="template-card-name">Executive</div>
+          <div class="template-card-desc">Spacious layout with Georgia serif. Wider margins.</div>
+        </div>
+        <div class="template-card" data-template="modern">
+          <div class="template-card-name">Modern</div>
+          <div class="template-card-desc">Inter font, tighter spacing, contemporary feel.</div>
+        </div>
+        <div class="template-card" data-template="minimalist">
+          <div class="template-card-name">Minimalist</div>
+          <div class="template-card-desc">Maximum white space, light borders, airy typography.</div>
+        </div>
+      </div>
+
+      <!-- AI Panel -->
+      <div class="sidebar-panel" id="panelAi">
+        <div class="sidebar-section-title">AI Tools</div>
+        <p style="font-size: 11px; color: var(--editor-text-muted); margin-bottom: 12px;">
+          Select a text block, then use these tools to enhance it.
+        </p>
+        <button class="sidebar-add-btn" id="aiEnhance"><span class="icon">✨</span> Enhance with Metrics</button>
+        <button class="sidebar-add-btn" id="aiConcise"><span class="icon">📐</span> Make Concise</button>
+        <button class="sidebar-add-btn" id="aiAtsOptimize"><span class="icon">🎯</span> ATS Keyword Optimize</button>
+        <button class="sidebar-add-btn" id="aiTone"><span class="icon">🎙️</span> Professional Tone</button>
+      </div>
+    </div>
+
+    <!-- ═══ CANVAS WORKSPACE ═══ -->
+    <div class="editor-workspace" id="editorWorkspace">
+      <div class="editor-viewport" id="editorViewport">
+        <div class="editor-artboard" id="editorArtboard">
+          <!-- Margin guides -->
+          <div class="editor-margin-guide margin-guide-top"></div>
+          <div class="editor-margin-guide margin-guide-bottom"></div>
+          <div class="editor-margin-guide margin-guide-left"></div>
+          <div class="editor-margin-guide margin-guide-right"></div>
+
+          <!-- Page break indicator -->
+          <div class="editor-page-break" id="pageBreakLine"></div>
+
+          <!-- Auto-fit button -->
+          <button class="overflow-autofit-btn" id="btnAutoFit">
+            <i class="fa-solid fa-compress"></i> Auto-fit to 1 page
+          </button>
+
+          <!-- Resume content rendered here by JS -->
+          <div class="editor-resume-content" id="resumeContent">
+            <!-- Blocks will be injected by editor.js -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ RIGHT INSPECTOR ═══ -->
+    <div class="editor-inspector" id="editorInspector">
+      <!-- Default: nothing selected -->
+      <div class="inspector-empty" id="inspectorEmpty">
+        <div class="inspector-empty-icon">🖱️</div>
+        <div class="inspector-empty-title">No Block Selected</div>
+        <div class="inspector-empty-desc">Click on any section of your resume to edit it and see properties here.</div>
+      </div>
+
+      <!-- Active inspector content (shown when a block is selected) -->
+      <div id="inspectorContent" style="display:none">
+        <div class="inspector-header">
+          <span id="inspectorTitle">Block Properties</span>
+          <button class="toolbar-btn" id="btnCloseInspector" title="Close" style="width:24px;height:24px;font-size:10px">✕</button>
+        </div>
+
+        <!-- Typography Section -->
+        <div class="inspector-section" id="inspTypography">
+          <button class="inspector-section-header">
+            Typography <span class="chevron">▾</span>
+          </button>
+          <div class="inspector-section-body">
+            <div class="inspector-row">
+              <span class="inspector-label">Font</span>
+              <select class="inspector-select" id="inspFontFamily" style="max-width:140px">
+                <option value="Carlito">Carlito</option>
+                <option value="Arial">Arial</option>
+                <option value="Georgia">Georgia</option>
+                <option value="Inter">Inter</option>
+                <option value="Roboto">Roboto</option>
+              </select>
+            </div>
+            <div class="inspector-row">
+              <span class="inspector-label">Size</span>
+              <input type="number" class="inspector-input" id="inspFontSize" value="9.5" min="6" max="28" step="0.5">
+            </div>
+            <div class="inspector-row">
+              <span class="inspector-label">Weight</span>
+              <select class="inspector-select" id="inspFontWeight">
+                <option value="400">Regular (400)</option>
+                <option value="500">Medium (500)</option>
+                <option value="600">Semibold (600)</option>
+                <option value="700">Bold (700)</option>
+              </select>
+            </div>
+            <div class="inspector-row">
+              <span class="inspector-label">Line Height</span>
+              <input type="number" class="inspector-input" id="inspLineHeight" value="1.22" min="0.8" max="3" step="0.02">
+            </div>
+            <div class="inspector-row">
+              <span class="inspector-label">Letter Space</span>
+              <input type="text" class="inspector-input" id="inspLetterSpacing" value="0px">
+            </div>
+          </div>
+        </div>
+
+        <!-- Spacing Section -->
+        <div class="inspector-section" id="inspSpacing">
+          <button class="inspector-section-header">
+            Spacing & Layout <span class="chevron">▾</span>
+          </button>
+          <div class="inspector-section-body">
+            <div class="inspector-row">
+              <span class="inspector-label">Margin Top</span>
+              <input type="text" class="inspector-input" id="inspMarginTop" value="0px">
+            </div>
+            <div class="inspector-row">
+              <span class="inspector-label">Margin Bot</span>
+              <input type="text" class="inspector-input" id="inspMarginBottom" value="0px">
+            </div>
+            <div class="inspector-row">
+              <span class="inspector-label">Padding L</span>
+              <input type="text" class="inspector-input" id="inspPaddingLeft" value="0px">
+            </div>
+            <div class="inspector-row">
+              <span class="inspector-label">Padding R</span>
+              <input type="text" class="inspector-input" id="inspPaddingRight" value="0px">
+            </div>
+          </div>
+        </div>
+
+        <!-- Colors Section -->
+        <div class="inspector-section" id="inspColors">
+          <button class="inspector-section-header">
+            Colors <span class="chevron">▾</span>
+          </button>
+          <div class="inspector-section-body">
+            <div class="inspector-row">
+              <span class="inspector-label">Text</span>
+              <div class="inspector-color">
+                <div class="inspector-color-swatch" id="inspTextColorSwatch" style="background:#000000"></div>
+                <input type="text" class="inspector-input" id="inspTextColor" value="#000000" style="max-width:80px; font-family:monospace">
+              </div>
+            </div>
+            <div class="inspector-row">
+              <span class="inspector-label">Border</span>
+              <div class="inspector-color">
+                <div class="inspector-color-swatch" id="inspBorderColorSwatch" style="background:#111827"></div>
+                <input type="text" class="inspector-input" id="inspBorderColor" value="#111827" style="max-width:80px; font-family:monospace">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Print / Layout Section -->
+        <div class="inspector-section" id="inspPrint">
+          <button class="inspector-section-header">
+            Print Controls <span class="chevron">▾</span>
+          </button>
+          <div class="inspector-section-body">
+            <div class="inspector-row">
+              <span class="inspector-label">Keep With Next</span>
+              <button class="inspector-toggle on" id="inspKeepWithNext"></button>
+            </div>
+            <div class="inspector-row">
+              <span class="inspector-label">Avoid Break</span>
+              <button class="inspector-toggle on" id="inspAvoidBreak"></button>
+            </div>
+            <div class="inspector-row">
+              <span class="inspector-label">Visible</span>
+              <button class="inspector-toggle on" id="inspVisible"></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Actions Section -->
+        <div class="inspector-section" id="inspActions">
+          <button class="inspector-section-header">
+            Actions <span class="chevron">▾</span>
+          </button>
+          <div class="inspector-section-body">
+            <button class="inspector-action-btn" id="inspMoveUp"><i class="fa-solid fa-arrow-up" style="font-size:10px; width:16px"></i> Move Up</button>
+            <button class="inspector-action-btn" id="inspMoveDown"><i class="fa-solid fa-arrow-down" style="font-size:10px; width:16px"></i> Move Down</button>
+            <button class="inspector-action-btn" id="inspDuplicate"><i class="fa-solid fa-copy" style="font-size:10px; width:16px"></i> Duplicate</button>
+            <button class="inspector-action-btn danger" id="inspDelete"><i class="fa-solid fa-trash" style="font-size:10px; width:16px"></i> Delete</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ BOTTOM BAR ═══════════════ -->
+  <div class="editor-bottombar" id="editorBottombar">
+    <div class="bottombar-left">
+      <span class="page-counter" id="pageCounter">Page 1 of 1</span>
+      <div class="save-status" id="saveStatus">
+        <span class="dot"></span>
+        <span>Saved</span>
+      </div>
+    </div>
+    <div class="bottombar-center">
+      <div class="zoom-control">
+        <button class="toolbar-btn" id="btnZoomOut" style="width:24px;height:24px;font-size:11px" title="Zoom Out">−</button>
+        <input type="range" class="zoom-slider" id="zoomSlider" min="25" max="400" value="100" title="Zoom Level">
+        <button class="toolbar-btn" id="btnZoomIn" style="width:24px;height:24px;font-size:11px" title="Zoom In">+</button>
+        <span class="zoom-label" id="zoomLabel">100%</span>
+        <button class="zoom-fit-btn" id="btnZoomFit" title="Fit to Page">Fit</button>
+      </div>
+    </div>
+    <div class="bottombar-right">
+      <button class="bottombar-download-btn" id="btnDownloadPdf">
+        <i class="fa-solid fa-download"></i> Download PDF
+      </button>
+    </div>
+  </div>
+
+  <!-- ═══════════════ FLOATING TOOLBAR ═══════════════ -->
+  <div class="floating-toolbar" id="floatingToolbar">
+    <button class="toolbar-btn" data-cmd="bold" title="Bold"><b>B</b></button>
+    <button class="toolbar-btn" data-cmd="italic" title="Italic"><i>I</i></button>
+    <button class="toolbar-btn" data-cmd="underline" title="Underline" style="text-decoration:underline">U</button>
+    <div class="toolbar-divider"></div>
+    <button class="toolbar-btn" data-cmd="justifyLeft" title="Left"><i class="fa-solid fa-align-left" style="font-size:10px"></i></button>
+    <button class="toolbar-btn" data-cmd="justifyCenter" title="Center"><i class="fa-solid fa-align-center" style="font-size:10px"></i></button>
+    <button class="toolbar-btn" data-cmd="justifyRight" title="Right"><i class="fa-solid fa-align-right" style="font-size:10px"></i></button>
+  </div>
+
+  <!-- ═══════════════ SPACING POPOVER ═══════════════ -->
+  <div class="spacing-popover" id="spacingPopover">
+    <div class="spacing-popover-title">Spacing Controls</div>
+    <div class="spacing-slider-row">
+      <div class="spacing-slider-label">
+        <span>Line Height</span>
+        <span class="spacing-slider-value" id="valLineHeight">1.22</span>
+      </div>
+      <input type="range" class="spacing-slider" id="sliderLineHeight" min="80" max="250" value="122">
+    </div>
+    <div class="spacing-slider-row">
+      <div class="spacing-slider-label">
+        <span>Letter Spacing</span>
+        <span class="spacing-slider-value" id="valLetterSpacing">0px</span>
+      </div>
+      <input type="range" class="spacing-slider" id="sliderLetterSpacing" min="-200" max="600" value="0">
+    </div>
+    <div class="spacing-slider-row">
+      <div class="spacing-slider-label">
+        <span>Section Gap</span>
+        <span class="spacing-slider-value" id="valSectionGap">6px</span>
+      </div>
+      <input type="range" class="spacing-slider" id="sliderSectionGap" min="0" max="20" value="6">
+    </div>
+    <div class="spacing-slider-row">
+      <div class="spacing-slider-label">
+        <span>Entry Gap</span>
+        <span class="spacing-slider-value" id="valEntryGap">4px</span>
+      </div>
+      <input type="range" class="spacing-slider" id="sliderEntryGap" min="0" max="16" value="4">
+    </div>
+    <div class="spacing-slider-row">
+      <div class="spacing-slider-label">
+        <span>Bullet Gap</span>
+        <span class="spacing-slider-value" id="valBulletGap">1px</span>
+      </div>
+      <input type="range" class="spacing-slider" id="sliderBulletGap" min="0" max="8" value="1">
+    </div>
+    <button class="spacing-reset-btn" id="btnSpacingReset">↻ Reset to Default</button>
+  </div>
+
+  <!-- ═══════════════ COLOR POPOVER ═══════════════ -->
+  <div class="color-popover" id="colorPopover">
+    <div class="color-popover-title">Text Color</div>
+    <div class="color-preset-grid" id="colorPresetGrid">
+      <!-- Filled by JS -->
+    </div>
+    <input type="text" class="color-hex-input" id="colorHexInput" placeholder="#000000" value="#000000">
+  </div>
+
+  <!-- ═══════════════ EDITOR JS ═══════════════ -->
+  <!-- Resume data injected by server -->
+  <script id="resumeData" type="application/json">{{ resume_json | safe }}</script>
+  <script>
+    window.EDITOR_CONFIG = {
+      resumePath: "{{ resume_path }}",
+      saveUrl: "/api/editor/save",
+      exportPdfUrl: "/api/editor/export-pdf",
+      backUrl: "/"
+    };
+  </script>
+  <script src="/static/editor.js"></script>
+</body>
+</html>
