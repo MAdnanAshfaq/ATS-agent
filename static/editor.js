@@ -264,18 +264,22 @@
       if (!container) return;
       container.innerHTML = '';
 
+      const effectiveStyles = styles || (typeof store !== 'undefined' ? store.state.styles : null) || {};
+      const order = (effectiveStyles && Array.isArray(effectiveStyles.sectionOrder) && effectiveStyles.sectionOrder.length > 0)
+        ? effectiveStyles.sectionOrder
+        : ['summary', 'skills', 'experience', 'education', 'certifications', 'projects'];
+
       // 1. Header Block
       container.appendChild(BlockRenderer.renderHeader(resume));
 
       // 2. Sections in designated order
-      const order = styles.sectionOrder || ['summary', 'skills', 'experience', 'education', 'certifications', 'projects'];
       for (const secKey of order) {
-        const el = BlockRenderer.renderSection(secKey, resume);
+        const el = BlockRenderer.renderSection(secKey, resume, effectiveStyles);
         if (el) container.appendChild(el);
       }
 
       // Re-apply block selection if active
-      if (store.state.selectedBlockId) {
+      if (typeof store !== 'undefined' && store.state && store.state.selectedBlockId) {
         const sel = container.querySelector(`[data-block-id="${store.state.selectedBlockId}"]`);
         if (sel) sel.classList.add('selected');
       }
@@ -1777,11 +1781,26 @@
     static currentMentionTargets = [];
 
     static init() {
-      // 5 Quick 1-Click Enhancement Buttons
+      // 5 Quick 1-Click Enhancement Buttons (Smart full-resume or target-element)
+      const quickInstructions = {
+        'aiBtnMetrics': '@experience Inject realistic, high-impact quantified metrics, throughput numbers, percentages, and dollar values using Google XYZ formula (Accomplished [X] measured by [Y] by doing [Z]).',
+        'aiBtnVerbs': '@all Front-load high-impact active power verbs (e.g., Engineered, Spearheaded, Architected, Scaled) and eliminate passive voice throughout.',
+        'aiBtnAts': '@all Optimize keyword density, incorporate critical domain competencies and required skills from target job description naturally, and eliminate weak filler words.',
+        'aiBtnConcise': '@all Tighten all bullet points and summary into punchy, high-burstiness statements, cutting unnecessary fluff while preserving core metrics.',
+        'aiBtnTone': '@all Elevate vocabulary to executive workplace standards with high professional polish and authoritative leadership voice.'
+      };
+
       const bindQuick = (id, mode) => {
         const btn = document.getElementById(id);
         if (btn) {
-          btn.addEventListener('click', () => AiPolishController.runPolish(mode, '', btn));
+          btn.addEventListener('click', () => {
+            if (AiPolishController.currentTargetText && AiPolishController.currentTargetEl) {
+              AiPolishController.runPolish(mode, '', btn);
+            } else {
+              const inst = quickInstructions[id] || `Polish resume focusing on ${mode}`;
+              AiPolishController.runPolish('custom', inst, btn);
+            }
+          });
         }
       };
 
@@ -2068,7 +2087,8 @@
             mode: mode,
             instruction: customInstruction,
             target_role: store.state.resume?.target_role || '',
-            current_resume: store.state.resume
+            current_resume: store.state.resume,
+            resume_path: config.resumePath || ''
           })
         });
 
@@ -2122,26 +2142,25 @@
     static applyPolish() {
       // Branch 1: Whole-document / targeted section refinement
       if (this.lastRefinedResume) {
-        store.state.resume = this.lastRefinedResume;
-        BlockRenderer.renderAll(store.state.resume);
+        store.state.resume = JSON.parse(JSON.stringify(this.lastRefinedResume));
+        BlockRenderer.renderAll(store.state.resume, store.state.styles);
         InlineEditor.attachAllListeners();
-        store.pushSnapshot(`AI Polish: ${this.lastChangeSummary ? this.lastChangeSummary.slice(0, 35) : 'Sections'}`);
+        store.pushSnapshot(`AI Polish: ${this.lastChangeSummary ? this.lastChangeSummary.slice(0, 35) : 'Applied'}`);
         PageOverflowDetector.check();
         AutoSaver.trigger();
 
         const diffCard = document.getElementById('aiDiffCard');
         if (diffCard) diffCard.style.display = 'none';
 
+        const promptInput = document.getElementById('aiCustomPrompt');
+        if (promptInput) promptInput.value = '';
+
+        AiPolishController.showStatusMessage(
+          `<i class="fa-solid fa-circle-check" style="color:#10b981; margin-right:5px;"></i> <strong>Fix Applied:</strong> ${BlockRenderer.escapeHtml(this.lastChangeSummary || 'Revisions applied successfully to your resume!')}`
+        );
+
         this.lastRefinedResume = null;
         this.lastChangeSummary = null;
-
-        // Visual feedback
-        const btnSave = document.getElementById('btnSave');
-        if (btnSave) {
-          const oldHtml = btnSave.innerHTML;
-          btnSave.innerHTML = '<i class="fa-solid fa-check"></i> Applied AI Polish!';
-          setTimeout(() => { btnSave.innerHTML = oldHtml; }, 2000);
-        }
         return;
       }
 
@@ -2160,6 +2179,23 @@
       if (diffCard) diffCard.style.display = 'none';
 
       InlineEditor.pulseBlock(this.currentTargetEl.closest('.editor-block') || this.currentTargetEl);
+
+      AiPolishController.showStatusMessage(
+        `<i class="fa-solid fa-circle-check" style="color:#10b981; margin-right:5px;"></i> Polished text applied to element.`
+      );
+    }
+
+    static showStatusMessage(html) {
+      const box = document.getElementById('aiStatusBox');
+      const content = document.getElementById('aiStatusContent');
+      if (box && content) {
+        content.innerHTML = html;
+        box.style.display = 'block';
+        box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        setTimeout(() => {
+          if (box) box.style.display = 'none';
+        }, 8000);
+      }
     }
 
     static discardPolish() {

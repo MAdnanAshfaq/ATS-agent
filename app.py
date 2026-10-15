@@ -2791,48 +2791,141 @@ def api_editor_ai_polish():
     custom_instruction = (data.get("instruction") or "").strip()
     target_role = (data.get("target_role") or "").strip()
     current_resume = data.get("current_resume")
+    rel_path = (data.get("resume_path") or "").strip()
+    clean_fp = rel_path.replace("\\", "/").strip("/")
 
-    # If custom instruction uses @section tags or full resume refinement
-    if mode == "custom" and custom_instruction and ("@" in custom_instruction or current_resume):
+    user_output_dir = get_user_output_dir()
+    user_resume_path = get_user_resume_path()
+
+    # 1. Resolve application target directory
+    target_dir = None
+    if clean_fp and clean_fp not in ("master", "master_resume", "master.docx", "master.json"):
+        cand = (user_output_dir / clean_fp).resolve()
+        if cand.is_dir():
+            target_dir = cand
+        elif cand.is_file():
+            target_dir = cand.parent
+        else:
+            folder_stem = Path(clean_fp).parts[0] if Path(clean_fp).parts else Path(clean_fp).stem
+            matches = list(user_output_dir.rglob("tailored_resume.json"))
+            matched = [m.parent for m in matches if folder_stem.lower() in str(m).lower()]
+            if matched:
+                target_dir = matched[0]
+
+    # 2. Extract job description, company, and role with multiple robust fallbacks
+    company = ""
+    role = target_role
+    jd_text = ""
+
+    # Check target_dir for saved job_description.txt
+    if target_dir:
+        jd_file = target_dir / "job_description.txt"
+        if jd_file.exists():
+            try:
+                jd_text = jd_file.read_text(encoding="utf-8").strip()
+            except Exception:
+                pass
+
+    # Check NeonDB history
+    matched_run_id = None
+    if db_layer.is_db_available() and current_user.is_authenticated:
+        try:
+            hist = db_layer.db_get_history(current_user.username)
+            folder_name = target_dir.name.lower() if target_dir else clean_fp.lower()
+            for h in hist:
+                rid = h.get("_db_run_id") or h.get("run_id") or ""
+                out_f = (h.get("output_file") or "").lower()
+                if (rid and rid.lower() in folder_name) or (folder_name and folder_name in out_f):
+                    matched_run_id = rid
+                    if not company: company = h.get("company", "")
+                    if not role: role = h.get("role", "")
+                    if not jd_text: jd_text = h.get("jd_text", "")
+                    break
+        except Exception:
+            pass
+
+    # Check local run logs fallback
+    if (not jd_text or not company) and user_output_dir:
+        try:
+            logs_dir = user_output_dir / "logs"
+            if logs_dir.exists():
+                for lf in sorted(logs_dir.glob("run_*.json"), reverse=True):
+                    with open(lf, "r", encoding="utf-8") as jf:
+                        ldata = json.load(jf)
+                    out_f = (ldata.get("output_file") or "").lower()
+                    target_folder_name = target_dir.name.lower() if target_dir else clean_fp.lower()
+                    if target_folder_name in out_f or (matched_run_id and matched_run_id in lf.name):
+                        if not company: company = ldata.get("company", "")
+                        if not role: role = ldata.get("role", "")
+                        if not jd_text: jd_text = ldata.get("jd_text", "")
+                        break
+        except Exception:
+            pass
+
+    # Load base_resume for authentic background truth anchor
+    base_resume = {}
+    if user_resume_path.exists():
+        try:
+            from agent import load_base_resume
+            base_resume = load_base_resume(str(user_resume_path))
+        except Exception:
+            pass
+
+    resume_to_refine = current_resume if isinstance(current_resume, dict) and current_resume else base_resume
+
+    # Map presets if no custom instruction was provided
+    preset_instructions = {
+        "metrics": "@experience Inject realistic, high-impact quantified metrics, throughput numbers, percentages, and dollar impact using Google XYZ formula (Accomplished [X] measured by [Y] by doing [Z]).",
+        "action_verbs": "@all Front-load high-impact active power verbs (e.g. Engineered, Spearheaded, Architected, Scaled) and eliminate passive voice throughout.",
+        "ats": f"@all Optimize keyword density, incorporate critical domain competencies and required skills from target job description naturally, and eliminate weak filler words.",
+        "concise": "@all Tighten all bullet points and summary into punchy, high-burstiness statements, cutting unnecessary fluff while preserving core metrics.",
+        "tone": "@all Elevate vocabulary to executive workplace standards with high professional polish and authoritative leadership voice."
+    }
+
+    effective_instruction = custom_instruction
+    if not effective_instruction and mode in preset_instructions and (not text or len(text) > 180):
+        effective_instruction = preset_instructions[mode]
+
+    # CASE A: Full or section-targeted resume refinement (preview-stage engine)
+    if effective_instruction or (mode == "custom" and custom_instruction) or (not text and resume_to_refine):
         try:
             from resume_refiner import refine_tailored_resume
-            user_output_dir = get_user_output_dir()
-            user_resume_path = get_user_resume_path()
-            base_resume = {}
-            if user_resume_path.exists():
-                try:
-                    with open(user_resume_path, "r", encoding="utf-8") as bf:
-                        base_resume = json.load(bf)
-                except Exception:
-                    pass
-
-            jd_text = ""
-            jd_file = user_output_dir / "job_description.txt"
-            if jd_file.exists():
-                try:
-                    jd_text = jd_file.read_text(encoding="utf-8").strip()
-                except Exception:
-                    pass
-
-            resume_to_refine = current_resume if isinstance(current_resume, dict) and current_resume else base_resume
+            instruction_to_use = effective_instruction or custom_instruction or "Polish and elevate document."
             refined_resume, change_summary = refine_tailored_resume(
                 current_resume=resume_to_refine,
-                instruction=custom_instruction,
+                instruction=instruction_to_use,
                 base_resume=base_resume,
                 jd_text=jd_text,
-                role=target_role or resume_to_refine.get("target_role", "")
+                company=company,
+                role=role or resume_to_refine.get("target_role", "")
             )
+
+            # Auto-persist updated JSON in target_dir
+            if target_dir:
+                try:
+                    with open(target_dir / "tailored_resume.json", "w", encoding="utf-8") as f:
+                        json.dump(refined_resume, f, indent=2, ensure_ascii=False)
+                except Exception:
+                    pass
+
+            # Sync to NeonDB history
+            if matched_run_id and db_layer.is_db_available():
+                try:
+                    db_layer.db_update_history_tailored_resume(matched_run_id, refined_resume)
+                except Exception:
+                    pass
 
             return jsonify({
                 "success": True,
                 "mode": "resume_refine",
                 "refined_resume": refined_resume,
                 "change_summary": change_summary,
-                "instruction": custom_instruction
+                "instruction": instruction_to_use
             })
         except Exception as ref_err:
             logger.error(f"[AI Polish Refine] Error: {ref_err}")
-            # Fallback to single text completion if refiner fails
+            if not text:
+                return jsonify({"success": False, "error": f"AI Refinement error: {ref_err}"}), 500
 
     if not text and not custom_instruction:
         return jsonify({"success": False, "error": "No text provided for AI polish."}), 400
