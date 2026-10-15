@@ -2700,6 +2700,23 @@ def api_editor_save():
         except Exception as log_err:
             logger.warning(f"[Editor Save] Local log sync warning: {log_err}")
 
+        # ── Document Disk Sync (.docx & .pdf) ─────────────────────────────────
+        try:
+            from resume_builder import build_resume_docx, convert_to_pdf
+            if is_master:
+                doc_path = build_resume_docx(resume_obj, "Master", "Profile", output_dir=str(user_data_dir))
+                if doc_path:
+                    convert_to_pdf(doc_path)
+            else:
+                target_dir = target_json.parent
+                comp = resume_obj.get("target_company") or (target_dir.name.split("_")[0] if "_" in target_dir.name else "Company")
+                rol = resume_obj.get("target_role") or (target_dir.name.split("_", 1)[1] if "_" in target_dir.name else "Resume")
+                doc_path = build_resume_docx(resume_obj, comp, rol, output_dir=str(target_dir))
+                if doc_path:
+                    convert_to_pdf(doc_path)
+        except Exception as rebuild_err:
+            logger.warning(f"[Editor Save] Document rebuild warning: {rebuild_err}")
+
         return jsonify({
             "success": True,
             "saved_to": str(target_json.name),

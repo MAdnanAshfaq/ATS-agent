@@ -1762,6 +1762,17 @@
    PRINT OVERRIDE (never show editor chrome in print)
    ════════════════════════════════════════════════════ */
 @media print {
+  @page {
+    size: letter portrait;
+    margin: 0;
+  }
+  body, html, .editor-page {
+    background: #ffffff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
   .editor-toolbar,
   .editor-sidebar,
   .editor-inspector,
@@ -1774,15 +1785,26 @@
   .block-drag-handle,
   .block-actions-bar,
   .block-drop-indicator,
-  .overflow-autofit-btn {
+  .overflow-autofit-btn,
+  .preview-ai-mention-dropdown,
+  button {
     display: none !important;
+    visibility: hidden !important;
   }
   .editor-workspace {
     overflow: visible !important;
     background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
   }
   .editor-artboard {
     box-shadow: none !important;
     border-radius: 0 !important;
+    border: none !important;
+    margin: 0 auto !important;
+  }
+  .editor-block {
+    outline: none !important;
+    background: transparent !important;
   }
 }

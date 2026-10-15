@@ -995,9 +995,25 @@
       if (ph) r.contact.phone = ph;
       const loc = getTxt('[data-edit="contact-location"]');
       if (loc) r.contact.location = loc;
+      const li = getTxt('[data-edit="contact-linkedin"]');
+      if (li) r.contact.linkedin = li;
+      const gh = getTxt('[data-edit="contact-github"]');
+      if (gh) r.contact.github = gh;
+      const port = getTxt('[data-edit="contact-portfolio"]');
+      if (port) r.contact.portfolio = port;
 
       const summary = getTxt('.summary-text[data-edit="summary"]');
       if (summary) r.summary = summary;
+
+      // Scrape Section Headings
+      if (!r.section_headings) r.section_headings = {};
+      document.querySelectorAll('[data-edit="section-heading"]').forEach(sh => {
+        const sec = sh.getAttribute('data-section');
+        const txt = sh.innerText.trim();
+        if (sec && txt) {
+          r.section_headings[sec] = txt;
+        }
+      });
 
       // Scrape experience entries
       const expBlocks = document.querySelectorAll('.editor-block[data-block-type="experience-entry"]');
@@ -1012,7 +1028,9 @@
           const bullets = [];
           eb.querySelectorAll('.bullet-item[data-edit="bullet"]').forEach(li => {
             const bText = li.innerText.trim();
-            if (bText) bullets.push(bText);
+            if (bText && bText !== 'Key achievement or quantified business outcome...') {
+              bullets.push(bText);
+            }
           });
 
           r.experience.push({
@@ -1023,6 +1041,56 @@
             bullets
           });
         });
+      }
+
+      // Scrape education entries
+      const eduBlock = document.querySelector('.editor-block[data-block-type="education"]');
+      if (eduBlock) {
+        const eduEntries = eduBlock.querySelectorAll('.entry-item');
+        if (eduEntries.length > 0) {
+          r.education = [];
+          eduEntries.forEach(ee => {
+            const deg = ee.querySelector('[data-edit="edu-degree"]')?.innerText.trim() || '';
+            const dt = ee.querySelector('[data-edit="edu-date"]')?.innerText.trim() || '';
+            const school = ee.querySelector('[data-edit="edu-school"]')?.innerText.trim() || '';
+            const gpa = ee.querySelector('[data-edit="edu-gpa"]')?.innerText.replace(/^GPA:\s*/i, '').trim() || '';
+            if (deg || school) {
+              r.education.push({
+                degree: deg,
+                institution: school,
+                date: dt,
+                year: dt,
+                gpa: gpa
+              });
+            }
+          });
+        }
+      }
+
+      // Scrape projects entries
+      const projBlock = document.querySelector('.editor-block[data-block-type="projects"]');
+      if (projBlock) {
+        const projEntries = projBlock.querySelectorAll('.entry-item');
+        if (projEntries.length > 0) {
+          r.projects = [];
+          projEntries.forEach(pe => {
+            const title = pe.querySelector('[data-edit="proj-title"]')?.innerText.trim() || '';
+            const dt = pe.querySelector('[data-edit="proj-date"]')?.innerText.trim() || '';
+            const bullets = [];
+            pe.querySelectorAll('.bullet-item[data-edit="bullet"]').forEach(li => {
+              const bText = li.innerText.trim();
+              if (bText) bullets.push(bText);
+            });
+            if (title) {
+              r.projects.push({
+                title,
+                name: title,
+                date: dt,
+                bullets
+              });
+            }
+          });
+        }
       }
 
       // Scrape certifications
@@ -1724,7 +1792,7 @@
       } else if (type === 'education') {
         const block = BlockRenderer.createBlockWrapper(`edu-${Date.now()}`, 'education');
         block.innerHTML += `
-          <div class="section-title" contenteditable="true" data-edit="section-heading">Education</div>
+          <div class="section-title" contenteditable="true" data-edit="section-heading" data-section="education">Education</div>
           <div class="entry-item">
             <div class="two-col-line">
               <span class="two-col-left" contenteditable="true" data-edit="edu-degree">Bachelor of Science in Computer Science</span>
@@ -1736,6 +1804,64 @@
         container.appendChild(block);
         InlineEditor.attachAllListeners();
         SelectionManager.selectBlock(block);
+      } else if (type === 'skill') {
+        let skillsBlock = document.querySelector('.editor-block[data-block-type="skills"]');
+        if (!skillsBlock) {
+          skillsBlock = BlockRenderer.createBlockWrapper(`skills-${Date.now()}`, 'skills');
+          skillsBlock.innerHTML += `<div class="section-title" contenteditable="true" data-edit="section-heading" data-section="skills">Technical Skills</div>`;
+          container.appendChild(skillsBlock);
+        }
+        const row = document.createElement('div');
+        row.className = 'skill-category';
+        row.innerHTML = `
+          <span class="skill-category-label" contenteditable="true" data-edit="skill-cat-label">Tools & Frameworks:</span>
+          <span class="skill-category-list" contenteditable="true" data-edit="skills-list">Docker, Kubernetes, Git, CI/CD</span>
+        `;
+        skillsBlock.appendChild(row);
+        InlineEditor.attachAllListeners();
+        SelectionManager.selectBlock(skillsBlock);
+      } else if (type === 'certification') {
+        let certBlock = document.querySelector('.editor-block[data-block-type="certifications"]');
+        if (!certBlock) {
+          certBlock = BlockRenderer.createBlockWrapper(`cert-${Date.now()}`, 'certifications');
+          certBlock.innerHTML += `<div class="section-title" contenteditable="true" data-edit="section-heading" data-section="certifications">Certifications</div><ul class="bullet-list"></ul>`;
+          container.appendChild(certBlock);
+        }
+        let ul = certBlock.querySelector('.bullet-list');
+        if (!ul) {
+          ul = document.createElement('ul');
+          ul.className = 'bullet-list';
+          certBlock.appendChild(ul);
+        }
+        const li = document.createElement('li');
+        li.className = 'bullet-item';
+        li.setAttribute('contenteditable', 'true');
+        li.setAttribute('data-edit', 'bullet');
+        li.textContent = 'Certified Solutions Architect — Credential ID: 12345';
+        ul.appendChild(li);
+        InlineEditor.attachAllListeners();
+        SelectionManager.selectBlock(certBlock);
+      } else if (type === 'project') {
+        let projBlock = document.querySelector('.editor-block[data-block-type="projects"]');
+        if (!projBlock) {
+          projBlock = BlockRenderer.createBlockWrapper(`proj-${Date.now()}`, 'projects');
+          projBlock.innerHTML += `<div class="section-title" contenteditable="true" data-edit="section-heading" data-section="projects">Key Projects</div>`;
+          container.appendChild(projBlock);
+        }
+        const projItem = document.createElement('div');
+        projItem.className = 'entry-item';
+        projItem.innerHTML = `
+          <div class="two-col-line">
+            <span class="two-col-left" contenteditable="true" data-edit="proj-title">Cloud Automation Platform (Python, AWS)</span>
+            <span class="two-col-right" contenteditable="true" data-edit="proj-date">2024</span>
+          </div>
+          <ul class="bullet-list">
+            <li class="bullet-item" contenteditable="true" data-edit="bullet">Architected high-throughput data processing service processing 2M+ records daily.</li>
+          </ul>
+        `;
+        projBlock.appendChild(projItem);
+        InlineEditor.attachAllListeners();
+        SelectionManager.selectBlock(projBlock);
       }
 
       InlineEditor.syncDomToResumeJson();
