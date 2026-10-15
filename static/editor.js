@@ -1065,8 +1065,12 @@
 
       // Back button
       document.getElementById('btnBack')?.addEventListener('click', () => {
-        const config = window.EDITOR_CONFIG || {};
-        window.location.href = config.backUrl || '/';
+        if (window.history.length > 1 && document.referrer && document.referrer.includes(window.location.host)) {
+          window.history.back();
+        } else {
+          const config = window.EDITOR_CONFIG || {};
+          window.location.href = config.backUrl || '/';
+        }
       });
 
       // Top Toolbar AI Polish Button

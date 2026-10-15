@@ -33,6 +33,7 @@ document.addEventListener("DOMContentLoaded", () => {
   loadMasterResume();
   initFormListeners();
   checkSimplifyStatus();
+  restoreLastActiveResult();
 });
 
 /* ── Tab Navigation & Synced Routing ────────────────────────────────────── */
@@ -1246,13 +1247,38 @@ function clearTerminal() {
 }
 
 /* ── Results Dashboard Display ────────────────────────────────────────────── */
-function displayResults(res) {
+function syncActiveResultStorage() {
+  try {
+    if (window.lastResult) {
+      sessionStorage.setItem('ats_active_result', JSON.stringify(window.lastResult));
+    }
+  } catch (_) {}
+}
+
+function restoreLastActiveResult() {
+  try {
+    const raw = sessionStorage.getItem('ats_active_result');
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (data && (data.relative_path || data.tailored_resume || data.company)) {
+      displayResults(data, false);
+      const dashboard = document.getElementById("results-dashboard");
+      if (dashboard) dashboard.classList.remove("hidden");
+    }
+  } catch (e) {
+    console.warn("Could not restore active result from session:", e);
+  }
+}
+
+function displayResults(res, shouldScroll = true) {
   const dashboard = document.getElementById("results-dashboard");
   dashboard.classList.remove("hidden");
-  dashboard.scrollIntoView({ behavior: "smooth" });
+  if (shouldScroll) {
+    dashboard.scrollIntoView({ behavior: "smooth" });
+  }
 
-  document.getElementById("res-company").textContent = res.company;
-  document.getElementById("res-role").textContent = res.role;
+  document.getElementById("res-company").textContent = res.company || "";
+  document.getElementById("res-role").textContent = res.role || "";
 
   const beforeVal = (res.simplify_score_before !== undefined && res.simplify_score_before !== null)
     ? res.simplify_score_before
@@ -1294,6 +1320,7 @@ function displayResults(res) {
   }
 
   window.lastResult = res;
+  syncActiveResultStorage();
 }
 
 function downloadCurrentResume(ext = 'docx') {
@@ -2768,6 +2795,9 @@ function resetJobApplication() {
 
   // 5. Clear global state
   window.lastResult = null;
+  try {
+    sessionStorage.removeItem('ats_active_result');
+  } catch (_) {}
   window.lastGeneratedRun = null;
   window._currentRunDir = null;
   analyzeScoreBefore = null;
@@ -5882,11 +5912,13 @@ function previewCurrentResume() {
     return;
   }
   const cleanPath = (window.lastResult.relative_path || '').replace(/\\/g, '/');
-  window.location.href = `/editor/${encodeURIComponent(cleanPath).replace(/%2F/g, '/')}`;
+  const company = window.lastResult.company || 'Tailored Resume';
+  const role = window.lastResult.role || 'Document Preview';
+  openPreviewModal(cleanPath, company, role);
 }
 
 function previewMasterResume() {
-  window.location.href = "/editor/master";
+  openPreviewModal('master_resume', 'Master Resume', 'Master Profile');
 }
 
 function toggleMasterDownloadDropdown(event) {
