@@ -87,7 +87,6 @@
         }
       }
       this.applyStylesToArtboard();
-      this.pushSnapshot('Initial Load');
       this.state.isDirty = false;
     }
 
@@ -122,11 +121,17 @@
         this.history = this.history.slice(0, this.historyIndex + 1);
       }
 
+      const contentEl = document.getElementById('resumeContent');
+      let domHtml = '';
+      if (contentEl && contentEl.innerHTML && contentEl.innerHTML.includes('editor-block') && contentEl.innerHTML.length > 80) {
+        domHtml = contentEl.innerHTML;
+      }
+
       const snapshot = {
         label,
         resume: JSON.parse(JSON.stringify(this.state.resume)),
         styles: JSON.parse(JSON.stringify(this.state.styles)),
-        domHtml: document.getElementById('resumeContent') ? document.getElementById('resumeContent').innerHTML : '',
+        domHtml,
         timestamp: Date.now()
       };
 
@@ -156,7 +161,9 @@
       this.state.resume = JSON.parse(JSON.stringify(snapshot.resume));
       this.state.styles = JSON.parse(JSON.stringify(snapshot.styles));
       this.applyStylesToArtboard();
-      if (snapshot.domHtml && document.getElementById('resumeContent')) {
+
+      const isValidDom = snapshot.domHtml && snapshot.domHtml.includes('editor-block') && snapshot.domHtml.length > 80;
+      if (isValidDom && document.getElementById('resumeContent')) {
         document.getElementById('resumeContent').innerHTML = snapshot.domHtml;
         InlineEditor.attachAllListeners();
       } else {
@@ -172,7 +179,9 @@
       this.state.resume = JSON.parse(JSON.stringify(snapshot.resume));
       this.state.styles = JSON.parse(JSON.stringify(snapshot.styles));
       this.applyStylesToArtboard();
-      if (snapshot.domHtml && document.getElementById('resumeContent')) {
+
+      const isValidDom = snapshot.domHtml && snapshot.domHtml.includes('editor-block') && snapshot.domHtml.length > 80;
+      if (isValidDom && document.getElementById('resumeContent')) {
         document.getElementById('resumeContent').innerHTML = snapshot.domHtml;
         InlineEditor.attachAllListeners();
       } else {
@@ -2251,11 +2260,21 @@
         const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
         const modKey = isMac ? e.metaKey : e.ctrlKey;
 
+        const active = document.activeElement;
+        const isContentEditable = active && (active.isContentEditable || active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
+
         if (modKey && e.key.toLowerCase() === 'z') {
+          if (isContentEditable) {
+            // Allow native character/word-level undo while editing text inside an element!
+            return;
+          }
           e.preventDefault();
           if (e.shiftKey) store.redo();
           else store.undo();
         } else if (modKey && e.key.toLowerCase() === 'y') {
+          if (isContentEditable) {
+            return;
+          }
           e.preventDefault();
           store.redo();
         } else if (modKey && e.key.toLowerCase() === 's') {
@@ -2284,6 +2303,8 @@
 
     store.init(initialResume);
     BlockRenderer.renderAll(store.state.resume, store.state.styles);
+    store.pushSnapshot('Initial Load');
+    store.state.isDirty = false;
 
     SelectionManager.init();
     InlineEditor.init();
