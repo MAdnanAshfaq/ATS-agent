@@ -216,9 +216,44 @@
           <span class="icon">🎙️</span> Executive Tone
         </button>
 
-        <!-- Custom Prompt Instruction -->
-        <div class="sidebar-section-title" style="margin-top:14px;">Custom AI Instruction</div>
-        <textarea id="aiCustomPrompt" class="toolbar-size-input" style="width:100%; height:64px; padding:8px; font-size:11.5px; border-radius:6px; background:var(--editor-surface-2); border:1px solid var(--editor-border); color:var(--editor-text); resize:none; font-family:'Inter', sans-serif; box-sizing:border-box; margin-bottom:8px;" placeholder="e.g. Focus on cloud pipeline automation, Kafka, and cost reduction..."></textarea>
+        <!-- Target Section Chips (@-Mentions) -->
+        <div style="margin-top:14px; margin-bottom:8px;">
+          <div style="font-size:10.5px; font-weight:700; color:var(--editor-text-muted); text-transform:uppercase; margin-bottom:5px; display:flex; justify-content:space-between; align-items:center;">
+            <span>Target Sections:</span>
+            <span style="font-size:9.5px; color:#f59e0b; text-transform:none; font-weight:600;">Type <strong>@</strong> in text</span>
+          </div>
+          <div style="display:flex; gap:4px; flex-wrap:wrap;" id="aiTagChipsContainer">
+            <button type="button" class="ai-tag-chip" data-tag="@summary " title="Target Professional Summary" style="font-size:10px; padding:3px 6px; border-radius:4px; background:rgba(56,189,248,0.12); border:1px solid rgba(56,189,248,0.35); color:#38bdf8; cursor:pointer; font-weight:700;">@summary</button>
+            <button type="button" class="ai-tag-chip" data-tag="@skills " title="Target Technical Skills" style="font-size:10px; padding:3px 6px; border-radius:4px; background:rgba(168,85,247,0.12); border:1px solid rgba(168,85,247,0.35); color:#c084fc; cursor:pointer; font-weight:700;">@skills</button>
+            <button type="button" class="ai-tag-chip" data-tag="@experience " title="Target Experience Bullets" style="font-size:10px; padding:3px 6px; border-radius:4px; background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.35); color:#34d399; cursor:pointer; font-weight:700;">@experience</button>
+            <button type="button" class="ai-tag-chip" data-tag="@all " title="Target Entire Document" style="font-size:10px; padding:3px 6px; border-radius:4px; background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.35); color:#fbbf24; cursor:pointer; font-weight:700;">@all</button>
+            <button type="button" class="ai-tag-chip" data-tag="@education " title="Target Education" style="font-size:10px; padding:3px 6px; border-radius:4px; background:rgba(14,165,233,0.12); border:1px solid rgba(14,165,233,0.35); color:#38bdf8; cursor:pointer; font-weight:700;">@education</button>
+            <button type="button" class="ai-tag-chip" data-tag="@projects " title="Target Projects" style="font-size:10px; padding:3px 6px; border-radius:4px; background:rgba(99,102,241,0.12); border:1px solid rgba(99,102,241,0.35); color:#818cf8; cursor:pointer; font-weight:700;">@projects</button>
+            <button type="button" class="ai-tag-chip" data-tag="@certifications " title="Target Certifications" style="font-size:10px; padding:3px 6px; border-radius:4px; background:rgba(251,146,60,0.12); border:1px solid rgba(251,146,60,0.35); color:#fb923c; cursor:pointer; font-weight:700;">@certifications</button>
+            <button type="button" class="ai-tag-chip" data-tag="@title " title="Target Role / Headline" style="font-size:10px; padding:3px 6px; border-radius:4px; background:rgba(244,114,182,0.12); border:1px solid rgba(244,114,182,0.35); color:#f472b6; cursor:pointer; font-weight:700;">@title</button>
+          </div>
+        </div>
+
+        <!-- Custom Prompt Instruction Container with @-Mention Autocomplete Popup -->
+        <div style="position:relative; margin-bottom:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <label for="aiCustomPrompt" style="font-size:10.5px; font-weight:700; color:var(--editor-text-muted); text-transform:uppercase; margin:0;">
+              Custom AI Instruction:
+            </label>
+            <span style="font-size:9.5px; color:var(--editor-text-dim);">Ctrl+Enter to Run</span>
+          </div>
+
+          <!-- @-Mention Autocomplete Popup Dropdown -->
+          <div id="aiMentionPopup" class="preview-ai-mention-dropdown" style="display:none;"></div>
+
+          <textarea id="aiCustomPrompt" class="toolbar-size-input" style="width:100%; height:110px; padding:8px; font-size:11.5px; border-radius:6px; background:var(--editor-surface-2); border:1px solid var(--editor-border); color:var(--editor-text); resize:vertical; font-family:'Inter', sans-serif; box-sizing:border-box; line-height:1.45;" placeholder="Type @ to target specific sections...&#10;&#10;e.g.&#10;@skills Add FastAPI, Kubernetes, and Docker&#10;@experience Quantify outcomes in my latest role&#10;@summary Rewrite to sound more senior &amp; concise&#10;@all Maintain high-impact active verbs throughout"></textarea>
+
+          <div style="font-size:9.5px; color:var(--editor-text-dim); display:flex; justify-content:space-between; margin-top:3px;">
+            <span><i class="fa-solid fa-at" style="color:#f59e0b; margin-right:3px;"></i> Type <strong>@</strong> for suggestions</span>
+            <span>Supports multiple <strong>@sections</strong></span>
+          </div>
+        </div>
+
         <button class="sidebar-add-btn" id="aiBtnRunCustom" style="background: linear-gradient(135deg, rgba(37,99,235,0.25), rgba(124,58,237,0.25)); border-color: rgba(59,130,246,0.5); color: #93c5fd; font-weight:600; justify-content:center;">
           <i class="fa-solid fa-wand-magic-sparkles" style="color:#60a5fa; font-size:12px;"></i> Run Custom AI Polish
         </button>

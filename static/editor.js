@@ -309,6 +309,7 @@
         <button class="block-action-btn btn-move-up" title="Move Up (▲)"><i class="fa-solid fa-arrow-up"></i></button>
         <button class="block-action-btn btn-move-down" title="Move Down (▼)"><i class="fa-solid fa-arrow-down"></i></button>
         <button class="block-action-btn btn-add-space" title="Add 4px space below"><i class="fa-solid fa-arrows-up-down"></i> +Space</button>
+        <button class="block-action-btn btn-sub-space" title="Remove 4px space below"><i class="fa-solid fa-minus"></i> -Space</button>
       `;
 
       if (['experience-entry', 'education', 'certifications', 'projects'].includes(blockType)) {
@@ -756,6 +757,11 @@
         bar.querySelector('.btn-add-space')?.addEventListener('click', (e) => {
           e.stopPropagation();
           InlineEditor.adjustBlockSpacing(block, 4);
+        });
+
+        bar.querySelector('.btn-sub-space')?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          InlineEditor.adjustBlockSpacing(block, -4);
         });
 
         bar.querySelector('.btn-add-bullet')?.addEventListener('click', (e) => {
@@ -1765,6 +1771,10 @@
     static currentTargetEl = null;
     static currentTargetText = '';
     static lastPolishedText = '';
+    static lastRefinedResume = null;
+    static lastChangeSummary = null;
+    static activeMentionIndex = 0;
+    static currentMentionTargets = [];
 
     static init() {
       // 5 Quick 1-Click Enhancement Buttons
@@ -1781,23 +1791,215 @@
       bindQuick('aiBtnConcise', 'concise');
       bindQuick('aiBtnTone', 'tone');
 
-      // Custom AI prompt button
+      // Target Section Chips (@-Mentions) click handlers
+      document.querySelectorAll('#aiTagChipsContainer .ai-tag-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+          const tag = chip.getAttribute('data-tag') || '';
+          AiPolishController.insertTagIntoPrompt(tag);
+        });
+      });
+
+      // Custom AI prompt input & @-mention autocomplete
       const btnCustom = document.getElementById('aiBtnRunCustom');
       const txtCustom = document.getElementById('aiCustomPrompt');
+
+      if (txtCustom) {
+        txtCustom.addEventListener('input', (e) => AiPolishController.handlePromptInput(e));
+        txtCustom.addEventListener('keydown', (e) => AiPolishController.handlePromptKeydown(e));
+      }
+
       if (btnCustom && txtCustom) {
         btnCustom.addEventListener('click', () => {
           const instruction = txtCustom.value.trim();
           if (!instruction) {
-            alert('Please enter a custom instruction (e.g. "Focus on cloud deployment and cost reduction").');
+            alert('Please enter a custom instruction or use @ tags (e.g. "@skills add Docker, Kubernetes\\n@summary make executive").');
             return;
           }
           AiPolishController.runPolish('custom', instruction, btnCustom);
         });
       }
 
+      // Close @-mention popup when clicking outside
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('#aiMentionPopup') && !e.target.closest('#aiCustomPrompt') && !e.target.closest('#aiTagChipsContainer')) {
+          AiPolishController.hideMentionPopup();
+        }
+      });
+
       // Apply & Discard buttons
       document.getElementById('aiBtnApply')?.addEventListener('click', () => AiPolishController.applyPolish());
       document.getElementById('aiBtnDiscard')?.addEventListener('click', () => AiPolishController.discardPolish());
+    }
+
+    static insertTagIntoPrompt(tag) {
+      const input = document.getElementById('aiCustomPrompt');
+      if (!input) return;
+      const pos = input.selectionStart || input.value.length;
+      const textBefore = input.value.substring(0, pos);
+      const textAfter = input.value.substring(pos);
+      const atIndex = textBefore.lastIndexOf('@');
+
+      if (atIndex !== -1 && !/\s/.test(textBefore.substring(atIndex))) {
+        input.value = textBefore.substring(0, atIndex) + tag + textAfter;
+        input.selectionStart = input.selectionEnd = atIndex + tag.length;
+      } else {
+        const needsSpace = pos > 0 && !/\s$/.test(textBefore);
+        input.value = textBefore + (needsSpace ? ' ' : '') + tag + textAfter;
+        input.selectionStart = input.selectionEnd = pos + (needsSpace ? 1 : 0) + tag.length;
+      }
+      this.hideMentionPopup();
+      input.focus();
+    }
+
+    static getAvailableMentionTargets() {
+      const targets = [
+        { tag: "@summary", name: "Professional Summary", icon: "fa-align-left", color: "#38bdf8", bg: "rgba(56,189,248,0.15)", desc: "Elevator pitch, executive intro & core value" },
+        { tag: "@skills", name: "Technical Skills", icon: "fa-code", color: "#c084fc", bg: "rgba(168,85,247,0.15)", desc: "Add, categorize, replace or remove technical skills" },
+        { tag: "@experience", name: "Work Experience", icon: "fa-briefcase", color: "#34d399", bg: "rgba(16,185,129,0.15)", desc: "Target role achievements, metrics & responsibilities" },
+        { tag: "@all", name: "Everything Else / Global", icon: "fa-wand-magic-sparkles", color: "#fbbf24", bg: "rgba(245,158,11,0.15)", desc: "Holistic tone polish across all sections of document" },
+        { tag: "@education", name: "Education", icon: "fa-graduation-cap", color: "#38bdf8", bg: "rgba(14,165,233,0.15)", desc: "Degree titles, institutions & graduation dates" },
+        { tag: "@projects", name: "Projects", icon: "fa-folder-tree", color: "#818cf8", bg: "rgba(99,102,241,0.15)", desc: "Key project descriptions, links & tech stack" },
+        { tag: "@certifications", name: "Certifications", icon: "fa-certificate", color: "#fb923c", bg: "rgba(251,146,60,0.15)", desc: "Professional credentials & industry licenses" },
+        { tag: "@title", name: "Target Role / Headline", icon: "fa-id-badge", color: "#f472b6", bg: "rgba(244,114,182,0.15)", desc: "Subtitle headline under candidate name" }
+      ];
+
+      const resume = store.state.resume;
+      if (resume && Array.isArray(resume.experience)) {
+        resume.experience.forEach(exp => {
+          const comp = (exp.company || "").trim();
+          if (comp && !targets.some(t => t.name === comp)) {
+            targets.push({
+              tag: `@experience/${comp}`,
+              name: comp,
+              icon: "fa-building",
+              color: "#10b981",
+              bg: "rgba(16,185,129,0.15)",
+              desc: `Target bullets specifically for ${comp}`
+            });
+          }
+        });
+      }
+      return targets;
+    }
+
+    static renderMentionDropdown(targets, activeIndex = 0) {
+      const popup = document.getElementById('aiMentionPopup');
+      if (!popup) return;
+
+      if (!targets || targets.length === 0) {
+        popup.style.display = 'none';
+        this.currentMentionTargets = [];
+        return;
+      }
+
+      this.currentMentionTargets = targets;
+      this.activeMentionIndex = Math.max(0, Math.min(activeIndex, targets.length - 1));
+
+      let html = `
+        <div class="preview-ai-mention-header">
+          <span><i class="fa-solid fa-at" style="margin-right: 4px;"></i> Select Target Section</span>
+          <span style="font-size: 10px; font-weight: 500; opacity: 0.85;">↑↓ navigate · ↵ select</span>
+        </div>
+      `;
+
+      targets.forEach((target, idx) => {
+        const isActive = idx === this.activeMentionIndex;
+        html += `
+          <div class="preview-ai-mention-item ${isActive ? 'active' : ''}" data-index="${idx}">
+            <span class="mention-tag-pill" style="color: ${target.color}; background: ${target.bg}; border: 1px solid ${target.color}40;">
+              <i class="fa-solid ${target.icon}" style="margin-right: 4px; font-size: 10px;"></i>${BlockRenderer.escapeHtml(target.tag)}
+            </span>
+            <div style="flex: 1; min-width: 0;">
+              <div style="font-size: 12px; font-weight: 600; line-height: 1.2;">${BlockRenderer.escapeHtml(target.name)}</div>
+              <div class="mention-desc" style="font-size: 10.5px; opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${BlockRenderer.escapeHtml(target.desc)}</div>
+            </div>
+          </div>
+        `;
+      });
+
+      popup.innerHTML = html;
+      popup.style.display = 'flex';
+
+      popup.querySelectorAll('.preview-ai-mention-item').forEach(item => {
+        item.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          const idx = parseInt(item.getAttribute('data-index'), 10);
+          if (this.currentMentionTargets[idx]) {
+            this.insertTagIntoPrompt(this.currentMentionTargets[idx].tag + ' ');
+          }
+        });
+      });
+
+      const activeEl = popup.querySelector(`.preview-ai-mention-item[data-index="${this.activeMentionIndex}"]`);
+      if (activeEl) {
+        activeEl.scrollIntoView({ block: 'nearest' });
+      }
+    }
+
+    static hideMentionPopup() {
+      const popup = document.getElementById('aiMentionPopup');
+      if (popup) popup.style.display = 'none';
+      this.currentMentionTargets = [];
+    }
+
+    static handlePromptInput(e) {
+      const input = e.target;
+      if (!input) return;
+      const pos = input.selectionStart || 0;
+      const textBefore = input.value.substring(0, pos);
+      const match = textBefore.match(/@([a-zA-Z0-9_\-\/]*)$/);
+
+      if (match) {
+        const query = match[1].toLowerCase();
+        const allTargets = this.getAvailableMentionTargets();
+        const filtered = allTargets.filter(t =>
+          t.tag.toLowerCase().includes('@' + query) ||
+          t.name.toLowerCase().includes(query) ||
+          t.desc.toLowerCase().includes(query)
+        );
+        this.renderMentionDropdown(filtered, 0);
+      } else {
+        this.hideMentionPopup();
+      }
+    }
+
+    static handlePromptKeydown(e) {
+      const popup = document.getElementById('aiMentionPopup');
+      const isVisible = popup && popup.style.display !== 'none' && this.currentMentionTargets && this.currentMentionTargets.length > 0;
+
+      if (isVisible) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          this.activeMentionIndex = (this.activeMentionIndex + 1) % this.currentMentionTargets.length;
+          this.renderMentionDropdown(this.currentMentionTargets, this.activeMentionIndex);
+          return;
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          this.activeMentionIndex = (this.activeMentionIndex - 1 + this.currentMentionTargets.length) % this.currentMentionTargets.length;
+          this.renderMentionDropdown(this.currentMentionTargets, this.activeMentionIndex);
+          return;
+        } else if (e.key === 'Enter' || e.key === 'Tab') {
+          e.preventDefault();
+          if (this.currentMentionTargets[this.activeMentionIndex]) {
+            this.insertTagIntoPrompt(this.currentMentionTargets[this.activeMentionIndex].tag + ' ');
+          }
+          return;
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          this.hideMentionPopup();
+          return;
+        }
+      }
+
+      // Shortcut: Ctrl+Enter or Cmd+Enter to execute Custom AI Polish
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        const btnCustom = document.getElementById('aiBtnRunCustom');
+        const instruction = e.target.value.trim();
+        if (instruction) {
+          AiPolishController.runPolish('custom', instruction, btnCustom);
+        }
+      }
     }
 
     static setTarget(element, text) {
@@ -1833,12 +2035,14 @@
     }
 
     static async runPolish(mode, customInstruction = '', btnEl = null) {
-      if (!this.currentTargetText) {
+      const isCustomMultiSection = mode === 'custom' && (customInstruction.includes('@') || !this.currentTargetText);
+
+      if (!this.currentTargetText && !isCustomMultiSection) {
         const firstBullet = document.querySelector('.bullet-item') || document.querySelector('.summary-text');
         if (firstBullet) {
           this.setTarget(firstBullet, firstBullet.innerText);
-        } else {
-          alert('Please click on a bullet or text on your resume to polish it.');
+        } else if (!isCustomMultiSection) {
+          alert('Please click on a bullet or text on your resume, or type @section in Custom AI Instruction.');
           return;
         }
       }
@@ -1860,10 +2064,11 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            text: this.currentTargetText,
+            text: this.currentTargetText || '',
             mode: mode,
             instruction: customInstruction,
-            target_role: store.state.resume?.target_role || ''
+            target_role: store.state.resume?.target_role || '',
+            current_resume: store.state.resume
           })
         });
 
@@ -1872,7 +2077,31 @@
           throw new Error(data.error || 'Failed to polish text with AI.');
         }
 
+        // Case A: Section-Targeted Resume Refine
+        if (data.mode === 'resume_refine' && data.refined_resume) {
+          this.lastRefinedResume = data.refined_resume;
+          this.lastChangeSummary = data.change_summary;
+          this.lastPolishedText = '';
+
+          if (diffCard && diffText) {
+            diffText.innerHTML = `
+              <div style="font-weight:700; color:#38bdf8; margin-bottom:6px; font-size:12px; display:flex; align-items:center; gap:5px;">
+                <i class="fa-solid fa-wand-magic-sparkles"></i> Section-Targeted Refinement Ready
+              </div>
+              <div style="font-size:11.5px; line-height:1.45; color:var(--editor-text);">
+                ${BlockRenderer.escapeHtml(data.change_summary || 'Targeted sections have been updated.')}
+              </div>
+            `;
+            diffCard.style.display = 'block';
+            diffCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+          return;
+        }
+
+        // Case B: Single Text Polish
         this.lastPolishedText = data.polished;
+        this.lastRefinedResume = null;
+        this.lastChangeSummary = null;
 
         if (diffCard && diffText) {
           diffText.innerText = data.polished;
@@ -1891,6 +2120,32 @@
     }
 
     static applyPolish() {
+      // Branch 1: Whole-document / targeted section refinement
+      if (this.lastRefinedResume) {
+        store.state.resume = this.lastRefinedResume;
+        BlockRenderer.renderAll(store.state.resume);
+        InlineEditor.attachAllListeners();
+        store.pushSnapshot(`AI Polish: ${this.lastChangeSummary ? this.lastChangeSummary.slice(0, 35) : 'Sections'}`);
+        PageOverflowDetector.check();
+        AutoSaver.trigger();
+
+        const diffCard = document.getElementById('aiDiffCard');
+        if (diffCard) diffCard.style.display = 'none';
+
+        this.lastRefinedResume = null;
+        this.lastChangeSummary = null;
+
+        // Visual feedback
+        const btnSave = document.getElementById('btnSave');
+        if (btnSave) {
+          const oldHtml = btnSave.innerHTML;
+          btnSave.innerHTML = '<i class="fa-solid fa-check"></i> Applied AI Polish!';
+          setTimeout(() => { btnSave.innerHTML = oldHtml; }, 2000);
+        }
+        return;
+      }
+
+      // Branch 2: Single element text polish
       if (!this.lastPolishedText || !this.currentTargetEl) return;
 
       this.currentTargetEl.innerText = this.lastPolishedText;
@@ -1911,6 +2166,8 @@
       const diffCard = document.getElementById('aiDiffCard');
       if (diffCard) diffCard.style.display = 'none';
       this.lastPolishedText = '';
+      this.lastRefinedResume = null;
+      this.lastChangeSummary = null;
     }
   }
 

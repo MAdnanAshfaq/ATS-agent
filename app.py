@@ -2704,8 +2704,51 @@ def api_editor_ai_polish():
     mode = data.get("mode", "metrics")
     custom_instruction = (data.get("instruction") or "").strip()
     target_role = (data.get("target_role") or "").strip()
+    current_resume = data.get("current_resume")
 
-    if not text:
+    # If custom instruction uses @section tags or full resume refinement
+    if mode == "custom" and custom_instruction and ("@" in custom_instruction or current_resume):
+        try:
+            from resume_refiner import refine_tailored_resume
+            user_output_dir = get_user_output_dir()
+            user_resume_path = get_user_resume_path()
+            base_resume = {}
+            if user_resume_path.exists():
+                try:
+                    with open(user_resume_path, "r", encoding="utf-8") as bf:
+                        base_resume = json.load(bf)
+                except Exception:
+                    pass
+
+            jd_text = ""
+            jd_file = user_output_dir / "job_description.txt"
+            if jd_file.exists():
+                try:
+                    jd_text = jd_file.read_text(encoding="utf-8").strip()
+                except Exception:
+                    pass
+
+            resume_to_refine = current_resume if isinstance(current_resume, dict) and current_resume else base_resume
+            refined_resume, change_summary = refine_tailored_resume(
+                current_resume=resume_to_refine,
+                instruction=custom_instruction,
+                base_resume=base_resume,
+                jd_text=jd_text,
+                role=target_role or resume_to_refine.get("target_role", "")
+            )
+
+            return jsonify({
+                "success": True,
+                "mode": "resume_refine",
+                "refined_resume": refined_resume,
+                "change_summary": change_summary,
+                "instruction": custom_instruction
+            })
+        except Exception as ref_err:
+            logger.error(f"[AI Polish Refine] Error: {ref_err}")
+            # Fallback to single text completion if refiner fails
+
+    if not text and not custom_instruction:
         return jsonify({"success": False, "error": "No text provided for AI polish."}), 400
 
     from gemini_client import execute_with_failover
