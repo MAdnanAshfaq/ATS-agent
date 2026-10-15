@@ -678,6 +678,32 @@
   pointer-events: none;
   transition: opacity 0.15s ease, transform 0.15s ease;
   transform: translateY(2px);
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+}
+
+.block-actions-bar *,
+.block-drag-handle,
+.block-drag-handle *,
+.block-action-btn,
+.block-action-btn *,
+.btn-lbl,
+.floating-toolbar,
+.floating-toolbar * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+}
+
+.block-actions-bar::selection,
+.block-actions-bar *::selection,
+.block-drag-handle::selection,
+.block-drag-handle *::selection {
+  background: transparent !important;
+  color: inherit !important;
 }
 
 .editor-block:hover .block-actions-bar,

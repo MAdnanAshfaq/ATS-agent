@@ -301,6 +301,9 @@
       const handle = document.createElement('div');
       handle.className = 'block-drag-handle';
       handle.setAttribute('draggable', 'true');
+      handle.setAttribute('contenteditable', 'false');
+      handle.setAttribute('aria-hidden', 'true');
+      handle.setAttribute('tabindex', '-1');
       handle.title = 'Drag to reorder section';
       handle.innerHTML = '<i class="fa-solid fa-grip-vertical"></i>';
       wrapper.appendChild(handle);
@@ -308,21 +311,24 @@
       // 2. Hover Actions Bar on top-right (Move Up, Move Down, Space, AI, Delete)
       const actionsBar = document.createElement('div');
       actionsBar.className = 'block-actions-bar';
+      actionsBar.setAttribute('contenteditable', 'false');
+      actionsBar.setAttribute('aria-hidden', 'true');
+      actionsBar.setAttribute('tabindex', '-1');
 
       let actionsHtml = `
-        <button class="block-action-btn btn-move-up" title="Move Up (▲)"><i class="fa-solid fa-arrow-up"></i></button>
-        <button class="block-action-btn btn-move-down" title="Move Down (▼)"><i class="fa-solid fa-arrow-down"></i></button>
-        <button class="block-action-btn btn-add-space" title="Add 4px space below"><i class="fa-solid fa-arrows-up-down"></i> +Space</button>
-        <button class="block-action-btn btn-sub-space" title="Remove 4px space below"><i class="fa-solid fa-minus"></i> -Space</button>
+        <button type="button" class="block-action-btn btn-move-up" title="Move Up (▲)" tabindex="-1" contenteditable="false"><i class="fa-solid fa-arrow-up"></i></button>
+        <button type="button" class="block-action-btn btn-move-down" title="Move Down (▼)" tabindex="-1" contenteditable="false"><i class="fa-solid fa-arrow-down"></i></button>
+        <button type="button" class="block-action-btn btn-add-space" title="Add 4px space below" tabindex="-1" contenteditable="false"><i class="fa-solid fa-arrows-up-down"></i> <span class="btn-lbl" aria-hidden="true">+Space</span></button>
+        <button type="button" class="block-action-btn btn-sub-space" title="Remove 4px space below" tabindex="-1" contenteditable="false"><i class="fa-solid fa-minus"></i> <span class="btn-lbl" aria-hidden="true">-Space</span></button>
       `;
 
       if (['experience-entry', 'education', 'certifications', 'projects'].includes(blockType)) {
-        actionsHtml += `<button class="block-action-btn btn-add-bullet" title="Add new bullet point"><i class="fa-solid fa-plus"></i> Bullet</button>`;
+        actionsHtml += `<button type="button" class="block-action-btn btn-add-bullet" title="Add new bullet point" tabindex="-1" contenteditable="false"><i class="fa-solid fa-plus"></i> <span class="btn-lbl" aria-hidden="true">Bullet</span></button>`;
       }
 
       actionsHtml += `
-        <button class="block-action-btn ai-btn btn-ai-polish" title="Polish with Gemini AI"><i class="fa-solid fa-wand-magic-sparkles"></i> AI</button>
-        <button class="block-action-btn danger-btn btn-delete-block" title="Delete section"><i class="fa-solid fa-trash"></i></button>
+        <button type="button" class="block-action-btn ai-btn btn-ai-polish" title="Polish with Gemini AI" tabindex="-1" contenteditable="false"><i class="fa-solid fa-wand-magic-sparkles"></i> <span class="btn-lbl" aria-hidden="true">AI</span></button>
+        <button type="button" class="block-action-btn danger-btn btn-delete-block" title="Delete section" tabindex="-1" contenteditable="false"><i class="fa-solid fa-trash"></i></button>
       `;
 
       actionsBar.innerHTML = actionsHtml;
@@ -2584,7 +2590,113 @@
 
 
   // ═══════════════════════════════════════════════════════════════════
-  // 17. BOOTSTRAP INITIALIZATION
+  // 17. CLIPBOARD CONTROLLER (Pure resume text, strips all editor chrome)
+  // ═══════════════════════════════════════════════════════════════════
+
+  class ClipboardController {
+    static init() {
+      // 1. Intercept any Copy event on document / artboard
+      document.addEventListener('copy', (e) => {
+        // If copying inside an active input or textarea, let native copy handle it
+        const active = document.activeElement;
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
+          return;
+        }
+
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
+
+        const artboard = document.getElementById('resumeArtboard') || document.getElementById('resumeContent');
+        if (!artboard) return;
+
+        // Check if selection intersects the resume artboard
+        let intersectsArtboard = false;
+        try {
+          for (let i = 0; i < selection.rangeCount; i++) {
+            const range = selection.getRangeAt(i);
+            if (artboard.contains(range.commonAncestorContainer) || 
+                artboard.contains(selection.anchorNode) || 
+                artboard.contains(selection.focusNode) ||
+                (range.intersectsNode && range.intersectsNode(artboard))) {
+              intersectsArtboard = true;
+              break;
+            }
+          }
+        } catch (_) {}
+
+        if (!intersectsArtboard) return;
+
+        try {
+          const range = selection.getRangeAt(0);
+          const fragment = range.cloneContents();
+          const sandbox = document.createElement('div');
+          sandbox.appendChild(fragment);
+
+          // Strip ALL editor chrome: action bars, handles, buttons, toolbar, drop indicators, page breaks
+          sandbox.querySelectorAll('.block-actions-bar, .block-drag-handle, .block-drop-indicator, .floating-toolbar, .editor-page-break, .overflow-autofit-btn, button, .block-action-btn').forEach(el => el.remove());
+
+          const cleanText = sandbox.innerText || sandbox.textContent || '';
+          if (cleanText) {
+            e.clipboardData.setData('text/plain', cleanText);
+            e.clipboardData.setData('text/html', sandbox.innerHTML);
+            e.preventDefault();
+          }
+        } catch (copyErr) {
+          console.warn('[ClipboardController] Copy intercept warning:', copyErr);
+        }
+      });
+
+      // 2. Dedicated "Copy Text" button handler
+      document.getElementById('btnCopyText')?.addEventListener('click', () => {
+        this.copyWholeResumeText();
+      });
+    }
+
+    static copyWholeResumeText() {
+      const content = document.getElementById('resumeContent');
+      if (!content) return;
+      const clone = content.cloneNode(true);
+      clone.querySelectorAll('.block-actions-bar, .block-drag-handle, .block-drop-indicator, .floating-toolbar, .editor-page-break, .overflow-autofit-btn, button, .block-action-btn').forEach(el => el.remove());
+      const cleanText = clone.innerText || clone.textContent || '';
+      
+      const onCopied = () => {
+        const btn = document.getElementById('btnCopyText');
+        if (btn) {
+          const origHtml = btn.innerHTML;
+          btn.innerHTML = '<i class="fa-solid fa-check" style="color:#10b981;"></i> <span>Copied!</span>';
+          btn.style.borderColor = '#10b981';
+          setTimeout(() => {
+            btn.innerHTML = origHtml;
+            btn.style.borderColor = '';
+          }, 2000);
+        }
+      };
+
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(cleanText).then(onCopied).catch(() => {
+          this.fallbackCopy(cleanText, onCopied);
+        });
+      } else {
+        this.fallbackCopy(cleanText, onCopied);
+      }
+    }
+
+    static fallbackCopy(text, cb) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      if (typeof cb === 'function') cb();
+    }
+  }
+
+
+  // ═══════════════════════════════════════════════════════════════════
+  // 18. BOOTSTRAP INITIALIZATION
   // ═══════════════════════════════════════════════════════════════════
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -2616,6 +2728,7 @@
     AutoSaver.init();
     PdfExporter.init();
     ShortcutManager.init();
+    ClipboardController.init();
 
     store.subscribe((event) => {
       if (event === 'state_restored') {
