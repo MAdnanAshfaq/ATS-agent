@@ -2579,7 +2579,8 @@ def visual_editor_page(filepath):
     return render_template(
         "editor.html",
         resume_json=json.dumps(resume_data),
-        resume_path=clean_fp
+        resume_path=clean_fp,
+        cache_buster=int(time.time())
     )
 
 
@@ -2654,11 +2655,16 @@ def api_editor_export_pdf():
     if not resume_obj or not isinstance(resume_obj, dict):
         return jsonify({"error": "Invalid resume payload"}), 400
 
-    from resume_html import resume_json_to_html, generate_pdf_from_html
+    from resume_html import resume_json_to_html, generate_pdf_from_html, _get_base_html_template
     name = resume_obj.get("name", "Candidate")
 
-    # Render exact HTML with custom style overrides
-    html_content = resume_json_to_html(resume_obj, editor_styles=editor_styles)
+    # If the visual editor sent the exact rendered DOM, wrap it for 1:1 fidelity
+    raw_html = data.get("html")
+    if raw_html and isinstance(raw_html, str) and raw_html.strip():
+        html_content = _get_base_html_template(raw_html, title=f"{name} - Resume", editor_styles=editor_styles)
+    else:
+        # Fallback to generating HTML from JSON data
+        html_content = resume_json_to_html(resume_obj, editor_styles=editor_styles)
 
     user_output_dir = get_user_output_dir()
     clean_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', name).strip('_') or "Candidate"

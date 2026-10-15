@@ -660,6 +660,79 @@
   cursor: grabbing;
 }
 
+/* Modern Word/Canva block hover controls bar */
+.block-actions-bar {
+  position: absolute;
+  top: -24px;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  padding: 2px 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  z-index: 40;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  transform: translateY(2px);
+}
+
+.editor-block:hover .block-actions-bar,
+.editor-block.selected .block-actions-bar {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.block-action-btn {
+  background: transparent;
+  border: none;
+  color: #e2e8f0;
+  font-size: 10px;
+  padding: 2px 5px;
+  border-radius: 3px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  transition: background 0.1s ease, color 0.1s ease;
+  white-space: nowrap;
+}
+
+.block-action-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+.block-action-btn.ai-btn {
+  color: #c084fc;
+  font-weight: 600;
+}
+
+.block-action-btn.ai-btn:hover {
+  background: rgba(192, 132, 252, 0.25);
+  color: #e9d5ff;
+}
+
+.block-action-btn.danger-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #fca5a5;
+}
+
+/* Bullet item focus and direct editing */
+.editor-resume-content [contenteditable="true"] {
+  outline: none;
+  cursor: text;
+}
+
+.editor-resume-content [contenteditable="true"]:focus {
+  outline: 1px dashed rgba(59, 130, 246, 0.35);
+  outline-offset: 1px;
+}
+
 /* Drag ghost (element being dragged) */
 .editor-block.dragging {
   opacity: 0.6;
@@ -1594,6 +1667,8 @@
   .editor-margin-guide,
   .editor-page-break,
   .block-drag-handle,
+  .block-actions-bar,
+  .block-drop-indicator,
   .overflow-autofit-btn {
     display: none !important;
   }

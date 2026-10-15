@@ -8,7 +8,7 @@
   <link rel="icon" href="/static/favicon-v2.svg" type="image/svg+xml">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Carlito:ital,wght@0,400;0,700;1,400;1,700&display=swap">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="stylesheet" href="/static/editor.css">
+  <link rel="stylesheet" href="/static/editor.css?v={{ cache_buster or range(1000, 99999) | random }}">
 </head>
 <body class="editor-page">
 
@@ -101,6 +101,16 @@
       <button class="toolbar-btn toolbar-btn-text" id="btnCase" title="Change Case">aA</button>
     </div>
 
+    <div class="toolbar-divider"></div>
+
+    <!-- AI Polish Quick Studio in Top Toolbar -->
+    <div class="toolbar-group">
+      <button class="toolbar-btn toolbar-btn-text" id="btnToolbarAi" title="Open AI Polish Studio (Gemini 2.5)" style="background: linear-gradient(135deg, rgba(99,102,241,0.2), rgba(168,85,247,0.2)); color: #c084fc; border: 1px solid rgba(168,85,247,0.4); font-weight: 600; padding: 0 10px; gap: 6px;">
+        <i class="fa-solid fa-wand-magic-sparkles" style="color:#c084fc"></i>
+        <span>AI Polish</span>
+      </button>
+    </div>
+
     <!-- Right-aligned: Undo/Redo/More -->
     <div style="flex:1"></div>
     <div class="toolbar-group">
@@ -117,7 +127,7 @@
       <div class="sidebar-tabs">
         <button class="sidebar-tab active" data-tab="sections">Sections</button>
         <button class="sidebar-tab" data-tab="design">Design</button>
-        <button class="sidebar-tab" data-tab="ai">AI</button>
+        <button class="sidebar-tab" data-tab="ai" id="tabAi" style="color: #c084fc; font-weight: 600;"><i class="fa-solid fa-wand-magic-sparkles" style="font-size:10px; margin-right:4px;"></i>AI Polish</button>
       </div>
 
       <!-- Sections Panel -->
@@ -317,24 +327,34 @@
         <!-- Spacing Section -->
         <div class="inspector-section" id="inspSpacing">
           <button class="inspector-section-header">
-            Spacing & Layout <span class="chevron">▾</span>
+            Spacing & De-Congestion <span class="chevron">▾</span>
           </button>
           <div class="inspector-section-body">
             <div class="inspector-row">
-              <span class="inspector-label">Margin Top</span>
-              <input type="text" class="inspector-input" id="inspMarginTop" value="0px">
+              <span class="inspector-label">Space After</span>
+              <input type="number" class="inspector-input" id="inspMarginBottom" value="6" min="0" max="60" step="1" title="Bottom spacing in px">
+              <span style="font-size:10px; color:var(--editor-text-muted)">px</span>
+            </div>
+            <div class="inspector-row" style="margin-top:2px; margin-bottom:8px;">
+              <input type="range" class="spacing-slider" id="inspSliderMarginBottom" min="0" max="40" value="6" style="width:100%">
+            </div>
+            <div style="display:flex; gap:6px; margin-bottom:10px;">
+              <button class="inspector-action-btn" id="inspBtnAddSpace" style="flex:1; justify-content:center; padding:5px 6px; font-size:11px;" title="Add 4px space under this section">
+                <i class="fa-solid fa-plus" style="font-size:9px"></i> +4px Space
+              </button>
+              <button class="inspector-action-btn" id="inspBtnSubSpace" style="flex:1; justify-content:center; padding:5px 6px; font-size:11px;" title="Reduce 4px space under this section">
+                <i class="fa-solid fa-minus" style="font-size:9px"></i> -4px Space
+              </button>
             </div>
             <div class="inspector-row">
-              <span class="inspector-label">Margin Bot</span>
-              <input type="text" class="inspector-input" id="inspMarginBottom" value="0px">
+              <span class="inspector-label">Bullet Gap</span>
+              <input type="number" class="inspector-input" id="inspBulletGap" value="1" min="0" max="16" step="0.5" title="Gap between bullets in px">
+              <span style="font-size:10px; color:var(--editor-text-muted)">px</span>
             </div>
             <div class="inspector-row">
-              <span class="inspector-label">Padding L</span>
-              <input type="text" class="inspector-input" id="inspPaddingLeft" value="0px">
-            </div>
-            <div class="inspector-row">
-              <span class="inspector-label">Padding R</span>
-              <input type="text" class="inspector-input" id="inspPaddingRight" value="0px">
+              <span class="inspector-label">Section Gap</span>
+              <input type="number" class="inspector-input" id="inspSectionGap" value="6" min="0" max="30" step="1" title="Global section gap in px">
+              <span style="font-size:10px; color:var(--editor-text-muted)">px</span>
             </div>
           </div>
         </div>
@@ -436,6 +456,10 @@
     <button class="toolbar-btn" data-cmd="justifyLeft" title="Left"><i class="fa-solid fa-align-left" style="font-size:10px"></i></button>
     <button class="toolbar-btn" data-cmd="justifyCenter" title="Center"><i class="fa-solid fa-align-center" style="font-size:10px"></i></button>
     <button class="toolbar-btn" data-cmd="justifyRight" title="Right"><i class="fa-solid fa-align-right" style="font-size:10px"></i></button>
+    <div class="toolbar-divider"></div>
+    <button class="toolbar-btn" id="floatBtnAi" title="Polish with Gemini AI" style="color: #c084fc; font-weight:600; font-size:11px; padding:0 8px; display:flex; align-items:center; gap:4px;">
+      <i class="fa-solid fa-wand-magic-sparkles"></i> <span>AI Polish</span>
+    </button>
   </div>
 
   <!-- ═══════════════ SPACING POPOVER ═══════════════ -->
@@ -500,6 +524,6 @@
       backUrl: "/"
     };
   </script>
-  <script src="/static/editor.js"></script>
+  <script src="/static/editor.js?v={{ cache_buster or range(1000, 99999) | random }}"></script>
 </body>
 </html>
