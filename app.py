@@ -2634,7 +2634,78 @@ def api_editor_save():
         target_json.parent.mkdir(parents=True, exist_ok=True)
         with open(target_json, "w", encoding="utf-8") as f:
             json.dump(resume_obj, f, indent=2, ensure_ascii=False)
-        return jsonify({"success": True, "saved_to": str(target_json.name)})
+
+        # ── Database Sync (NeonDB) ────────────────────────────────────────────
+        matched_run_id = None
+        if db_layer.is_db_available() and current_user.is_authenticated:
+            try:
+                if is_master:
+                    db_layer.db_save_resume(current_user.username, resume_obj)
+                    logger.info(f"[Editor Save] Master resume synced to NeonDB for user {current_user.username}")
+                else:
+                    hist = db_layer.db_get_history(current_user.username)
+                    folder_name = target_json.parent.name.lower()
+                    clean_fp_lower = clean_fp.lower()
+
+                    for h in hist:
+                        rid = (h.get("_db_run_id") or h.get("run_id") or "")
+                        out_f = (h.get("output_file") or "").lower()
+                        log_f = (h.get("log_file_name") or "").lower()
+                        c_slug = _safe_slugify(h.get("company", "")).lower()
+                        r_slug = _safe_slugify(h.get("role", "")).lower()
+                        comp_role_slug = f"{c_slug}_{r_slug}" if c_slug and r_slug else ""
+
+                        if rid and (rid.lower() in clean_fp_lower or rid.lower() in folder_name):
+                            matched_run_id = rid
+                            break
+                        if folder_name and folder_name != "output" and folder_name in out_f:
+                            matched_run_id = rid
+                            break
+                        if comp_role_slug and comp_role_slug in folder_name:
+                            matched_run_id = rid
+                            break
+                        if log_f and log_f in clean_fp_lower:
+                            matched_run_id = rid
+                            break
+
+                    if not matched_run_id and hist:
+                        for h in hist:
+                            rid = (h.get("_db_run_id") or h.get("run_id") or "")
+                            c_slug = _safe_slugify(h.get("company", "")).lower()
+                            if c_slug and c_slug in folder_name:
+                                matched_run_id = rid
+                                break
+                        if not matched_run_id and len(hist) == 1:
+                            matched_run_id = hist[0].get("_db_run_id") or hist[0].get("run_id")
+
+                    if matched_run_id:
+                        db_layer.db_update_history_tailored_resume(matched_run_id, resume_obj)
+                        logger.info(f"[Editor Save] Tailored resume synced to NeonDB for job run {matched_run_id}")
+            except Exception as db_sync_err:
+                logger.warning(f"[Editor Save] NeonDB sync warning: {db_sync_err}")
+
+        # ── Local Run Log Sync ────────────────────────────────────────────────
+        try:
+            logs_dir = user_output_dir / "logs"
+            if logs_dir.exists():
+                for lf in logs_dir.glob("run_*.json"):
+                    if matched_run_id and matched_run_id in lf.name:
+                        with open(lf, "r", encoding="utf-8") as lff:
+                            ldata = json.load(lff)
+                        ldata["tailored_resume"] = resume_obj
+                        ldata["resume_json"] = resume_obj
+                        with open(lf, "w", encoding="utf-8") as lfw:
+                            json.dump(ldata, lfw, indent=2, ensure_ascii=False)
+                        break
+        except Exception as log_err:
+            logger.warning(f"[Editor Save] Local log sync warning: {log_err}")
+
+        return jsonify({
+            "success": True,
+            "saved_to": str(target_json.name),
+            "db_synced": bool(matched_run_id) if not is_master else True,
+            "job_reference": matched_run_id if not is_master else "master"
+        })
     except Exception as e:
         logger.error(f"[Editor] Save failed: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
@@ -2651,6 +2722,7 @@ def api_editor_export_pdf():
     data = request.get_json() or {}
     resume_obj = data.get("resume") or {}
     editor_styles = data.get("editor_styles") or resume_obj.get("editor_styles") or {}
+    rel_path = data.get("resume_path", "").strip()
 
     if not resume_obj or not isinstance(resume_obj, dict):
         return jsonify({"error": "Invalid resume payload"}), 400
@@ -2682,6 +2754,20 @@ def api_editor_export_pdf():
 
     if not success or not output_pdf_path.exists():
         return jsonify({"error": "PDF generation failed via Playwright engine."}), 500
+
+    # Also preserve the generated PDF in the tailored job folder
+    try:
+        clean_fp = rel_path.replace("\\", "/").strip("/")
+        if clean_fp and clean_fp not in ("master", "master_resume", "master.docx", "master.json"):
+            target_folder = (user_output_dir / clean_fp).resolve()
+            if not target_folder.is_dir():
+                target_folder = target_folder.parent
+            if target_folder.exists() and target_folder.is_dir():
+                import shutil
+                dest_pdf = target_folder / pdf_filename
+                shutil.copy2(output_pdf_path, dest_pdf)
+    except Exception as pdf_copy_err:
+        logger.warning(f"[Export PDF] Copy to job folder note: {pdf_copy_err}")
 
     return send_file(
         str(output_pdf_path),

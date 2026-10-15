@@ -714,6 +714,39 @@ def db_update_history_item(run_id: str, company: str = None, role: str = None, u
         release_conn(conn)
 
 
+def db_update_history_tailored_resume(run_id: str, tailored_resume: dict) -> bool:
+    """Update the tailored resume and resume JSON inside run_data for a specific job run."""
+    conn = get_conn()
+    if not conn:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT run_data FROM job_history WHERE run_id = %s", (run_id,))
+            row = cur.fetchone()
+            if not row:
+                return False
+            data = json.loads(row[0]) if row[0] else {}
+            data["tailored_resume"] = tailored_resume
+            data["resume_json"] = tailored_resume
+            target_role = tailored_resume.get("target_role")
+            if target_role:
+                data["role"] = target_role
+
+            cur.execute(
+                "UPDATE job_history SET run_data = %s, job_title = COALESCE(%s, job_title) WHERE run_id = %s",
+                (json.dumps(data, ensure_ascii=False), target_role if target_role else None, run_id)
+            )
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"[DB] update_history_tailored_resume error: {e}")
+        return False
+    finally:
+        release_conn(conn)
+
+
+
 def db_delete_history_item(run_id: str) -> bool:
     """Hard delete a single history row by run_id."""
     conn = get_conn()
