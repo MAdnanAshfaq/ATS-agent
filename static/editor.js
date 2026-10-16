@@ -563,35 +563,80 @@
         return out;
       }
 
-      const cats = {
-        'Languages': [],
-        'Frameworks & Libraries': [],
-        'Cloud & DevOps': [],
-        'Databases & Tools': []
-      };
+      // 1. Subsumption & Redundancy Deduplication
+      const allLower = new Set(skills.map(s => String(s).toLowerCase().trim()));
+      const hasFabric = Array.from(allLower).some(s => s.includes('fabric'));
+      const hasDatabricks = Array.from(allLower).some(s => s.includes('databricks'));
+      const hasAzure = Array.from(allLower).some(s => s.includes('azure'));
+      const hasSpark = Array.from(allLower).some(s => s.includes('spark'));
+      const hasSql = Array.from(allLower).some(s => s === 'sql' || s === 't-sql');
+      const hasPowerBi = Array.from(allLower).some(s => s.includes('power bi') || s.includes('powerbi'));
 
-      const langRegex = /^(python|java|javascript|typescript|c\+\+|c#|go|golang|rust|ruby|php|scala|swift|kotlin|sql|bash|r)$/i;
-      const devopsRegex = /^(aws|azure|gcp|docker|kubernetes|terraform|ci\/cd|jenkins|git|linux|helm|ansible|grafana|prometheus)$/i;
-      const dbRegex = /^(postgresql|mysql|mongodb|redis|cassandra|elasticsearch|dynamodb|oracle|snowflake|bigquery|kafka|rabbitmq)$/i;
+      const filteredSkills = [];
+      const seen = new Set();
 
       for (const skill of skills) {
         const s = String(skill).trim();
+        const low = s.toLowerCase();
+
+        if (hasFabric && (low === 'fabric lakehouse' || low === 'fabric warehouse' || low === 'fabric copilot' || low === 'fabric onelake' || low === 'onelake')) continue;
+        if (low === 'data factory' && (allLower.has('azure data factory') || hasFabric)) continue;
+        if (hasDatabricks && (low === 'databricks jobs' || low === 'databricks onelake')) continue;
+        if (low === 'azure' && allLower.has('microsoft azure')) continue;
+        if (hasPowerBi && (low === 'direct lake' || low === 'azure (direct lake)' || low === 'power bi (direct lake)')) continue;
+        if ((hasSql || hasSpark) && (low === 'spark sql' || low === 'synapse sql')) continue;
+        if (low === 'unity catalog' && (allLower.has('databricks (unity catalog)') || allLower.has('databricks unity catalog'))) continue;
+        if (low === 'microsoft fabric' && allLower.has('microsoft fabric (onelake)')) continue;
+        if (low === 'rest api' && allLower.has('rest apis')) continue;
+
+        if (!seen.has(low)) {
+          seen.add(low);
+          filteredSkills.push(s);
+        }
+      }
+
+      // 2. Structured Taxonomy Categorization
+      const cats = {
+        'Languages': [],
+        'Cloud & Platforms': [],
+        'Data Engineering & Tools': [],
+        'Databases & Storage': [],
+        'Architecture & Governance': [],
+        'Compliance & Security': []
+      };
+
+      const langRegex = /^(python|sql|t-sql|pl\/sql|javascript|typescript|java|kotlin|swift|golang|go|rust|c\+\+|c#|ruby|php|scala|r|html|css|bash|shell)$/i;
+      const platformRegex = /^(microsoft azure|azure|aws|gcp|google cloud|databricks|snowflake|microsoft fabric|fabric|power bi|tableau|palantir foundry)$/i;
+      const dbRegex = /^(postgresql|postgres|mysql|mongodb|redis|elasticsearch|dynamodb|cassandra|delta lake|onelake|adls|adls gen2|data lake|data warehouse|bigquery|redshift|mariadb|oracle|sql server|synapse sql)$/i;
+      const engRegex = /^(pyspark|spark|apache spark|dbt|azure data factory|data factory|apache airflow|airflow|apache kafka|kafka|auto loader|rest apis|rest api|graphql|grpc|fastapi|flask|django|node\.js|react|odata|sftp|algolia|git|docker|kubernetes|terraform|ci\/cd|github actions|gitlab ci|azure devops|ansible|helm|prefect|dagster)$/i;
+      const archRegex = /^(medallion architecture|incremental loads|merge\/cdc|cdc|semantic models|semantic modeling|data modeling|data governance|microsoft purview|unity catalog|data lineage|schema evolution|repository governance|dataset versioning|audit readiness|hr data governance|agile|scrum)$/i;
+      const secRegex = /^(hipaa|hitrust|phi|pii|soc 2|gdpr|compliance)$/i;
+
+      for (const s of filteredSkills) {
         if (langRegex.test(s)) {
           cats['Languages'].push(s);
-        } else if (devopsRegex.test(s)) {
-          cats['Cloud & DevOps'].push(s);
+        } else if (platformRegex.test(s)) {
+          cats['Cloud & Platforms'].push(s);
         } else if (dbRegex.test(s)) {
-          cats['Databases & Tools'].push(s);
+          cats['Databases & Storage'].push(s);
+        } else if (secRegex.test(s)) {
+          cats['Compliance & Security'].push(s);
+        } else if (archRegex.test(s)) {
+          cats['Architecture & Governance'].push(s);
+        } else if (engRegex.test(s)) {
+          cats['Data Engineering & Tools'].push(s);
         } else {
-          cats['Frameworks & Libraries'].push(s);
+          cats['Data Engineering & Tools'].push(s);
         }
       }
 
       const finalCats = {};
       for (const [k, v] of Object.entries(cats)) {
-        if (v.length > 0) finalCats[k] = v;
+        if (v.length > 0) {
+          finalCats[k] = v.slice(0, 8); // Cap at 8 per row to prevent text walls
+        }
       }
-      return Object.keys(finalCats).length > 0 ? finalCats : { 'Technical Skills': skills };
+      return Object.keys(finalCats).length > 0 ? finalCats : { 'Technical Skills': filteredSkills.slice(0, 8) };
     }
   }
 

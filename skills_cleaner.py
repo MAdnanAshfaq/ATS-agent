@@ -186,24 +186,51 @@ def clean_technical_skills_list(skills: Union[List[str], str], jd_text: str = ""
             seen_canonical.add(canon_lower)
             cleaned_result.append(canonical)
 
-    # Step 5: Subsumption deduplication
+    # Step 5: Subsumption & Redundancy deduplication
     final_skills = []
     all_lower = {s.lower() for s in cleaned_result}
 
+    has_fabric = any("fabric" in x for x in all_lower)
+    has_databricks = any("databricks" in x for x in all_lower)
+    has_azure = any("azure" in x for x in all_lower)
+    has_spark = any(x in all_lower for x in ("apache spark", "pyspark"))
+    has_sql = any(x in all_lower for x in ("sql", "t-sql"))
+    has_powerbi = any("power bi" in x or "powerbi" in x for x in all_lower)
+
     for skill in cleaned_result:
         sk_lower = skill.lower()
-        if sk_lower == "data factory" and ("azure data factory" in all_lower):
+
+        # Prune Fabric sub-components if Microsoft Fabric is listed
+        if has_fabric and sk_lower in ("fabric lakehouse", "fabric warehouse", "fabric copilot", "fabric onelake", "onelake"):
             continue
+        if sk_lower == "data factory" and ("azure data factory" in all_lower or has_fabric):
+            continue
+
+        # Prune Databricks sub-components if Databricks is listed
+        if has_databricks and sk_lower in ("databricks jobs", "databricks onelake"):
+            continue
+
+        # Prune Azure variants
         if sk_lower == "azure" and ("microsoft azure" in all_lower):
             continue
+        if has_powerbi and sk_lower in ("direct lake", "azure (direct lake)", "power bi (direct lake)"):
+            continue
+
+        # Prune redundant SQL sub-dialects if SQL / T-SQL / Spark is listed
+        if (has_sql or has_spark) and sk_lower in ("spark sql", "synapse sql"):
+            continue
+
+        # Prune redundant Unity Catalog
         if sk_lower == "unity catalog" and ("databricks (unity catalog)" in all_lower or "databricks unity catalog" in all_lower):
             continue
-        if sk_lower == "direct lake" and any("direct lake" in x for x in all_lower if x != "direct lake"):
-            continue
+
         if sk_lower == "microsoft fabric" and ("microsoft fabric (onelake)" in all_lower):
             continue
-        if sk_lower == "onelake" and any("onelake" in x for x in all_lower if x != "onelake"):
+
+        # Normalize REST API variants
+        if sk_lower == "rest api" and "rest apis" in all_lower:
             continue
+
         final_skills.append(skill)
 
     # Step 6: If Job Description is provided, check for critical missing tech keywords

@@ -391,57 +391,50 @@ def build_resume_docx(
 
 
 def _categorize_skills(skills: list) -> dict:
-    """Auto-categorize skills into groups for clean display with zero cross-contamination or duplicates."""
+    """Auto-categorize skills into clean, balanced groups with zero duplicates or bloated catch-all categories."""
     from skills_cleaner import clean_technical_skills_list
     sanitized_skills = clean_technical_skills_list(skills)
 
     categories = {
         "Languages": [],
-        "Frameworks & Libraries": [],
-        "Databases": [],
-        "Cloud & DevOps": [],
-        "Tools & Platforms": [],
-        "Business & Methodologies": [],
+        "Cloud & Platforms": [],
+        "Data Engineering & Tools": [],
+        "Databases & Storage": [],
+        "Architecture & Governance": [],
+        "Compliance & Security": [],
     }
 
+    lang_keywords = {
+        'python', 'sql', 't-sql', 'pl/sql', 'javascript', 'typescript', 'java', 'kotlin', 'swift',
+        'golang', 'go', 'rust', 'c++', 'c#', 'ruby', 'php', 'scala', 'r', 'html', 'css', 'bash', 'shell'
+    }
+    platform_keywords = {
+        'microsoft azure', 'azure', 'aws', 'gcp', 'google cloud', 'google cloud platform',
+        'databricks', 'snowflake', 'microsoft fabric', 'fabric', 'power bi', 'tableau', 'palantir foundry'
+    }
     db_keywords = {
         'postgresql', 'postgres', 'mysql', 'mongodb', 'sqlite', 'redis', 'elasticsearch',
-        'dynamodb', 'cassandra', 'neo4j', 'supabase', 'firebase', 'pinecone', 'snowflake',
-        'bigquery', 'redshift', 'mariadb', 'oracle', 'sql server', 'databricks', 'delta lake',
-        'onelake', 'adls gen2', 'data lake', 'data warehouse', 'cloud storage'
+        'dynamodb', 'cassandra', 'delta lake', 'onelake', 'adls', 'adls gen2', 'data lake',
+        'data warehouse', 'bigquery', 'redshift', 'mariadb', 'oracle', 'sql server', 'synapse sql'
     }
-    cloud_keywords = {
-        'aws', 'gcp', 'google cloud', 'azure', 'microsoft azure', 'docker', 'kubernetes', 'terraform',
-        'ansible', 'ci/cd', 'github actions', 'jenkins', 'gitlab ci', 'vercel', 'netlify', 'heroku',
-        'cloudflare', 'lambda', 'ec2', 's3', 'cloud run', 'gke', 'ecs', 'helm', 'kafka',
-        'apache kafka', 'airflow', 'apache airflow', 'prefect', 'dagster', 'azure devops'
+    engineering_keywords = {
+        'pyspark', 'spark', 'apache spark', 'dbt', 'azure data factory', 'data factory',
+        'apache airflow', 'airflow', 'apache kafka', 'kafka', 'auto loader', 'rest apis', 'rest api',
+        'graphql', 'grpc', 'fastapi', 'flask', 'django', 'node.js', 'react', 'odata', 'sftp',
+        'algolia', 'git', 'docker', 'kubernetes', 'terraform', 'ci/cd', 'github actions',
+        'gitlab ci', 'azure devops', 'ansible', 'helm', 'prefect', 'dagster'
     }
-    framework_keywords = {
-        'react', 'react.js', 'react native', 'vue', 'vue.js', 'angular', 'next.js', 'nextjs', 'nuxt',
-        'svelte', 'node.js', 'nodejs', 'express', 'express.js', 'fastapi', 'django', 'flask',
-        'spring boot', 'spring', 'rails', 'laravel', 'graphql', 'rest apis', 'rest api', 'grpc',
-        'tailwind', 'bootstrap', 'redux', 'pytorch', 'tensorflow', 'pyspark', 'apache spark', 'spark',
-        'pandas', 'numpy', 'scikit-learn', 'dbt'
+    architecture_keywords = {
+        'medallion architecture', 'incremental loads', 'merge/cdc', 'cdc', 'semantic models',
+        'semantic modeling', 'data modeling', 'data governance', 'microsoft purview', 'unity catalog',
+        'data lineage', 'schema evolution', 'repository governance', 'dataset versioning',
+        'audit readiness', 'hr data governance', 'agile', 'scrum'
     }
-    lang_keywords = {
-        'python', 'javascript', 'typescript', 'java', 'kotlin', 'swift', 'golang', 'go',
-        'rust', 'c++', 'c#', 'ruby', 'php', 'scala', 'r', 'sql', 'pl/sql', 't-sql', 'html', 'css', 'bash', 'shell', 'c'
-    }
-    business_keywords = {
-        'salesforce', 'hubspot', 'crm', 'agile', 'scrum', 'jira', 'confluence', 'tableau',
-        'power bi', 'lead generation', 'seo', 'sem', 'google analytics', 'market research',
-        'b2b', 'saas', 'enterprise sales', 'cold calling', 'account management', 'product management',
-        'repository governance', 'dataset versioning', 'audit readiness', 'data governance',
-        'data modeling', 'data lineage', 'schema evolution', 'compliance'
+    compliance_keywords = {
+        'hipaa', 'hitrust', 'phi', 'pii', 'soc 2', 'gdpr', 'compliance'
     }
 
-    # Tools & Platforms explicit keywords
-    tool_keywords = {
-        'palantir foundry', 'palantir', 'azure data factory', 'data factory', 'microsoft fabric',
-        'unity catalog', 'gis', 'geospatial', 'postman', 'git', 'dremio', 'trino', 'presto'
-    }
-
-    def _matches(candidate: str, kw_set: set[str]) -> bool:
+    def _matches(candidate: str, kw_set: set) -> bool:
         c_lower = candidate.lower().strip()
         for kw in kw_set:
             if c_lower == kw:
@@ -462,36 +455,40 @@ def _categorize_skills(skills: list) -> dict:
         if c_lower in placed_skills_lower:
             continue
 
-        # Priority 1: Languages (e.g. Python, SQL, TypeScript, Java)
-        if _matches(skill_clean, lang_keywords) and not _matches(skill_clean, {'sql server', 'postgresql', 'mysql', 'pl/sql', 't-sql', 'pyspark'}):
+        # Priority 1: Languages
+        if _matches(skill_clean, lang_keywords) and not _matches(skill_clean, {'sql server', 'postgresql', 'mysql'}):
             categories["Languages"].append(skill_clean)
             placed_skills_lower.add(c_lower)
-        # Priority 2: Frameworks & Libraries (PySpark, Apache Spark, dbt, React, FastAPI)
-        elif _matches(skill_clean, framework_keywords):
-            categories["Frameworks & Libraries"].append(skill_clean)
+        # Priority 2: Cloud & Core Enterprise Platforms
+        elif _matches(skill_clean, platform_keywords):
+            categories["Cloud & Platforms"].append(skill_clean)
             placed_skills_lower.add(c_lower)
-        # Priority 3: Databases & Storage (Databricks, Snowflake, Delta Lake, PostgreSQL, BigQuery)
-        elif _matches(skill_clean, db_keywords) and not _matches(skill_clean, {'azure data factory', 'microsoft fabric'}):
-            categories["Databases"].append(skill_clean)
+        # Priority 3: Databases & Storage Layers
+        elif _matches(skill_clean, db_keywords):
+            categories["Databases & Storage"].append(skill_clean)
             placed_skills_lower.add(c_lower)
-        # Priority 4: Cloud & DevOps (AWS, GCP, Microsoft Azure, Docker, Kubernetes, Terraform)
-        elif _matches(skill_clean, cloud_keywords) and not _matches(skill_clean, {'azure data factory', 'direct lake'}):
-            categories["Cloud & DevOps"].append(skill_clean)
+        # Priority 4: Compliance & Healthcare/Security Standards
+        elif _matches(skill_clean, compliance_keywords):
+            categories["Compliance & Security"].append(skill_clean)
             placed_skills_lower.add(c_lower)
-        # Priority 5: Tools & Platforms (Palantir Foundry, Azure Data Factory, Microsoft Fabric, Unity Catalog)
-        elif _matches(skill_clean, tool_keywords):
-            categories["Tools & Platforms"].append(skill_clean)
+        # Priority 5: Architecture, Methodologies & Governance
+        elif _matches(skill_clean, architecture_keywords):
+            categories["Architecture & Governance"].append(skill_clean)
             placed_skills_lower.add(c_lower)
-        # Priority 6: Business, Governance & Methodologies (Agile, Repository Governance, Dataset Versioning, Audit Readiness, Power BI)
-        elif _matches(skill_clean, business_keywords):
-            categories["Business & Methodologies"].append(skill_clean)
+        # Priority 6: Data Engineering & Pipeline Tools
+        elif _matches(skill_clean, engineering_keywords):
+            categories["Data Engineering & Tools"].append(skill_clean)
             placed_skills_lower.add(c_lower)
         elif len(skill_clean) > 1:
-            categories["Tools & Platforms"].append(skill_clean)
+            categories["Data Engineering & Tools"].append(skill_clean)
             placed_skills_lower.add(c_lower)
 
-    # Remove empty categories
-    return {k: v for k, v in categories.items() if v}
+    # Balance and prune: cap each category to max 8 items to prevent text walls
+    out = {}
+    for k, v in categories.items():
+        if v:
+            out[k] = v[:8]
+    return out
 
 
 def sanitize_pdf_metadata(
