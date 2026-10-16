@@ -4680,6 +4680,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
 
         # Step 2: Scrape JD (checks memory & disk cache first, or uses direct text)
         is_direct_text = ("\n" in url) or (" " in url and len(url.split()) > 5) or (not url.startswith(("http://", "https://")) and not ("." in url and "/" in url))
+        cached_analysis = GLOBAL_ANALYSIS_CACHE.get(url) if url else None
         
         if direct_jd_text and len(direct_jd_text) >= 20:
             jd_text = direct_jd_text
@@ -4790,6 +4791,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
 
         # Step 3: Parse custom keywords OR Simplify ATS score OR local keyword extraction
         missing_keywords = []
+        matching_keywords = []
         simplify_data = None
         simplify_score_before = None
 
