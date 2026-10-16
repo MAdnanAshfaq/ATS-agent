@@ -398,9 +398,9 @@ def _categorize_skills(skills: list) -> dict:
     categories = {
         "Languages": [],
         "Cloud & Platforms": [],
-        "Data Engineering & Tools": [],
+        "Frameworks & Tools": [],
         "Databases & Storage": [],
-        "Architecture & Governance": [],
+        "Architecture & Methodologies": [],
         "Compliance & Security": [],
     }
 
@@ -473,14 +473,14 @@ def _categorize_skills(skills: list) -> dict:
             placed_skills_lower.add(c_lower)
         # Priority 5: Architecture, Methodologies & Governance
         elif _matches(skill_clean, architecture_keywords):
-            categories["Architecture & Governance"].append(skill_clean)
+            categories["Architecture & Methodologies"].append(skill_clean)
             placed_skills_lower.add(c_lower)
-        # Priority 6: Data Engineering & Pipeline Tools
+        # Priority 6: Frameworks, Libraries & Developer Tools
         elif _matches(skill_clean, engineering_keywords):
-            categories["Data Engineering & Tools"].append(skill_clean)
+            categories["Frameworks & Tools"].append(skill_clean)
             placed_skills_lower.add(c_lower)
         elif len(skill_clean) > 1:
-            categories["Data Engineering & Tools"].append(skill_clean)
+            categories["Frameworks & Tools"].append(skill_clean)
             placed_skills_lower.add(c_lower)
 
     # Balance and prune: cap each category to max 8 items to prevent text walls

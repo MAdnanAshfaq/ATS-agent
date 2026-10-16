@@ -599,9 +599,9 @@
       const cats = {
         'Languages': [],
         'Cloud & Platforms': [],
-        'Data Engineering & Tools': [],
+        'Frameworks & Tools': [],
         'Databases & Storage': [],
-        'Architecture & Governance': [],
+        'Architecture & Methodologies': [],
         'Compliance & Security': []
       };
 
@@ -622,11 +622,11 @@
         } else if (secRegex.test(s)) {
           cats['Compliance & Security'].push(s);
         } else if (archRegex.test(s)) {
-          cats['Architecture & Governance'].push(s);
+          cats['Architecture & Methodologies'].push(s);
         } else if (engRegex.test(s)) {
-          cats['Data Engineering & Tools'].push(s);
+          cats['Frameworks & Tools'].push(s);
         } else {
-          cats['Data Engineering & Tools'].push(s);
+          cats['Frameworks & Tools'].push(s);
         }
       }
 
