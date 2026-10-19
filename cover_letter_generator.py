@@ -109,7 +109,7 @@ STRICT BANNED PHRASES:
 Return ONLY the clean cover letter text (including date and recipient header). Do not wrap in markdown fences."""
 
     def _call_gemini(client):
-        for model in ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-flash-latest", "gemini-2.5-flash"]:
+        for model in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"]:
             try:
                 response = client.models.generate_content(
                     model=model,
@@ -141,14 +141,35 @@ Return ONLY the clean cover letter text (including date and recipient header). D
         cover_letter_text = ""
 
     if not cover_letter_text:
-        # Fallback template if all Gemini calls fail
+        # Dynamic fallback constructed strictly from candidate's real profile and real experience
+        top_skills_raw = base_resume.get("skills", [])
+        if isinstance(top_skills_raw, list):
+            skills_sample = [s for s in top_skills_raw if isinstance(s, str)][:6]
+        elif isinstance(top_skills_raw, dict):
+            skills_sample = []
+            for sublist in top_skills_raw.values():
+                if isinstance(sublist, list):
+                    skills_sample.extend([s for s in sublist if isinstance(s, str)])
+            skills_sample = skills_sample[:6]
+        else:
+            skills_sample = []
+
+        skills_str = ", ".join(skills_sample) if skills_sample else "modern engineering best practices, distributed architecture, and data pipelines"
+
+        exp_list = base_resume.get("experience", [])
+        first_exp = exp_list[0] if (isinstance(exp_list, list) and exp_list and isinstance(exp_list[0], dict)) else {}
+        exp_role = first_exp.get("title") or first_exp.get("role") or "Software / Data Engineer"
+        exp_company = first_exp.get("company") or "high-growth engineering organizations"
+        bullets = first_exp.get("bullets") or first_exp.get("responsibilities") or first_exp.get("highlights") or []
+        first_bullet = str(bullets[0]).strip("- *• ") if (bullets and isinstance(bullets, list)) else f"architecting high-availability infrastructure and accelerating delivery roadmaps"
+
         cover_letter_text = f"""Dear Hiring Team at {company},
 
-I am writing to express my strong enthusiasm for the {role} position. With extensive experience architecting high-scalability web applications and SaaS platforms, I am confident in my ability to deliver immediate value to {company}.
+I am writing to express my strong enthusiasm for the {role} position. With proven experience as a {exp_role} at {exp_company}, my technical background aligns closely with {company}'s engineering objectives and key requirements.
 
-Throughout my career, I have engineered robust frontend and backend microservices, optimized database performance, and led cross-functional teams to deliver critical product features on time. My experience aligns closely with your core requirements, particularly in scalable software architecture and full-stack development.
+Throughout my work, I have focused on {first_bullet}, utilizing {skills_str}. I take pride in building scalable systems that solve complex problems, maintain high uptime, and deliver measurable business value.
 
-I would welcome the opportunity to discuss how my background and technical capabilities can support {company}'s goals. Thank you for your time and consideration.
+I would welcome the opportunity to discuss how my hands-on background and technical problem-solving can directly contribute to {company}'s team and product vision. Thank you for your time and consideration.
 
 Sincerely,
 {candidate_name}

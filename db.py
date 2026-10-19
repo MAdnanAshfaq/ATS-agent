@@ -629,7 +629,7 @@ def db_get_history(username: str) -> list:
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT run_id, run_data, created_at FROM job_history WHERE username = %s ORDER BY created_at DESC LIMIT 200",
+                    "SELECT run_id, run_data, created_at FROM job_history WHERE username = %s ORDER BY created_at DESC LIMIT 2000",
                     (username,)
                 )
                 rows = cur.fetchall()

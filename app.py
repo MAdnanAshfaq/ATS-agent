@@ -3689,7 +3689,77 @@ def generate_cover_letter_api():
         if user_gemini_keys:
             set_thread_gemini_keys(user_gemini_keys)
 
-        base_resume = load_base_resume(str(user_resume_path))
+        from resume_builder import slugify
+        folder_name = f"{slugify(company)}_{slugify(role)}"[:80]
+        target_dir = user_output_dir / folder_name
+
+        # 1. Fast-path: Check if an existing cover letter already exists on disk
+        if target_dir.exists():
+            txt_files = sorted(list(target_dir.glob("*Cover_Letter*.txt")) or list(target_dir.glob("*.txt")), key=lambda p: p.stat().st_mtime, reverse=True)
+            docx_files = sorted(list(target_dir.glob("*Cover_Letter*.docx")) or list(target_dir.glob("*.docx")), key=lambda p: p.stat().st_mtime, reverse=True)
+            if txt_files and docx_files:
+                try:
+                    with open(txt_files[0], "r", encoding="utf-8") as tf:
+                        existing_txt = tf.read().strip()
+                    if existing_txt and len(existing_txt) > 80:
+                        rel_docx = os.path.relpath(str(docx_files[0]), str(user_output_dir)).replace("\\", "/")
+                        return jsonify({
+                            "success": True,
+                            "cover_letter_text": existing_txt,
+                            "file_path_docx": str(docx_files[0]),
+                            "relative_docx": rel_docx,
+                            "company": company,
+                            "role": role,
+                        })
+                except Exception:
+                    pass
+
+        # 2. Check NeonDB for saved cover letter text in job_history
+        if db_layer.is_db_available() and current_user.is_authenticated:
+            try:
+                hist = db_layer.db_get_history(current_user.username)
+                for h in hist:
+                    h_co = (h.get("company") or "").strip().lower()
+                    h_ro = (h.get("role") or "").strip().lower()
+                    if company.lower() in h_co or h_co in company.lower():
+                        c_text = h.get("cover_letter_text") or h.get("cover_letter")
+                        if c_text and len(c_text.strip()) > 80:
+                            target_dir.mkdir(parents=True, exist_ok=True)
+                            cand_name = slugify(current_user.display_name or current_user.username or "Candidate")
+                            txt_out = target_dir / f"{cand_name}_Cover_Letter.txt"
+                            with open(txt_out, "w", encoding="utf-8") as tf:
+                                tf.write(c_text)
+                            return jsonify({
+                                "success": True,
+                                "cover_letter_text": c_text,
+                                "file_path_docx": "",
+                                "relative_docx": "",
+                                "company": company,
+                                "role": role,
+                            })
+            except Exception:
+                pass
+
+        # 3. Load candidate profile (DB first, then disk fallback)
+        base_resume = {}
+        if db_layer.is_db_available() and current_user.is_authenticated:
+            base_resume = db_layer.db_get_resume(current_user.username) or {}
+        if not base_resume and user_resume_path.exists():
+            base_resume = load_base_resume(str(user_resume_path))
+        if not base_resume and RESUME_PATH.exists():
+            base_resume = load_base_resume(str(RESUME_PATH))
+
+        # Check for tailored resume in target dir
+        tailored_json = target_dir / "tailored_resume.json"
+        if tailored_json.exists():
+            try:
+                with open(tailored_json, "r", encoding="utf-8") as tjf:
+                    t_data = json.load(tjf)
+                    if t_data and isinstance(t_data, dict):
+                        base_resume = dict(base_resume)
+                        base_resume.update(t_data)
+            except Exception:
+                pass
 
         if url:
             # Check cache or scrape
@@ -3705,10 +3775,6 @@ def generate_cover_letter_api():
                 jd_text = jd_data["jd_text"]
         else:
             jd_text = f"Role: {role} at {company}"
-
-        from resume_builder import slugify
-        folder_name = f"{slugify(company)}_{slugify(role)}"[:80]
-        target_dir = user_output_dir / folder_name
 
         res = generate_cover_letter(
             base_resume=base_resume,
