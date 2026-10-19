@@ -1200,6 +1200,10 @@ def docx_to_html(docx_path: str, company: str = "", role: str = "") -> str:
     return _get_base_html_template(content, title=title)
 
 
+import threading
+_pdf_render_lock = threading.Lock()
+
+
 def generate_pdf_from_html(
     html_content: str,
     output_pdf_path: str,
@@ -1215,30 +1219,31 @@ def generate_pdf_from_html(
     try:
         from playwright.sync_api import sync_playwright
         Path(output_pdf_path).parent.mkdir(parents=True, exist_ok=True)
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-gpu",
-                    "--disable-dev-shm-usage",
-                    "--disable-extensions",
-                    "--disable-background-networking",
-                    "--disable-default-apps",
-                    "--disable-sync",
-                    "--no-first-run",
-                    "--metrics-recording-only",
-                ]
-            )
-            page = browser.new_page()
-            page.set_content(html_content, wait_until="load")
+        with _pdf_render_lock:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--no-sandbox",
+                        "--disable-setuid-sandbox",
+                        "--disable-gpu",
+                        "--disable-dev-shm-usage",
+                        "--disable-extensions",
+                        "--disable-default-apps",
+                        "--disable-sync",
+                        "--no-first-run",
+                    ]
+                )
+                page = browser.new_page()
+                page.set_default_timeout(15000)
+                page.set_default_navigation_timeout(15000)
+                page.set_content(html_content, wait_until="domcontentloaded", timeout=12000)
 
-            # Fast font-ready check: wait up to 1.2s for active webfonts without stalling on networkidle
-            try:
-                page.evaluate("() => Promise.race([document.fonts ? document.fonts.ready : Promise.resolve(), new Promise(r => setTimeout(r, 1200))])")
-            except Exception:
-                pass
+                # Fast font-ready check: wait up to 0.8s for active webfonts without stalling on networkidle
+                try:
+                    page.evaluate("() => Promise.race([document.fonts ? document.fonts.ready : Promise.resolve(), new Promise(r => setTimeout(r, 800))])")
+                except Exception:
+                    pass
 
             # Smart single-page fit check:
             # 11 inches at 96 DPI = 1056px. If content slightly exceeds 1 page (up to ~1240px),

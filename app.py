@@ -524,6 +524,20 @@ def logout():
     return redirect(url_for("login_page"))
 
 
+@app.route("/api/health")
+def api_health():
+    """Diagnostic health check verifying DB connectivity and environment readiness."""
+    db_ok = db_layer.is_db_available()
+    user_count = db_layer.db_count_users() if db_ok else 0
+    return jsonify({
+        "status": "healthy",
+        "database_connected": db_ok,
+        "database_url_configured": bool(os.environ.get("DATABASE_URL")),
+        "user_count": user_count,
+        "current_user": current_user.username if (current_user and current_user.is_authenticated) else None,
+    })
+
+
 @app.route("/api/me")
 @login_required
 def api_me():
@@ -1800,6 +1814,11 @@ def _ensure_clean_resume_file(target_path: Path, is_pdf: bool, is_docx: bool, us
     if not (is_pdf or is_docx):
         return target_path
 
+    # Fast-path: if file already exists on disk and is not explicitly forced, return immediately (0ms)
+    is_forced = bool(request.args.get("force") or request.args.get("refresh"))
+    if not is_forced and target_path.exists() and target_path.is_file() and target_path.stat().st_size > 1000:
+        return target_path
+
     target_dir = target_path.parent if target_path.is_file() else target_path
     json_path = target_dir / "tailored_resume.json"
 
@@ -1908,7 +1927,7 @@ def _ensure_clean_resume_file(target_path: Path, is_pdf: bool, is_docx: bool, us
         docx_cand = target_path if target_path.suffix.lower() == ".docx" else target_path.with_suffix(".docx")
         needs_rebuild = False
 
-        if request.args.get("t") or request.args.get("force") or request.args.get("refresh"):
+        if request.args.get("force") or request.args.get("refresh"):
             needs_rebuild = True
 
         if not docx_cand.exists():
