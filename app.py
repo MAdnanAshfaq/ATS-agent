@@ -2274,6 +2274,26 @@ def download_file(filepath):
     # Ensure document is clean of font corruption, duplicate links, or stale template artifacts
     target_path = _ensure_clean_resume_file(target_path, is_pdf_req, is_docx_req, user_data_dir, user_output_dir)
 
+    # CRITICAL: If the user requested a PDF, ensure the file sent is strictly a .pdf!
+    # Under no circumstances should a .docx file be sent when the user asked for a PDF!
+    if is_pdf_req and target_path.suffix.lower() != ".pdf":
+        from resume_builder import convert_to_pdf
+        pdf_res = convert_to_pdf(str(target_path))
+        if pdf_res and os.path.exists(pdf_res):
+            target_path = Path(pdf_res).resolve()
+        else:
+            try:
+                from resume_html import docx_to_html, generate_pdf_from_html
+                html_c = docx_to_html(str(target_path))
+                cand_pdf = str(target_path.with_suffix(".pdf"))
+                if generate_pdf_from_html(html_c, cand_pdf):
+                    target_path = Path(cand_pdf).resolve()
+            except Exception as e:
+                print(f"[Download PDF Strict] HTML fallback note: {e}")
+
+    if is_pdf_req and target_path.suffix.lower() != ".pdf":
+        return jsonify({"error": "Failed to generate PDF. Please try again or download DOCX."}), 500
+
     # Determine correct download filename and MIME type
     download_name = target_path.name
     req_name = Path(clean_fp).name
@@ -5333,25 +5353,40 @@ def stream_run_logs(run_id):
     def event_stream():
         entry = active_runs.get(run_id)
         if not entry:
+            # Check if this run actually completed in local logs / NeonDB
+            # to gracefully recover if the browser reconnected after completion
+            try:
+                user_output_dir = get_user_output_dir()
+                logs_dir = user_output_dir / "logs"
+                run_file = logs_dir / f"{run_id}.json"
+                if run_file.exists():
+                    with open(run_file, "r", encoding="utf-8") as rf:
+                        rdata = json.load(rf)
+                    yield f"data: {json.dumps({'type': 'complete', 'status': 'success', 'message': 'Pipeline completed successfully!', 'result': rdata})}\n\n"
+                    return
+            except Exception:
+                pass
             yield f"data: {json.dumps({'type': 'error', 'message': 'Run not found'})}\n\n"
             return
+
         msg_queue, _ = entry
         try:
             while True:
                 try:
-                    msg = msg_queue.get(timeout=30)
+                    msg = msg_queue.get(timeout=15)
                     yield f"data: {json.dumps(msg)}\n\n"
                     if msg.get("type") in ("complete", "error"):
+                        # Safe cleanup only after the completion/failure message has been delivered
+                        with _active_runs_lock:
+                            active_runs.pop(run_id, None)
                         break
                 except queue.Empty:
-                    # Keep-alive ping
+                    # Frequent keep-alive ping (every 15s) prevents Cloudflare/reverse-proxy timeouts
                     yield f"data: {json.dumps({'type': 'ping'})}\n\n"
         except GeneratorExit:
+            # Client disconnected temporarily (tab switch, network flutter).
+            # DO NOT pop run_id from active_runs here! The background generation thread is still working.
             pass
-        finally:
-            # Always clean up whether client disconnected or pipeline completed
-            with _active_runs_lock:
-                active_runs.pop(run_id, None)
 
     return Response(event_stream(), mimetype="text/event-stream")
 

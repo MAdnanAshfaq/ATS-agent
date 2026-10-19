@@ -1140,8 +1140,30 @@ function listenToEventStream(runId) {
     }
   };
 
+  let sseErrorCount = 0;
   eventSource.onerror = (err) => {
-    console.error("SSE Connection error", err);
+    console.warn("SSE Connection event/error", err);
+    sseErrorCount++;
+    // If stream disconnected, check if the run already completed in background
+    if (sseErrorCount % 4 === 0) {
+      fetch("/api/history")
+        .then(r => r.json())
+        .then(data => {
+          const runs = Array.isArray(data) ? data : (data.history || []);
+          if (runs.length > 0) {
+            const latest = runs[0];
+            const runAge = Date.now() - new Date(latest.timestamp || 0).getTime();
+            if (runAge < 180000) {
+              if (eventSource) eventSource.close();
+              stopTimer();
+              stopExecutionState("success");
+              showToast("Resume tailored successfully!", "success");
+              loadHistory();
+            }
+          }
+        })
+        .catch(() => {});
+    }
   };
 }
 

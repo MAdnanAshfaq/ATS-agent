@@ -184,7 +184,7 @@ def run_writer_phase(
     role: str,
     custom_bullets: str,
     client: genai.Client,
-    model_name: str = "gemini-3.5-flash",
+    model_name: str = "gemini-2.5-flash",
     keyword_contexts: Optional[dict[str, str]] = None,
     ats_profile: Any = None,
 ) -> dict[str, Any]:
