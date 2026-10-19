@@ -5,6 +5,7 @@ Single font, clean bullets, no special characters that break ATS parsing.
 import json
 import os
 import re
+import sys
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any, List
@@ -650,24 +651,25 @@ def convert_to_pdf(
         except Exception as e:
             print(f"[PDF] Playwright JSON conversion note: {e}")
 
-    # ── Attempt 2: Native Windows Word COM Automation ──
-    try:
-        import win32com.client
-        import pythoncom
-        pythoncom.CoInitialize()
-        word = win32com.client.DispatchEx("Word.Application")
-        word.Visible = False
-        word.DisplayAlerts = 0
-        doc = word.Documents.Open(os.path.abspath(doc_path))
-        doc.SaveAs(os.path.abspath(pdf_path), FileFormat=17) # 17 = wdFormatPDF
-        doc.Close()
-        word.Quit()
-        if os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 1000:
-            sanitize_pdf_metadata(pdf_path, candidate_name=candidate_name, role=role)
-            print(f"[PDF] [OK] Converted via Word COM: {pdf_path}")
-            return pdf_path
-    except Exception as e:
-        print(f"[PDF] Word COM conversion note: {e}")
+    # ── Attempt 2: Native Windows Word COM Automation (Windows Only) ──
+    if sys.platform == "win32":
+        try:
+            import win32com.client
+            import pythoncom
+            pythoncom.CoInitialize()
+            word = win32com.client.DispatchEx("Word.Application")
+            word.Visible = False
+            word.DisplayAlerts = 0
+            doc = word.Documents.Open(os.path.abspath(doc_path))
+            doc.SaveAs(os.path.abspath(pdf_path), FileFormat=17) # 17 = wdFormatPDF
+            doc.Close()
+            word.Quit()
+            if os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 1000:
+                sanitize_pdf_metadata(pdf_path, candidate_name=candidate_name, role=role)
+                print(f"[PDF] [OK] Converted via Word COM: {pdf_path}")
+                return pdf_path
+        except Exception as e:
+            print(f"[PDF] Word COM conversion note: {e}")
 
     # ── Attempt 3: Playwright Chromium from DOCX-to-HTML ──
     try:

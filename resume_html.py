@@ -1200,40 +1200,36 @@ def docx_to_html(docx_path: str, company: str = "", role: str = "") -> str:
     return _get_base_html_template(content, title=title)
 
 
+import asyncio
+import concurrent.futures
 import threading
+
 _pdf_render_lock = threading.Lock()
 
 
-def generate_pdf_from_html(
-    html_content: str,
-    output_pdf_path: str,
-    candidate_name: str = "",
-    role: str = "",
-) -> bool:
-    """
-    Generate an authentic PDF file from an HTML resume string using Playwright headless Chromium.
-    Works natively on Render Linux, Docker, and Windows with 100% pixel-perfect preview parity.
-    Applies smart 1-page fit to prevent accidental 1-2 bullet spillovers onto a second page.
-    Immediately sanitizes PDF metadata to eliminate Chromium/Skia signatures.
-    """
+def _playwright_pdf_worker(html_content: str, output_pdf_path: str) -> bool:
+    """Worker function executed in a dedicated, isolated thread with a clean asyncio loop."""
+    from playwright.sync_api import sync_playwright
+
+    # Ensure this thread has a fresh, open asyncio event loop
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     try:
-        from playwright.sync_api import sync_playwright
-        Path(output_pdf_path).parent.mkdir(parents=True, exist_ok=True)
-        with _pdf_render_lock:
-            with sync_playwright() as p:
-                browser = p.chromium.launch(
-                    headless=True,
-                    args=[
-                        "--no-sandbox",
-                        "--disable-setuid-sandbox",
-                        "--disable-gpu",
-                        "--disable-dev-shm-usage",
-                        "--disable-extensions",
-                        "--disable-default-apps",
-                        "--disable-sync",
-                        "--no-first-run",
-                    ]
-                )
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-gpu",
+                    "--disable-dev-shm-usage",
+                    "--disable-extensions",
+                    "--disable-default-apps",
+                    "--disable-sync",
+                    "--no-first-run",
+                ]
+            )
+            try:
                 page = browser.new_page()
                 page.set_default_timeout(15000)
                 page.set_default_navigation_timeout(15000)
@@ -1245,30 +1241,62 @@ def generate_pdf_from_html(
                 except Exception:
                     pass
 
-            # Smart single-page fit check:
-            # 11 inches at 96 DPI = 1056px. If content slightly exceeds 1 page (up to ~1240px),
-            # activate compact-fit to prevent 1-2 bullets from spilling onto an unjustified 2nd page!
-            try:
-                sheet_h = page.evaluate("() => { const s = document.querySelector('.resume-sheet'); return s ? s.scrollHeight : document.body.scrollHeight; }")
-                if 1056 < sheet_h <= 1350:
-                    page.evaluate("() => { document.body.classList.add('compact-fit'); }")
-                    page.wait_for_timeout(60)
-            except Exception:
-                pass
+                # Smart single-page fit check:
+                # 11 inches at 96 DPI = 1056px. If content slightly exceeds 1 page (up to ~1350px),
+                # activate compact-fit to prevent 1-2 bullets from spilling onto an unjustified 2nd page!
+                try:
+                    sheet_h = page.evaluate("() => { const s = document.querySelector('.resume-sheet'); return s ? s.scrollHeight : document.body.scrollHeight; }")
+                    if 1056 < sheet_h <= 1350:
+                        page.evaluate("() => { document.body.classList.add('compact-fit'); }")
+                        page.wait_for_timeout(60)
+                except Exception:
+                    pass
 
-            page.pdf(
-                path=output_pdf_path,
-                format="Letter",
-                print_background=True,
-                margin={
-                    "top": "0in",
-                    "bottom": "0in",
-                    "left": "0in",
-                    "right": "0in"
-                },
-                prefer_css_page_size=True,
-            )
-            browser.close()
+                page.pdf(
+                    path=output_pdf_path,
+                    format="Letter",
+                    print_background=True,
+                    margin={
+                        "top": "0in",
+                        "bottom": "0in",
+                        "left": "0in",
+                        "right": "0in"
+                    },
+                    prefer_css_page_size=True,
+                )
+            finally:
+                try:
+                    browser.close()
+                except Exception:
+                    pass
+        return True
+    finally:
+        try:
+            loop.close()
+        except Exception:
+            pass
+
+
+def generate_pdf_from_html(
+    html_content: str,
+    output_pdf_path: str,
+    candidate_name: str = "",
+    role: str = "",
+) -> bool:
+    """
+    Generate an authentic PDF file from an HTML resume string using Playwright headless Chromium.
+    Works natively on Render Linux, Docker, and Windows with 100% pixel-perfect preview parity.
+    Runs inside an isolated worker thread with a fresh event loop to prevent 'Event loop is closed'
+    errors on Gunicorn multithreaded servers.
+    Applies smart 1-page fit to prevent accidental 1-2 bullet spillovers onto a second page.
+    Immediately sanitizes PDF metadata to eliminate Chromium/Skia signatures.
+    """
+    try:
+        Path(output_pdf_path).parent.mkdir(parents=True, exist_ok=True)
+        with _pdf_render_lock:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(_playwright_pdf_worker, html_content, output_pdf_path)
+                future.result(timeout=25)
 
         success = os.path.exists(output_pdf_path) and os.path.getsize(output_pdf_path) > 1000
         if success:
@@ -1281,3 +1309,4 @@ def generate_pdf_from_html(
     except Exception as e:
         logger.error(f"[HtmlToPdf] Playwright PDF generation failed: {e}")
         return False
+
