@@ -1334,8 +1334,18 @@ function downloadCurrentResume(ext = 'docx') {
   } else if (ext === 'docx') {
     relPath = relPath.replace(/\.(docx|pdf|json)$/i, '.docx');
   }
+  const formatLabel = ext.toUpperCase();
+  showToast(`Preparing ${formatLabel} download...`, "info");
   const cleanUrl = `/api/download/${encodeURIComponent(relPath).replace(/%2F/g, '/')}?t=${Date.now()}`;
-  window.location.href = cleanUrl;
+  const link = document.createElement("a");
+  link.href = cleanUrl;
+  link.setAttribute("download", "");
+  link.style.display = "none";
+  document.body.appendChild(link);
+  link.click();
+  setTimeout(() => {
+    if (link.parentNode) link.parentNode.removeChild(link);
+  }, 1500);
 }
 
 const selectedHistoryFiles = new Set();
@@ -4032,7 +4042,15 @@ async function downloadEditedCoverLetter() {
       if (window.lastResult) {
         window.lastResult.cover_letter_text = text;
       }
-      window.location.href = `/api/download/${data.relative_docx}`;
+      const clLink = document.createElement("a");
+      clLink.href = `/api/download/${data.relative_docx}`;
+      clLink.setAttribute("download", "");
+      clLink.style.display = "none";
+      document.body.appendChild(clLink);
+      clLink.click();
+      setTimeout(() => {
+        if (clLink.parentNode) clLink.parentNode.removeChild(clLink);
+      }, 1500);
       showToast("Cover letter updated with your edits and downloaded!", "success");
     } else {
       showToast(data.error || "Failed to save cover letter changes.", "error");
