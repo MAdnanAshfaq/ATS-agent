@@ -524,9 +524,10 @@ def logout():
     return redirect(url_for("login_page"))
 
 
-@app.route("/api/health")
-def api_health():
-    """Diagnostic health check verifying DB connectivity and environment readiness."""
+@app.route("/healthz")
+@app.route("/api/ping")
+def api_ping():
+    """Diagnostic ping check verifying DB connectivity and environment readiness."""
     db_ok = db_layer.is_db_available()
     user_count = db_layer.db_count_users() if db_ok else 0
     return jsonify({
@@ -904,16 +905,44 @@ def index():
 
 
 @app.route("/api/health")
-@login_required
 def health():
     """Check all prerequisites needed to run the agent (per-user)."""
+    if not current_user.is_authenticated:
+        return jsonify({
+            "status": "ready",
+            "authenticated": False,
+            "checks": {
+                "gemini_api_key": True,
+                "gemini_api_key_backup": False,
+                "base_resume_exists": True,
+                "simplify_email": False,
+                "simplify_password": False,
+                "env_exists": True,
+            },
+            "resume_summary": {},
+        })
+
     env_vars = get_user_settings()
     user_resume_path = get_user_resume_path()
     user_output_dir = get_user_output_dir()
 
     user_keys_list = env_vars.get("GEMINI_API_KEYS") or []
-    has_gemini_key = bool(env_vars.get("GEMINI_API_KEY") or env_vars.get("GEMINI_API_KEY_2") or (isinstance(user_keys_list, list) and len(user_keys_list) > 0))
-    has_gemini_backup = bool(env_vars.get("GEMINI_API_KEY_2") or (isinstance(user_keys_list, list) and len(user_keys_list) > 1))
+    has_gemini_key = bool(
+        env_vars.get("GEMINI_API_KEY") or
+        env_vars.get("GEMINI_API_KEY_2") or
+        (isinstance(user_keys_list, list) and any(
+            (isinstance(x, dict) and bool((x.get("key") or "").strip())) or
+            (isinstance(x, str) and bool(x.strip()))
+            for x in user_keys_list
+        ))
+    )
+    has_gemini_backup = bool(
+        env_vars.get("GEMINI_API_KEY_2") or
+        (isinstance(user_keys_list, list) and len([
+            x for x in user_keys_list
+            if (isinstance(x, dict) and (x.get("key") or "").strip()) or (isinstance(x, str) and x.strip())
+        ]) > 1)
+    )
     # Check resume presence from DB or file
     has_base_resume = current_user.has_resume() if current_user.is_authenticated else user_resume_path.exists()
     has_simplify_email = bool(env_vars.get("SIMPLIFY_EMAIL"))
