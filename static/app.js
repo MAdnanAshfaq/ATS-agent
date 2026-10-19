@@ -1010,17 +1010,8 @@ async function detectPlatform(urlOrText) {
 
 /* ── Pipeline Run Execution ──────────────────────────────────────────────── */
 async function startGeneration(opts = {}) {
-  let url = document.getElementById("jd-url").value.trim();
-  const directJdText = opts.directJdText || "";
-
-  const isDirectText = url.includes("\n") || (url.includes(" ") && url.split(" ").length > 3);
-  if (url && !isDirectText && !url.startsWith("http://") && !url.startsWith("https://") && !directJdText) {
-    url = "https://" + url;
-    document.getElementById("jd-url").value = url;
-  }
-
   const customKwElem = document.getElementById("custom-keywords-input");
-  const customKeywordsRaw = customKwElem ? customKwElem.value.trim() : "";
+  const customKeywordsRaw = (opts.customKeywords !== undefined) ? opts.customKeywords : (customKwElem ? customKwElem.value.trim() : "");
 
   const customBulletsElem = document.getElementById("matrix-custom-bullets-input") || document.getElementById("custom-bullets-input");
   const customBulletsRaw = (opts.customBullets !== undefined) ? opts.customBullets : (customBulletsElem ? customBulletsElem.value.trim() : "");
@@ -1035,14 +1026,46 @@ async function startGeneration(opts = {}) {
   const outputDir = outputDirElem ? outputDirElem.value.trim() : "";
 
   const targetAtsElem = document.getElementById("target-ats-select");
-  const targetAts = targetAtsElem ? targetAtsElem.value.trim() : "";
+  const targetAts = (opts.targetAts !== undefined) ? opts.targetAts : (targetAtsElem ? targetAtsElem.value.trim() : "");
 
   // Use score passed from Analyze step if available, otherwise null (backend will compute)
   const scoreBefore = opts.scoreBefore !== undefined ? opts.scoreBefore : analyzeScoreBefore;
 
+  let url = (opts.url !== undefined ? opts.url : (document.getElementById("jd-url")?.value || "")).trim();
+  let directJdText = (opts.directJdText !== undefined ? opts.directJdText : (analyzeJdText || window.currentJdText || "")).trim();
+  if (!directJdText) {
+    const manualJdElem = document.getElementById("manual-jd-text");
+    if (manualJdElem && manualJdElem.value && manualJdElem.value.trim().length >= 50) {
+      directJdText = manualJdElem.value.trim();
+    }
+  }
+
+  const isDirectIndicator = url.startsWith("[Direct") || url.startsWith("Manual");
+  const isRawText = url.includes("\n") || (url.includes(" ") && url.split(" ").length > 8) || url.length > 200;
+
+  if (isDirectIndicator) {
+    url = "Manual Job Description";
+  } else if (isRawText) {
+    if (!directJdText) directJdText = url;
+    analyzeJdText = directJdText;
+    window.currentJdText = directJdText;
+    url = "Manual Job Description";
+  } else if (url && !url.startsWith("http://") && !url.startsWith("https://") && !directJdText) {
+    url = "https://" + url;
+    if (document.getElementById("jd-url")) document.getElementById("jd-url").value = url;
+  }
+
+  if (!url && directJdText) {
+    url = "Manual Job Description";
+  }
+
   if (!url && !directJdText) {
-    showToast("Please enter a valid job posting URL or paste the job description", "warning");
-    return;
+    if (customKeywordsRaw || analyzeRole || analyzeCompany) {
+      url = "Manual Job Description";
+    } else {
+      showToast("Please enter a valid job posting URL or paste the job description", "warning");
+      return;
+    }
   }
 
   // UI Setup for running state
@@ -2951,7 +2974,10 @@ async function analyzeJobKeywords(opts = {}) {
     analyzeScoreBefore = data.score;
     analyzeCompany = data.company;
     analyzeRole = data.role;
-    analyzeJdText = data.jd_text || "";
+    analyzeJdText = data.jd_text || directJdText || analyzeJdText || window.currentJdText || "";
+    window.currentJdText = analyzeJdText;
+    currentJdText = analyzeJdText;
+    analyzedMissingKeywords = Array.isArray(data.missing_keywords) ? data.missing_keywords : [];
 
     setAnalyzeConsoleState("success", `Complete: ${data.role} @ ${data.company} (${data.score}%)`);
     appendAnalyzeConsoleLine(`✅ Successfully analyzed ${data.role} at ${data.company}!`, "success");
@@ -3075,8 +3101,14 @@ function continuePipelineWithManualJd() {
     return;
   }
 
+  analyzeJdText = text;
+  window.currentJdText = text;
+  currentJdText = text;
+
   const customCompany = document.getElementById("manual-jd-company")?.value.trim() || "";
   const customRole = document.getElementById("manual-jd-role")?.value.trim() || "";
+  if (customCompany) analyzeCompany = customCompany;
+  if (customRole) analyzeRole = customRole;
 
   // Set the visual input box so user sees what's being run
   const urlBox = document.getElementById("jd-url");
@@ -3104,8 +3136,14 @@ function continueAnalyzeWithManualJd() {
     return;
   }
 
+  analyzeJdText = text;
+  window.currentJdText = text;
+  currentJdText = text;
+
   const customCompany = document.getElementById("manual-jd-company")?.value.trim() || "";
   const customRole = document.getElementById("manual-jd-role")?.value.trim() || "";
+  if (customCompany) analyzeCompany = customCompany;
+  if (customRole) analyzeRole = customRole;
 
   // Set the visual input box so user sees what's being analyzed
   const urlBox = document.getElementById("jd-url");
@@ -3864,12 +3902,23 @@ function openCoverLetterFromAnalyze() {
 }
 
 function generateWithSelectedKeywords() {
-  const kwList = Array.from(selectedMissingKeywords);
+  let kwList = Array.from(selectedMissingKeywords);
+  if (kwList.length === 0 && Array.isArray(analyzedMissingKeywords) && analyzedMissingKeywords.length > 0) {
+    kwList = analyzedMissingKeywords;
+  }
   const kwString = kwList.join(", ");
   const customKwInput = document.getElementById("custom-keywords-input");
-  if (customKwInput) customKwInput.value = kwString;
+  if (customKwInput && kwString) customKwInput.value = kwString;
+
+  const finalJd = analyzeJdText || window.currentJdText || "";
+  const finalComp = analyzeCompany || document.getElementById("matrix-company-name")?.value || document.getElementById("matrix-company-name")?.innerText || "";
+  const finalRole = analyzeRole || document.getElementById("matrix-role-name")?.value || document.getElementById("matrix-role-name")?.innerText || "";
 
   startGeneration({
+    directJdText: finalJd,
+    customCompany: finalComp,
+    customRole: finalRole,
+    customKeywords: kwString,
     scoreBefore: analyzeScoreBefore
   });
 }

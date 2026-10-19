@@ -306,6 +306,27 @@ def _trim_analysis_cache():
             GLOBAL_ANALYSIS_CACHE.pop(k, None)
 
 
+def get_cached_analysis_entry(url="", direct_jd_text=""):
+    """Find analysis cache entry by URL, direct text, or most recent valid entry."""
+    if url and url in GLOBAL_ANALYSIS_CACHE:
+        return GLOBAL_ANALYSIS_CACHE[url]
+    # Check if URL starts with [Direct or Manual or is a short label
+    if url and (url.startswith("[Direct") or url.startswith("Manual") or len(url) < 100):
+        for k, v in reversed(list(GLOBAL_ANALYSIS_CACHE.items())):
+            if isinstance(v, dict) and len(v.get("jd_text", "")) >= 50:
+                return v
+    # Search by direct_jd_text matching
+    if direct_jd_text and len(direct_jd_text) >= 50:
+        for k, v in reversed(list(GLOBAL_ANALYSIS_CACHE.items())):
+            if isinstance(v, dict) and (v.get("jd_text") == direct_jd_text or (len(direct_jd_text) > 100 and direct_jd_text[:100] in v.get("jd_text", ""))):
+                return v
+    # Fallback to most recent cache entry if there's any valid entry with jd_text >= 50
+    for k, v in reversed(list(GLOBAL_ANALYSIS_CACHE.items())):
+        if isinstance(v, dict) and len(v.get("jd_text", "")) >= 50:
+            return v
+    return None
+
+
 def _reap_orphaned_runs():
     """Background thread: remove active_runs entries older than 10 min to prevent queue leaks."""
     while True:
@@ -4693,9 +4714,19 @@ def run_agent():
     user_username = current_user.username if current_user.is_authenticated else ""
 
     if not url and not direct_jd_text:
+        cached_entry = get_cached_analysis_entry(url, direct_jd_text)
+        if cached_entry and len(cached_entry.get("jd_text", "")) >= 50:
+            direct_jd_text = cached_entry["jd_text"]
+            url = "Manual Job Description"
+            if not custom_company and cached_entry.get("company"):
+                custom_company = cached_entry["company"]
+            if not custom_role and cached_entry.get("role"):
+                custom_role = cached_entry["role"]
+
+    if not url and not direct_jd_text:
         return jsonify({"error": "Please enter a job URL or paste the job description text."}), 400
     if not url and direct_jd_text:
-        url = direct_jd_text
+        url = "Manual Job Description"
 
     run_id = f"run_{int(time.time()*1000)}"
     msg_queue = queue.Queue(maxsize=500)  # bounded to prevent OOM from stuck pipelines
@@ -4809,21 +4840,40 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
 
         # Step 2: Scrape JD (checks memory & disk cache first, or uses direct text)
         is_direct_text = ("\n" in url) or (" " in url and len(url.split()) > 5) or (not url.startswith(("http://", "https://")) and not ("." in url and "/" in url))
-        cached_analysis = GLOBAL_ANALYSIS_CACHE.get(url) if url else None
-        
-        if direct_jd_text and len(direct_jd_text) >= 20:
+        cached_analysis = get_cached_analysis_entry(url, direct_jd_text)
+
+        # If direct_jd_text was not provided or is suspiciously short (< 50 chars), recover from cache
+        if (not direct_jd_text or len(direct_jd_text) < 50) and cached_analysis and len(cached_analysis.get("jd_text", "")) >= 50:
+            direct_jd_text = cached_analysis["jd_text"]
+            if not custom_company and cached_analysis.get("company"):
+                custom_company = cached_analysis["company"]
+            if not custom_role and cached_analysis.get("role"):
+                custom_role = cached_analysis["role"]
+
+        if direct_jd_text and len(direct_jd_text) >= 50:
             jd_text = direct_jd_text
-            company = custom_company or "Target Company"
-            role = clean_role_title(custom_role) if custom_role else "Data Engineer"
+            company = custom_company or (cached_analysis.get("company") if cached_analysis else "Target Company")
+            role = clean_role_title(custom_role) if custom_role else (clean_role_title(cached_analysis.get("role")) if cached_analysis else "Data Engineer")
             no_simplify = True
-            GLOBAL_ANALYSIS_CACHE[url] = {"company": company, "role": role, "jd_text": jd_text}
+            if url not in GLOBAL_ANALYSIS_CACHE:
+                GLOBAL_ANALYSIS_CACHE[url] = {}
+            GLOBAL_ANALYSIS_CACHE[url].update({"company": company, "role": role, "jd_text": jd_text})
+            if cached_analysis and cached_analysis.get("missing_keywords") and "missing_keywords" not in GLOBAL_ANALYSIS_CACHE[url]:
+                GLOBAL_ANALYSIS_CACHE[url]["missing_keywords"] = cached_analysis["missing_keywords"]
+                GLOBAL_ANALYSIS_CACHE[url]["matching_keywords"] = cached_analysis.get("matching_keywords", [])
+                GLOBAL_ANALYSIS_CACHE[url]["score"] = cached_analysis.get("score")
             _trim_analysis_cache()
             send_log(2, "Scrape JD", f"Using direct Job Description text ({len(jd_text):,} chars)",
                      data={"company": company, "role": role, "jd_length": len(jd_text)}, status="success")
         elif is_direct_text:
-            jd_text = url
-            company = custom_company or "Target Company"
-            role = clean_role_title(custom_role) if custom_role else "Data Engineer"
+            if len(url) >= 50:
+                jd_text = url
+            elif cached_analysis and len(cached_analysis.get("jd_text", "")) >= 50:
+                jd_text = cached_analysis["jd_text"]
+            else:
+                jd_text = url
+            company = custom_company or (cached_analysis.get("company") if cached_analysis else "Target Company")
+            role = clean_role_title(custom_role) if custom_role else (clean_role_title(cached_analysis.get("role")) if cached_analysis else "Data Engineer")
             if not custom_company or not custom_role:
                 first_line = jd_text.strip().split("\n")[0][:80]
                 if " at " in first_line:
@@ -4990,6 +5040,12 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                 missing_keywords = extract_keywords_from_jd(jd_text, base_resume)
                 send_log(3, "Simplify ATS Score", f"Simplify error: {e}. Using JD keyword fallback.",
                          status="warning")
+
+        # Guaranteed fallback: ensure we never enter rewrite with 0 missing keywords if JD text exists
+        if not missing_keywords and jd_text and len(jd_text) >= 50:
+            missing_keywords = extract_keywords_from_jd(jd_text, base_resume)
+            if missing_keywords:
+                send_log(3, "Keyword Fallback", f"Extracted {len(missing_keywords)} missing keywords from job description text.", status="success")
 
         # Step 4 & 5: Resume Tailoring & Verification with JD Domain Context
         keyword_contexts = {}
