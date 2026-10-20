@@ -42,7 +42,9 @@ function initTabs() {
   tabs.forEach(tab => {
     tab.addEventListener("click", () => {
       const target = tab.dataset.tab;
-      switchTab(target);
+      if (target) {
+        switchTab(target);
+      }
     });
   });
 }

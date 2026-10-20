@@ -423,9 +423,9 @@ def get_user_settings() -> dict:
 
 @app.route("/login", methods=["GET", "POST"])
 def login_page():
-    """Login page. Redirects to / if already authenticated."""
+    """Login page. Redirects to /app if already authenticated."""
     if current_user.is_authenticated:
-        return redirect(url_for("index"))
+        return redirect(url_for("app_dashboard"))
 
     users_db = auth_module._load_users_db()
     first_time = len(users_db) == 0
@@ -444,14 +444,14 @@ def login_page():
         email = (request.form.get("email") or "").strip()
         password = request.form.get("password") or ""
         remember = bool(request.form.get("remember"))
-        next_url = request.form.get("next") or request.args.get("next") or url_for("index")
+        next_url = request.form.get("next") or request.args.get("next") or url_for("app_dashboard")
 
         user = auth_module.verify_login(email, password)
         if user:
             login_user(user, remember=remember)
             # Safety check: only redirect to relative URLs
             if not next_url.startswith("/"):
-                next_url = url_for("index")
+                next_url = url_for("app_dashboard")
             return redirect(next_url)
         else:
             flash("Invalid email or password. Please try again.", "error")
@@ -468,7 +468,7 @@ def login_page():
 def signup():
     """Create a new user account with a required resume upload."""
     if current_user.is_authenticated:
-        return redirect(url_for("index"))
+        return redirect(url_for("app_dashboard"))
 
     email = (request.form.get("email") or "").strip()
     password = request.form.get("password") or ""
@@ -533,7 +533,7 @@ def signup():
                 pass
 
     login_user(user, remember=True)
-    return redirect(url_for("index"))
+    return redirect(url_for("app_dashboard"))
 
 
 @app.route("/logout")
@@ -913,10 +913,34 @@ def favicon():
     return send_from_directory("static", "favicon-v2.svg", mimetype="image/svg+xml")
 
 
+@app.route("/favicon.svg")
+def favicon_svg():
+    return send_from_directory("static", "favicon-v2.svg", mimetype="image/svg+xml")
+
+
+@app.route("/_astro/<path:filename>")
+def serve_astro(filename):
+    """Serve Google Antigravity compiled Astro scripts, styles, and WebGL modules."""
+    return send_from_directory(BASE_DIR / "static" / "antigravity" / "_astro", filename)
+
+
+@app.route("/assets/<path:filename>")
+def serve_antigravity_assets(filename):
+    """Serve Google Antigravity WebGL shaders, fonts, icons, and media assets."""
+    return send_from_directory(BASE_DIR / "static" / "antigravity" / "assets", filename)
+
 
 @app.route("/")
-@login_required
 def index():
+    """Unified Google Antigravity interactive landing page."""
+    return render_template("antigravity_home.html", user=current_user)
+
+
+@app.route("/app")
+@app.route("/dashboard")
+@login_required
+def app_dashboard():
+    """Authenticated workspace dashboard."""
     return render_template("index.html", user=current_user)
 
 

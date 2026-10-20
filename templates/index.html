@@ -92,7 +92,7 @@
   <!-- Header Navigation -->
   <header class="app-header">
     <div class="header-container">
-      <div class="brand-logo">
+      <a href="/" class="brand-logo" style="text-decoration:none;color:inherit;cursor:pointer;" title="View Public Landing Page">
         <div class="logo-icon brand-svg-icon" title="ATS Agent · Resume Tailoring Engine">
           <svg width="26" height="26" viewBox="0 0 100 100" fill="none">
             <rect x="0" y="0" width="100" height="100" rx="22" fill="#14171F"/>
@@ -104,10 +104,13 @@
           <span class="brand-name">ATS Agent</span>
           <span class="brand-sub">Resume Tailoring Engine</span>
         </div>
-      </div>
+      </a>
 
       <!-- Navigation Tabs -->
       <nav class="nav-tabs">
+        <a href="/" class="nav-tab nav-tab-home" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;" title="View Public Landing Page">
+          <i class="fa-solid fa-house"></i> Home
+        </a>
         <button class="nav-tab active" data-tab="new-app">
           <i class="fa-solid fa-wand-magic-sparkles"></i> New Application
         </button>

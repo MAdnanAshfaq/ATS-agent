@@ -1188,7 +1188,7 @@
           window.history.back();
         } else {
           const config = window.EDITOR_CONFIG || {};
-          window.location.href = config.backUrl || '/';
+          window.location.href = config.backUrl || '/app';
         }
       });
 
