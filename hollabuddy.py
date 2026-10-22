@@ -226,19 +226,18 @@ def chat_with_hollabuddy(
         key_count = len(keys)
         if key_count > 1:
             quota_msg = (
-                f"⚠️ **Both your Gemini API keys have hit their quota/rate limit** and I couldn't get a reply right now.\n\n"
+                f"⚠️ **All {key_count} of your Gemini API keys have hit Google's quota/rate limit** and cannot respond right now.\n\n"
                 f"**What you can do:**\n"
-                f"- Wait a minute and try again (free-tier limits reset quickly).\n"
-                f"- Add a third API key in **Settings → API Keys** (`GEMINI_API_KEY_3`).\n"
+                f"- Add another API key in **Settings → API Keys** so the pool can switch to it.\n"
+                f"- Wait for Google's quota window to reset (free-tier requests reset hourly/daily).\n"
                 f"- Upgrade your Google AI Studio plan for higher limits."
             )
         else:
             quota_msg = (
-                f"⚠️ **Your Gemini API key has used up its quota/credits** and I can't respond right now.\n\n"
+                f"⚠️ **Your Gemini API key has hit Google's quota/rate limit**.\n\n"
                 f"**What you can do:**\n"
-                f"- Wait a minute and try again (free-tier limits reset hourly).\n"
-                f"- Add a **second API key** in **Settings → API Keys** (`GEMINI_API_KEY_2`) so I can automatically switch to it.\n"
-                f"- Get a free key at [aistudio.google.com](https://aistudio.google.com/apikey)."
+                f"- Add more API keys in **Settings → API Keys** so the system can automatically switch between them.\n"
+                f"- Wait a moment for Google's quota window to reset."
             )
         return {
             "reply": quota_msg,
