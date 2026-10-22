@@ -88,13 +88,21 @@ def chat_with_hollabuddy(
         {"reply": str, "suggested_followups": list[str]}
         On quota exhaustion: adds "error_code": "quota_exhausted" so the UI can show a banner.
     """
-    # --- Inject user API keys into environment so gemini_client pool sees them ---
-    # This ensures GEMINI_API_KEY_2 is always available as a live failover backup.
+    # --- Inject all user API keys into thread-local pool so gemini_client sees them ---
+    keys_arr = []
     if user_settings:
-        for env_key in ("GEMINI_API_KEY", "GEMINI_API_KEY_2"):
+        raw_arr = user_settings.get("GEMINI_API_KEYS") or []
+        for itm in raw_arr:
+            k = (itm.get("key") or "").strip() if isinstance(itm, dict) else str(itm).strip()
+            if k and k not in keys_arr:
+                keys_arr.append(k)
+        for env_key in ("GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3"):
             val = (user_settings.get(env_key) or "").strip()
-            if val:
-                os.environ[env_key] = val
+            if val and val not in keys_arr:
+                keys_arr.append(val)
+    if keys_arr:
+        from gemini_client import set_thread_gemini_keys
+        set_thread_gemini_keys(keys_arr)
 
     # Verify at least one key is configured
     keys = get_all_gemini_keys()
@@ -141,62 +149,77 @@ def chat_with_hollabuddy(
     user_text = message.strip()
     chat_contents.append(types.Content(role="user", parts=[types.Part(text=user_text)]))
 
-    from gemini_client import get_candidate_models, extract_clean_text, get_standard_genai_config
-    models = get_candidate_models()
+    from gemini_client import get_candidate_models, extract_clean_text, get_standard_genai_config, record_model_failure, record_model_success
     last_err = None
     all_quota_exhausted = False
+    used_model = None
 
-    for model_name in models:
-        def _call(client, _model=model_name, _contents=chat_contents, _sys=system_content):
-            cfg = get_standard_genai_config(model_name=_model, max_output_tokens=4096, temperature=0.55, top_p=0.92)
-            cfg.system_instruction = _sys
-            cfg.automatic_function_calling = types.AutomaticFunctionCallingConfig(disable=True)
-            return client.models.generate_content(
-                model=_model,
-                contents=_contents,
-                config=cfg,
-            )
-
-        try:
-            response = execute_with_failover(_call)
-            clean_reply = extract_clean_text(response)
-            reply_text = (
-                clean_reply
-                if clean_reply
-                else "I'm right here! How can I help you with your resume or job search?"
-            )
-
-            # Detect if Gemini hit the token ceiling mid-answer
-            was_truncated = False
+    def _call(client):
+        nonlocal used_model, last_err
+        call_err = None
+        for m in get_candidate_models():
             try:
-                finish_reason = str(response.candidates[0].finish_reason) if response.candidates else ""
-                if "MAX_TOKENS" in finish_reason.upper():
-                    was_truncated = True
-            except Exception:
-                pass
-
-            if was_truncated:
-                reply_text += (
-                    "\n\n---\n"
-                    "✂️ *My answer was cut off here because it got very long. "
-                    "Reply **\"Continue\"** and I'll pick up right where I left off!*"
+                cfg = get_standard_genai_config(model_name=m, max_output_tokens=4096, temperature=0.55, top_p=0.92)
+                cfg.system_instruction = system_content
+                cfg.automatic_function_calling = types.AutomaticFunctionCallingConfig(disable=True)
+                resp = client.models.generate_content(
+                    model=m,
+                    contents=chat_contents,
+                    config=cfg,
                 )
+                txt = extract_clean_text(resp)
+                if txt:
+                    record_model_success(m)
+                    used_model = m
+                    return resp
+            except Exception as me:
+                record_model_failure(m, me)
+                call_err = me
+                continue
+        if call_err:
+            raise call_err
+        raise RuntimeError("All candidate models failed")
 
-            followups = _generate_quick_followups(user_text, reply_text)
-            if was_truncated and "Continue" not in followups:
-                followups = ["Continue"] + followups[:2]
-            return {
-                "reply": reply_text,
-                "suggested_followups": followups,
-                "model_used": model_name,
-                "keys_in_pool": len(keys),
-            }
-        except Exception as e:
-            last_err = e
-            print(f"[HollaBuddy] Model {model_name} failed after all key rotations: {e}")
-            if is_quota_error(e):
-                all_quota_exhausted = True
-            time.sleep(0.5)
+    try:
+        response = execute_with_failover(_call)
+        clean_reply = extract_clean_text(response)
+        reply_text = (
+            clean_reply
+            if clean_reply
+            else "I'm right here! How can I help you with your resume or job search?"
+        )
+
+        # Detect if Gemini hit the token ceiling mid-answer
+        was_truncated = False
+        try:
+            finish_reason = str(response.candidates[0].finish_reason) if response.candidates else ""
+            if "MAX_TOKENS" in finish_reason.upper():
+                was_truncated = True
+        except Exception:
+            pass
+
+        if was_truncated:
+            reply_text += (
+                "\n\n---\n"
+                "✂️ *My answer was cut off here because it got very long. "
+                "Reply **\"Continue\"** and I'll pick up right where I left off!*"
+            )
+
+        followups = _generate_quick_followups(user_text, reply_text)
+        if was_truncated and "Continue" not in followups:
+            followups = ["Continue"] + followups[:2]
+        return {
+            "reply": reply_text,
+            "suggested_followups": followups,
+            "model_used": used_model or "gemini",
+            "keys_in_pool": len(keys),
+        }
+    except Exception as e:
+        last_err = e
+        print(f"[HollaBuddy] Chat failed after all key rotations: {e}")
+        if is_quota_error(e):
+            all_quota_exhausted = True
+
 
     # --- Compose a clear, actionable error response ---
     if all_quota_exhausted:

@@ -84,6 +84,38 @@ def mark_key_dead(key: str, reason: str = "invalid"):
         print(f"\n[Gemini Pool] [DEAD KEY PURGED] Key {masked} removed from pool: {reason}")
 
 
+# ── Per-Key Health & Quota Cooldown Tracking ────────────────────────────────
+_KEY_COOLDOWNS = {}
+_KEY_LOCK = threading.Lock()
+
+
+def record_key_failure(key: str, error: Exception):
+    """Mark a specific API key as exhausted or cooling down (per-project quota)."""
+    if not key or not isinstance(key, str):
+        return
+    clean = key.strip()
+    err_str = str(error).upper()
+    now = time.time()
+    with _KEY_LOCK:
+        if is_key_invalid_error(error) or "403" in err_str or "PERMISSION_DENIED" in err_str:
+            mark_key_dead(clean, reason="Invalid or Permission Denied")
+        elif is_quota_error(error) or "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+            delay = extract_retry_delay(error)
+            cool_duration = max(delay, 60.0)
+            _KEY_COOLDOWNS[clean] = now + min(cool_duration, 43200.0)
+            masked = (clean[:6] + "..." + clean[-4:]) if len(clean) > 10 else "key"
+            print(f"[Key Cooldown] ⚠️ Key {masked} exhausted for {cool_duration/3600.0:.1f} hours. Deprioritizing.")
+
+
+def record_key_success(key: str):
+    """Clear cooldown on successful operation with this key."""
+    if not key or not isinstance(key, str):
+        return
+    clean = key.strip()
+    with _KEY_LOCK:
+        _KEY_COOLDOWNS.pop(clean, None)
+
+
 # ── Dynamic Model Health & Cooldown Tracking ─────────────────────────────────
 _MODEL_COOLDOWNS = {}
 _MODEL_LOCK = threading.Lock()
@@ -268,7 +300,17 @@ def get_all_gemini_keys() -> List[str]:
             raw_keys = env_keys
 
     # Filter out any keys that have thrown 403 PERMISSION_DENIED or API_KEY_INVALID
-    return [k for k in raw_keys if k not in _DEAD_KEYS]
+    live_keys = [k for k in raw_keys if k not in _DEAD_KEYS]
+    if not live_keys:
+        return []
+
+    # Sort healthy keys first, quota-cooling keys last
+    now = time.time()
+    with _KEY_LOCK:
+        healthy = [k for k in live_keys if now >= _KEY_COOLDOWNS.get(k, 0)]
+        cooling = [k for k in live_keys if now < _KEY_COOLDOWNS.get(k, 0)]
+
+    return healthy + cooling if healthy else cooling
 
 
 def get_active_key() -> str:
@@ -353,16 +395,20 @@ def execute_with_failover(fn: Callable[[genai.Client], Any], max_rotations: int 
 
     last_exception = None
     for attempt in range(max_rotations):
+        current_k = get_active_key()
         try:
             client = get_gemini_client()
-            return fn(client)
+            res = fn(client)
+            record_key_success(current_k)
+            return res
         except Exception as e:
             last_exception = e
             err_str = str(e).upper()
+            record_key_failure(current_k, e)
 
             # If the current active key is revoked or permission denied, purge it permanently and rotate
             if is_key_invalid_error(e) or "403" in err_str or "PERMISSION_DENIED" in err_str:
-                mark_key_dead(get_active_key(), reason="Revoked or Permission Denied")
+                mark_key_dead(current_k, reason="Revoked or Permission Denied")
                 remaining = get_all_gemini_keys()
                 if remaining:
                     rotate_key(reason="Invalid key purged")
