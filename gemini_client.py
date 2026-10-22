@@ -122,6 +122,7 @@ _MODEL_LOCK = threading.Lock()
 
 DEFAULT_MODELS_CASCADE = [
     "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
     "gemini-3.8-flash",
     "gemini-2.5-flash",
 ]
@@ -167,7 +168,7 @@ def get_standard_genai_config(
 
 
 def record_model_failure(model_name: str, error: Exception):
-    """Mark a model as temporarily spiked/cooling down (e.g. 5 seconds on 503, or rate-limited)."""
+    """Mark a model as temporarily spiked/cooling down (e.g. 5 seconds on 503)."""
     if not model_name:
         return
     err_str = str(error).upper()
@@ -181,14 +182,9 @@ def record_model_failure(model_name: str, error: Exception):
             _MODEL_COOLDOWNS[model_name] = now + 5.0  # 5s momentary cooldown
             print(f"[Model Cooldown] ⚠️ '{model_name}' spiked (503 High Demand). Deprioritizing for 5s.")
         elif "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-            delay = extract_retry_delay(error)
-            # If Google reports a quota lock (e.g. daily limit 34795s), cool down for that period
-            cool_duration = max(delay, 60.0)
-            _MODEL_COOLDOWNS[model_name] = now + cool_duration
-            if cool_duration > 300:
-                print(f"[Model Cooldown] ⚠️ '{model_name}' quota exhausted for {cool_duration/3600.0:.1f} hours. Deprioritizing.")
-            else:
-                print(f"[Model Cooldown] ⚠️ '{model_name}' rate limited. Deprioritizing for {cool_duration:.0f}s.")
+            # Quota is per-key/per-project (tracked in _KEY_COOLDOWNS), not a global model defect.
+            # We only apply a brief 2-second cooldown to let current key rotate smoothly.
+            _MODEL_COOLDOWNS[model_name] = now + 2.0
 
 
 def record_model_success(model_name: str):
