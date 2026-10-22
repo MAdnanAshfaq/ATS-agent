@@ -629,19 +629,26 @@ def db_get_history(username: str) -> list:
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT run_id, run_data, created_at FROM job_history WHERE username = %s ORDER BY created_at DESC LIMIT 2000",
+                    "SELECT run_id, run_data, created_at, company, job_title, url FROM job_history WHERE username = %s ORDER BY created_at DESC LIMIT 2000",
                     (username,)
                 )
                 rows = cur.fetchall()
                 results = []
                 for row in rows:
-                    run_id, run_data_str, created_at = row
+                    run_id, run_data_str, created_at, col_company, col_role, col_url = row
                     try:
                         entry = json.loads(run_data_str) if run_data_str else {}
                     except Exception:
                         entry = {}
                     entry["log_file_name"] = f"{run_id}.json"
                     entry["_db_run_id"] = run_id
+                    if not entry.get("company") and col_company:
+                        entry["company"] = col_company
+                    if not entry.get("role") and col_role:
+                        entry["role"] = col_role
+                    # Always ensure URL is present if either column or run_data has it
+                    if not entry.get("url") and col_url:
+                        entry["url"] = col_url
                     results.append(entry)
                 return results
         except Exception as e:
@@ -664,10 +671,17 @@ def db_get_history_item(run_id: str) -> Optional[dict]:
         is_bad = False
         try:
             with conn.cursor() as cur:
-                cur.execute("SELECT run_data FROM job_history WHERE run_id = %s", (run_id,))
+                cur.execute("SELECT run_data, url, company, job_title FROM job_history WHERE run_id = %s", (run_id,))
                 row = cur.fetchone()
                 if row and row[0]:
-                    return json.loads(row[0])
+                    entry = json.loads(row[0])
+                    if not entry.get("url") and row[1]:
+                        entry["url"] = row[1]
+                    if not entry.get("company") and row[2]:
+                        entry["company"] = row[2]
+                    if not entry.get("role") and row[3]:
+                        entry["role"] = row[3]
+                    return entry
                 return None
         except Exception as e:
             is_bad = True
@@ -681,28 +695,43 @@ def db_get_history_item(run_id: str) -> Optional[dict]:
 
 
 def db_update_history_item(run_id: str, company: str = None, role: str = None, url: str = None) -> bool:
-    """Update mutable fields on a history row."""
+    """Update mutable fields on a history row while strictly preserving existing job links."""
     conn = get_conn()
     if not conn:
         return False
     try:
         with conn.cursor() as cur:
-            # Fetch existing run_data
-            cur.execute("SELECT run_data FROM job_history WHERE run_id = %s", (run_id,))
+            # Fetch existing run_data and url
+            cur.execute("SELECT run_data, url FROM job_history WHERE run_id = %s", (run_id,))
             row = cur.fetchone()
             if not row:
                 return False
             data = json.loads(row[0]) if row[0] else {}
-            if company:
-                data["company"] = company
-            if role:
-                data["role"] = role
-            if url is not None:
-                data["url"] = url
+            if company and company.strip():
+                data["company"] = company.strip()
+            if role and role.strip():
+                data["role"] = role.strip()
+
+            existing_url = (row[1] or data.get("url") or "").strip()
+            # Preserve existing URL: only overwrite if a non-empty string is provided
+            if url is not None and url.strip():
+                effective_url = url.strip()
+                data["url"] = effective_url
+            else:
+                effective_url = existing_url
+                if existing_url:
+                    data["url"] = existing_url
 
             cur.execute(
-                "UPDATE job_history SET run_data = %s, company = COALESCE(%s, company), job_title = COALESCE(%s, job_title), url = COALESCE(%s, url) WHERE run_id = %s",
-                (json.dumps(data), company, role, url, run_id)
+                """
+                UPDATE job_history 
+                SET run_data = %s, 
+                    company = COALESCE(NULLIF(%s, ''), company), 
+                    job_title = COALESCE(NULLIF(%s, ''), job_title), 
+                    url = COALESCE(NULLIF(%s, ''), url) 
+                WHERE run_id = %s
+                """,
+                (json.dumps(data, ensure_ascii=False), company if company else None, role if role else None, effective_url if effective_url else None, run_id)
             )
         conn.commit()
         return True
@@ -714,14 +743,14 @@ def db_update_history_item(run_id: str, company: str = None, role: str = None, u
         release_conn(conn)
 
 
-def db_update_history_tailored_resume(run_id: str, tailored_resume: dict) -> bool:
-    """Update the tailored resume and resume JSON inside run_data for a specific job run."""
+def db_update_history_tailored_resume(run_id: str, tailored_resume: dict, url: str = None) -> bool:
+    """Update the tailored resume inside run_data for a specific job run, preserving existing URL."""
     conn = get_conn()
     if not conn:
         return False
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT run_data FROM job_history WHERE run_id = %s", (run_id,))
+            cur.execute("SELECT run_data, url FROM job_history WHERE run_id = %s", (run_id,))
             row = cur.fetchone()
             if not row:
                 return False
@@ -732,9 +761,20 @@ def db_update_history_tailored_resume(run_id: str, tailored_resume: dict) -> boo
             if target_role:
                 data["role"] = target_role
 
+            existing_url = (row[1] or data.get("url") or "").strip()
+            effective_url = url.strip() if (url and url.strip()) else existing_url
+            if effective_url:
+                data["url"] = effective_url
+
             cur.execute(
-                "UPDATE job_history SET run_data = %s, job_title = COALESCE(%s, job_title) WHERE run_id = %s",
-                (json.dumps(data, ensure_ascii=False), target_role if target_role else None, run_id)
+                """
+                UPDATE job_history 
+                SET run_data = %s, 
+                    job_title = COALESCE(%s, job_title),
+                    url = COALESCE(NULLIF(%s, ''), url)
+                WHERE run_id = %s
+                """,
+                (json.dumps(data, ensure_ascii=False), target_role if target_role else None, effective_url if effective_url else None, run_id)
             )
         conn.commit()
         return True
@@ -747,14 +787,31 @@ def db_update_history_tailored_resume(run_id: str, tailored_resume: dict) -> boo
 
 
 
-def db_delete_history_item(run_id: str) -> bool:
-    """Hard delete a single history row by run_id."""
+def db_delete_history_item(run_id: str, username: str = None) -> bool:
+    """Hard delete a single history row by run_id, and prune any orphan clones for that application."""
     conn = get_conn()
     if not conn:
         return False
     try:
         with conn.cursor() as cur:
+            cur.execute("SELECT username, company, job_title FROM job_history WHERE run_id = %s", (run_id,))
+            row = cur.fetchone()
             cur.execute("DELETE FROM job_history WHERE run_id = %s", (run_id,))
+            
+            # If this application had company & role, also clean up shadow preview_edit_ / refine_ entries
+            if row:
+                u, comp, r_title = row
+                effective_user = username or u
+                if effective_user and comp:
+                    cur.execute(
+                        """
+                        DELETE FROM job_history 
+                        WHERE username = %s 
+                          AND company = %s 
+                          AND (run_id LIKE 'preview_edit_%%' OR run_id LIKE 'refine_%%')
+                        """,
+                        (effective_user, comp)
+                    )
         conn.commit()
         return True
     except Exception as e:

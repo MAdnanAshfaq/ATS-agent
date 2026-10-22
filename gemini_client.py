@@ -89,9 +89,9 @@ _MODEL_COOLDOWNS = {}
 _MODEL_LOCK = threading.Lock()
 
 DEFAULT_MODELS_CASCADE = [
-    "gemini-2.5-flash",
     "gemini-3.5-flash",
     "gemini-3.8-flash",
+    "gemini-2.5-flash",
 ]
 
 
@@ -358,14 +358,27 @@ def execute_with_failover(fn: Callable[[genai.Client], Any], max_rotations: int 
             return fn(client)
         except Exception as e:
             last_exception = e
-            if is_quota_error(e) or "503" in str(e) or "UNAVAILABLE" in str(e).upper():
-                if len(keys) > 1:
-                    rotate_key(reason=f"Failover ({type(e).__name__} / 503 Spike)")
+            err_str = str(e).upper()
+
+            # If the current active key is revoked or permission denied, purge it permanently and rotate
+            if is_key_invalid_error(e) or "403" in err_str or "PERMISSION_DENIED" in err_str:
+                mark_key_dead(get_active_key(), reason="Revoked or Permission Denied")
+                remaining = get_all_gemini_keys()
+                if remaining:
+                    rotate_key(reason="Invalid key purged")
+                    continue
+                raise e
+
+            # Handle quota exhausted, 503 high demand spike, or model unavailable
+            if is_quota_error(e) or "503" in str(e) or "UNAVAILABLE" in err_str or "404" in err_str or "NOT_FOUND" in err_str:
+                active_keys = get_all_gemini_keys()
+                if len(active_keys) > 1:
+                    rotate_key(reason=f"Failover ({type(e).__name__} / Rate-Limit/503/404)")
                     time.sleep(0.5)
                     continue
                 else:
-                    print(f"[Gemini Pool] [WARN] Single API key busy/quota: {e}. Waiting 6s...")
-                    time.sleep(6)
+                    print(f"[Gemini Pool] [WARN] Single API key busy/quota: {e}. Waiting 4s...")
+                    time.sleep(4)
                     continue
             else:
                 raise e

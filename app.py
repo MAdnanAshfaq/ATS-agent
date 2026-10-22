@@ -1042,10 +1042,11 @@ def gemini_key_health():
         if val:
             os.environ[env_key] = val
 
-    # --- 60-second per-user result cache ---
+    # --- 60-second per-user result cache (bypassed if force/refresh requested) ---
+    force_refresh = request.args.get("force") in ("1", "true") or request.args.get("refresh") in ("1", "true")
     cache_key = f"_gemini_health_{getattr(current_user, 'username', 'anon')}"
     cached = getattr(app, cache_key, None)
-    if cached and (time.time() - cached.get("ts", 0)) < 60:
+    if not force_refresh and cached and (time.time() - cached.get("ts", 0)) < 60:
         return jsonify(cached["data"])
 
     # Collect configured keys in order (from dynamic list or legacy slots)
@@ -1077,59 +1078,72 @@ def gemini_key_health():
 
     def _ping_key(key: str) -> tuple[str, str]:
         """
-        Ping a single Gemini API key. Returns (status, label).
-        Retries once on 503/transient before failing.
+        Ping a single Gemini API key across candidate models. Returns (status, label).
+        A key is operational if ANY model in the candidate cascade works.
+        Never breaks prematurely on model-specific deprecation or 404 errors.
         """
-        for attempt in range(2):
-            try:
-                test_client = genai.Client(api_key=key)
-                from gemini_client import get_candidate_models, get_standard_genai_config, record_model_failure, record_model_success
-                for pm in get_candidate_models():
-                    try:
-                        test_client.models.generate_content(
-                            model=pm,
-                            contents=[gtypes.Content(role="user", parts=[gtypes.Part(text="Reply: ok")])],
-                            config=get_standard_genai_config(model_name=pm, max_output_tokens=10, temperature=0),
-                        )
-                        record_model_success(pm)
-                        return "ok", "Active & Working"
-                    except Exception as pe:
-                        record_model_failure(pm, pe)
-                        last_ping_err = pe
-                        if is_quota_error(pe) or "503" in str(pe) or "UNAVAILABLE" in str(pe).upper():
-                            continue
-                        break
-                if last_ping_err:
-                    raise last_ping_err
-            except Exception as e:
-                err_up = str(e).upper()
+        from gemini_client import DEFAULT_MODELS_CASCADE, get_standard_genai_config
+        try:
+            test_client = genai.Client(api_key=key)
+        except Exception:
+            return "invalid", "Invalid API Key"
 
-                # Invalid or wrong key
+        for attempt in range(2):
+            last_ping_err = None
+            saw_quota = False
+            saw_transient = False
+
+            for pm in DEFAULT_MODELS_CASCADE:
+                try:
+                    test_client.models.generate_content(
+                        model=pm,
+                        contents=[gtypes.Content(role="user", parts=[gtypes.Part(text="Reply: ok")])],
+                        config=get_standard_genai_config(model_name=pm, max_output_tokens=10, temperature=0),
+                    )
+                    return "ok", "Active & Working"
+                except Exception as pe:
+                    last_ping_err = pe
+                    pe_str = str(pe).upper()
+
+                    # Truly invalid key or malformed credentials - key level error
+                    if "API_KEY_INVALID" in pe_str or "INVALID_ARGUMENT" in pe_str or "API KEY NOT VALID" in pe_str:
+                        return "invalid", "Invalid API Key"
+                    if "403" in pe_str or "PERMISSION_DENIED" in pe_str or "NOT BEEN USED" in pe_str:
+                        return "invalid", "API Not Enabled (Enable Generative Language API)"
+
+                    if is_quota_error(pe):
+                        saw_quota = True
+                    elif "503" in pe_str or "UNAVAILABLE" in pe_str or "DEADLINE_EXCEEDED" in pe_str:
+                        saw_transient = True
+                    # For 404 NOT_FOUND (model deprecated/unavailable for this account) or 429/503 on this model,
+                    # CONTINUE to test the other candidate models in the cascade!
+                    continue
+
+            # If all candidate models failed for this key:
+            if saw_quota:
+                return "quota_exhausted", "Quota / Rate Limit Exhausted"
+            if saw_transient:
+                if attempt == 0:
+                    time.sleep(1.0)
+                    continue
+                return "transient", "Gemini servers momentarily busy — key is fine"
+
+            if last_ping_err:
+                err_up = str(last_ping_err).upper()
                 if "API_KEY_INVALID" in err_up or "INVALID_ARGUMENT" in err_up:
                     return "invalid", "Invalid API Key"
-
-                # Permission denied / API not enabled in Google Cloud project
-                if "403" in err_up or "PERMISSION_DENIED" in err_up or "NOT BEEN USED" in err_up:
+                if "403" in err_up or "PERMISSION_DENIED" in err_up:
                     return "invalid", "API Not Enabled (Enable Generative Language API)"
-
-                # Real quota / rate limit (429 RESOURCE_EXHAUSTED)
-                if is_quota_error(e):
+                if is_quota_error(last_ping_err):
                     return "quota_exhausted", "Quota / Rate Limit Exhausted"
-
-                # 503 / transient: Gemini servers busy — NOT a key problem.
-                # Retry once; if it still fails, flag as transient (amber).
-                if "503" in err_up or "UNAVAILABLE" in err_up or "DEADLINE_EXCEEDED" in err_up:
-                    if attempt == 0:
-                        time.sleep(1.2)
-                        continue  # one retry
+                if "503" in err_up or "UNAVAILABLE" in err_up:
                     return "transient", "Gemini servers momentarily busy — key is fine"
 
-                # Unknown error after retry
-                if attempt == 0:
-                    time.sleep(0.8)
-                    continue
-                short_msg = str(e)[:60].rstrip()
-                return "error", f"Unexpected error — try refreshing"
+            if attempt == 0:
+                time.sleep(0.8)
+                continue
+
+            return "error", "Unexpected error — try refreshing"
 
         return "error", "Unexpected error — try refreshing"
 
@@ -1548,28 +1562,42 @@ def update_history_item(filename=None):
     new_url = data.get("url", "").strip()
 
     try:
+        user_output_dir = get_user_output_dir()
+        log_data = {}
+
+        # 1. Update local disk log if it exists
+        log_file = user_output_dir / "logs" / fname
+        if not log_file.exists() and not fname.endswith(".json"):
+            log_file = user_output_dir / "logs" / f"{fname}.json"
+
+        if log_file.exists():
+            try:
+                with open(log_file, "r", encoding="utf-8") as f:
+                    log_data = json.load(f)
+                if new_company:
+                    log_data["company"] = new_company
+                if new_role:
+                    log_data["role"] = new_role
+                if new_url:
+                    log_data["url"] = new_url
+                with open(log_file, "w", encoding="utf-8") as f:
+                    json.dump(log_data, f, indent=2, ensure_ascii=False)
+            except Exception as _disk_err:
+                logging.warning(f"[History Update] Disk log update warning: {_disk_err}")
+
+        # 2. Update NeonDB
         if db_layer.is_db_available():
-            # In DB mode the filename IS the run_id (e.g. "run_1726234567890.json" → strip .json)
             run_id = fname.replace(".json", "")
-            ok = db_layer.db_update_history_item(run_id, company=new_company, role=new_role, url=new_url)
-            if not ok:
+            ok = db_layer.db_update_history_item(run_id, company=new_company, role=new_role, url=new_url if new_url else None)
+            if ok:
+                db_item = db_layer.db_get_history_item(run_id) or {}
+                if db_item:
+                    log_data.update(db_item)
+            elif not log_data:
                 return jsonify({"success": False, "error": f"History entry {fname} not found"}), 404
-            log_data = db_layer.db_get_history_item(run_id) or {}
         else:
-            user_output_dir = get_user_output_dir()
-            log_file = user_output_dir / "logs" / fname
             if not log_file.exists():
                 return jsonify({"success": False, "error": f"History log {fname} not found"}), 404
-            with open(log_file, "r", encoding="utf-8") as f:
-                log_data = json.load(f)
-            if new_company:
-                log_data["company"] = new_company
-            if new_role:
-                log_data["role"] = new_role
-            if new_url is not None:
-                log_data["url"] = new_url
-            with open(log_file, "w", encoding="utf-8") as f:
-                json.dump(log_data, f, indent=2)
 
         return jsonify({
             "success": True,
@@ -1583,19 +1611,17 @@ def update_history_item(filename=None):
 @app.route("/api/history/<filename>", methods=["DELETE"])
 @login_required
 def delete_history_item(filename):
-    """Delete a history run entry (and its output folder on disk if file mode)."""
+    """Delete a history run entry and clean up disk files and any duplicate clones."""
     try:
+        user_output_dir = get_user_output_dir()
+        # Always remove physical files/folder from disk
+        _delete_single_history_log(filename, user_output_dir)
+
         if db_layer.is_db_available():
             run_id = filename.replace(".json", "")
-            ok = db_layer.db_delete_history_item(run_id)
-            if ok:
-                return jsonify({"success": True, "message": "History entry deleted."})
-            return jsonify({"success": False, "error": "History entry not found."}), 404
-        else:
-            user_output_dir = get_user_output_dir()
-            if _delete_single_history_log(filename, user_output_dir):
-                return jsonify({"success": True, "message": "History entry and physical output folder deleted permanently from disk"})
-            return jsonify({"success": False, "error": "Failed to delete history item or file not found"}), 404
+            db_layer.db_delete_history_item(run_id, username=current_user.username)
+
+        return jsonify({"success": True, "message": "History entry deleted permanently."})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -1610,17 +1636,16 @@ def delete_history_batch():
         if not filenames or not isinstance(filenames, list):
             return jsonify({"success": False, "error": "No filenames provided for bulk deletion"}), 400
 
+        user_output_dir = get_user_output_dir()
         deleted_count = 0
-        if db_layer.is_db_available():
-            for fname in filenames:
+        for fname in filenames:
+            _delete_single_history_log(fname, user_output_dir)
+            if db_layer.is_db_available():
                 run_id = fname.replace(".json", "")
-                if db_layer.db_delete_history_item(run_id):
+                if db_layer.db_delete_history_item(run_id, username=current_user.username):
                     deleted_count += 1
-        else:
-            user_output_dir = get_user_output_dir()
-            for fname in filenames:
-                if _delete_single_history_log(fname, user_output_dir):
-                    deleted_count += 1
+            else:
+                deleted_count += 1
 
         return jsonify({
             "success": True,
@@ -3099,11 +3124,25 @@ def api_editor_ai_polish():
 
     try:
         def call_gemini(client):
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=full_prompt,
-            )
-            return response.text
+            from gemini_client import get_candidate_models, extract_clean_text, record_model_failure, record_model_success
+            last_err = None
+            for m in get_candidate_models():
+                try:
+                    response = client.models.generate_content(
+                        model=m,
+                        contents=full_prompt,
+                    )
+                    txt = extract_clean_text(response)
+                    if txt:
+                        record_model_success(m)
+                        return txt
+                except Exception as me:
+                    record_model_failure(m, me)
+                    last_err = me
+                    continue
+            if last_err:
+                raise last_err
+            return ""
 
         polished = execute_with_failover(call_gemini)
         polished = (polished or "").strip().strip('"').strip("'")
@@ -4187,21 +4226,39 @@ def refine_resume_api():
         # 8. Persist refined resume in Neon DB so it survives deploys / reloads
         if db_layer.is_db_available() and user_username:
             try:
-                db_layer.db_save_run_log(
-                    user_username,
-                    f"refine_{int(time.time()*1000)}",
-                    {
-                        "timestamp": datetime.now().isoformat(),
-                        "url": url,
-                        "company": company,
-                        "role": effective_role,
-                        "output_file": doc_path,
-                        "tailored_resume": refined_resume,
-                        "change_summary": change_summary,
-                        "relative_path": rel_doc,
-                        "relative_pdf": rel_pdf,
-                    }
-                )
+                hist = db_layer.db_get_history(user_username)
+                folder_name = target_dir.name.lower()
+                matched_run_id = None
+                for h in hist:
+                    rid = (h.get("_db_run_id") or h.get("run_id") or "")
+                    out_f = (h.get("output_file") or "").lower()
+                    c_slug = _safe_slugify(h.get("company", "")).lower()
+                    r_slug = _safe_slugify(h.get("role", "")).lower()
+                    comp_role_slug = f"{c_slug}_{r_slug}" if c_slug and r_slug else ""
+                    if folder_name and folder_name != "output" and (folder_name in out_f or folder_name == comp_role_slug):
+                        matched_run_id = rid
+                        break
+
+                if matched_run_id:
+                    db_layer.db_update_history_tailored_resume(matched_run_id, refined_resume, url=url)
+                    db_layer.db_update_history_item(matched_run_id, company=company, role=effective_role, url=url)
+                    logger.info(f"[Refine] Existing job run {matched_run_id} updated cleanly in NeonDB.")
+                else:
+                    db_layer.db_save_run_log(
+                        user_username,
+                        f"run_{int(time.time()*1000)}",
+                        {
+                            "timestamp": datetime.now().isoformat(),
+                            "url": url,
+                            "company": company,
+                            "role": effective_role,
+                            "output_file": doc_path,
+                            "tailored_resume": refined_resume,
+                            "change_summary": change_summary,
+                            "relative_path": rel_doc,
+                            "relative_pdf": rel_pdf,
+                        }
+                    )
             except Exception as _db_err:
                 logging.warning(f"[Refine] DB persist failed: {_db_err}")
 
@@ -4497,20 +4554,49 @@ def save_preview_edits():
         # Persist in Neon DB
         if db_layer.is_db_available() and user_username:
             try:
-                db_layer.db_save_run_log(
-                    user_username,
-                    f"preview_edit_{int(time.time()*1000)}",
-                    {
-                        "timestamp": datetime.now().isoformat(),
-                        "company": effective_comp,
-                        "role": effective_role,
-                        "output_file": doc_path,
-                        "tailored_resume": updated_resume,
-                        "change_summary": change_summary,
-                        "relative_path": rel_doc,
-                        "relative_pdf": rel_pdf,
-                    }
-                )
+                hist = db_layer.db_get_history(user_username)
+                folder_name = target_dir.name.lower()
+                clean_rel_lower = clean_rel.lower() if clean_rel else ""
+                matched_run_id = None
+
+                for h in hist:
+                    rid = (h.get("_db_run_id") or h.get("run_id") or "")
+                    out_f = (h.get("output_file") or "").lower()
+                    log_f = (h.get("log_file_name") or "").lower()
+                    c_slug = _safe_slugify(h.get("company", "")).lower()
+                    r_slug = _safe_slugify(h.get("role", "")).lower()
+                    comp_role_slug = f"{c_slug}_{r_slug}" if c_slug and r_slug else ""
+
+                    if rid and (rid.lower() in clean_rel_lower or rid.lower() in folder_name):
+                        matched_run_id = rid
+                        break
+                    if folder_name and folder_name != "output" and (folder_name in out_f or folder_name == comp_role_slug):
+                        matched_run_id = rid
+                        break
+                    if log_f and log_f in clean_rel_lower:
+                        matched_run_id = rid
+                        break
+
+                if matched_run_id:
+                    db_layer.db_update_history_tailored_resume(matched_run_id, updated_resume, url=url)
+                    db_layer.db_update_history_item(matched_run_id, company=effective_comp, role=effective_role, url=url)
+                    logger.info(f"[SavePreviewEdits] Existing job run {matched_run_id} updated cleanly in NeonDB.")
+                else:
+                    db_layer.db_save_run_log(
+                        user_username,
+                        f"run_{int(time.time()*1000)}",
+                        {
+                            "timestamp": datetime.now().isoformat(),
+                            "url": url,
+                            "company": effective_comp,
+                            "role": effective_role,
+                            "output_file": doc_path,
+                            "tailored_resume": updated_resume,
+                            "change_summary": change_summary,
+                            "relative_path": rel_doc,
+                            "relative_pdf": rel_pdf,
+                        }
+                    )
             except Exception as _db_err:
                 logging.warning(f"[SavePreviewEdits] DB persist note: {_db_err}")
 
