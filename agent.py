@@ -100,8 +100,16 @@ def load_base_resume(resume_path: str = None) -> dict:
     else:
         path = Path(__file__).parent / "base_resume.json"
 
-    if not path.exists():
-        # Attempt to restore from NeonDB if running in container / cloud (e.g. Render)
+    data = {}
+    if path.exists():
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+
+    # Self-heal from DB if file is missing or has empty experience
+    if not data or not data.get("experience"):
         try:
             import db as db_layer
             if db_layer.is_db_available():
@@ -113,7 +121,7 @@ def load_base_resume(resume_path: str = None) -> dict:
                         uname = parts[idx + 1]
                 if uname:
                     rdata = db_layer.db_get_resume(uname)
-                    if rdata and not rdata.get("_empty"):
+                    if rdata and rdata.get("experience"):
                         path.parent.mkdir(parents=True, exist_ok=True)
                         with open(path, "w", encoding="utf-8") as f:
                             json.dump(rdata, f, indent=2, ensure_ascii=False)
@@ -121,14 +129,18 @@ def load_base_resume(resume_path: str = None) -> dict:
         except Exception:
             pass
 
-        # Fallback to root base_resume.json if available
+        # Fallback to root base_resume.json if available and valid
         root_path = Path(__file__).parent / "base_resume.json"
-        if root_path.exists():
-            with open(root_path, "r", encoding="utf-8") as f:
-                return json.load(f)
+        if root_path.exists() and root_path != path:
+            try:
+                with open(root_path, "r", encoding="utf-8") as f:
+                    root_d = json.load(f)
+                    if root_d.get("experience"):
+                        return root_d
+            except Exception:
+                pass
 
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    return data
 
 
 def extract_keywords_from_jd(jd_text: str, base_resume: dict) -> list:

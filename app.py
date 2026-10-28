@@ -3310,7 +3310,19 @@ def analyze_job():
                 "error": "Please upload your resume first in the Setup tab before analyzing a job."
             }), 400
 
-        base_resume = load_base_resume(str(user_resume_path))
+        base_resume = None
+        if db_layer.is_db_available() and current_user.is_authenticated:
+            try:
+                db_r = db_layer.db_get_resume(current_user.username)
+                if db_r and db_r.get("experience"):
+                    base_resume = db_r
+                    user_resume_path.parent.mkdir(parents=True, exist_ok=True)
+                    with open(user_resume_path, "w", encoding="utf-8") as rf:
+                        json.dump(base_resume, rf, indent=2, ensure_ascii=False)
+            except Exception as dbe:
+                logger.warning(f"[Analyze] DB resume load note: {dbe}")
+        if not base_resume:
+            base_resume = load_base_resume(str(user_resume_path))
 
         # Initialize default analysis variables to guarantee scope safety
         missing_keywords = []
@@ -4911,14 +4923,24 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
     _settings = user_settings or {}
 
     # ── Restore resume from DB to local disk if needed (Render: ephemeral disk) ──
-    if db_layer.is_db_available() and user_username and not _resume_path.exists():
+    if db_layer.is_db_available() and user_username:
         try:
             resume_data = db_layer.db_get_resume(user_username)
             if resume_data and not resume_data.get("_empty"):
-                _resume_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(_resume_path, "w", encoding="utf-8") as _rf:
-                    json.dump(resume_data, _rf, indent=2, ensure_ascii=False)
-                logging.info(f"[Pipeline] Restored resume from DB to {_resume_path}")
+                need_write = not _resume_path.exists()
+                if not need_write:
+                    try:
+                        with open(_resume_path, "r", encoding="utf-8") as _chk:
+                            cur_disk = json.load(_chk)
+                        if not cur_disk.get("experience") and resume_data.get("experience"):
+                            need_write = True
+                    except Exception:
+                        need_write = True
+                if need_write:
+                    _resume_path.parent.mkdir(parents=True, exist_ok=True)
+                    with open(_resume_path, "w", encoding="utf-8") as _rf:
+                        json.dump(resume_data, _rf, indent=2, ensure_ascii=False)
+                    logging.info(f"[Pipeline] Synced resume from DB to {_resume_path}")
             # Also restore DOCX if needed
             user_data_dir = _resume_path.parent
             orig_docx = user_data_dir / "master_resume_original.docx"
