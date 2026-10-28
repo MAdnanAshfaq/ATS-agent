@@ -602,8 +602,8 @@ def patch_docx_with_rewritten_resume(
                 all_paras[content_start].paragraph_format.keep_with_next = True
                 content_start += 1
 
-        # Update role dates if present in exp and different from template (e.g. 2021 - 2026 -> 2021 – Present)
-        role_dates = str(exp.get("dates", "")).strip()
+        # Update role dates if present in exp and different from template (e.g. 2021 - 2026 -> 2021 - Present)
+        role_dates = sanitize_text(str(exp.get("dates", ""))).replace('\u2013', '-').replace('\u2014', '-').strip()
         if role_dates:
             check_paras = [all_paras[anchor_idx]]
             if content_start > anchor_idx + 1:

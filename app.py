@@ -2251,6 +2251,15 @@ def download_file(filepath):
                     c_slug = _safe_slugify(h.get("company", ""))
                     r_slug = _safe_slugify(h.get("role", ""))
                     hist_folder = f"{c_slug}_{r_slug}"
+                    t_cand = h.get("tailored_resume") or h.get("resume_json") or h.get("output_data")
+                    if t_cand:
+                        if isinstance(t_cand, str):
+                            try:
+                                t_cand = json.loads(t_cand)
+                            except Exception:
+                                pass
+                        if isinstance(t_cand, dict) and (t_cand.get("name") in ("TEST USER", "Test User") or not t_cand.get("experience")):
+                            continue
                     if (hist_folder and hist_folder.lower() == folder_name.lower()) or \
                        (c_slug and c_slug.lower() in folder_name.lower()) or \
                        (c_slug and c_slug.lower() in file_stem.lower()) or \
@@ -5336,28 +5345,41 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
             if sec in base_resume and (sec not in cleaned_resume or not cleaned_resume[sec]):
                 cleaned_resume[sec] = base_resume[sec]
 
-        # Ensure experience dates and locations are intact in cleaned_resume
+        # Ensure experience titles, roles, dates and locations are intact in cleaned_resume
         if "experience" in cleaned_resume and isinstance(cleaned_resume["experience"], list):
             base_exp = base_resume.get("experience", [])
             for i, exp_item in enumerate(cleaned_resume["experience"]):
                 if not isinstance(exp_item, dict):
                     continue
+                c_name = exp_item.get("company", "").strip().lower()
+                matched_orig = None
+                for orig_e in base_exp:
+                    orig_c = orig_e.get("company", "").strip().lower()
+                    if orig_c and (orig_c in c_name or c_name in orig_c):
+                        matched_orig = orig_e
+                        break
+                if not matched_orig and i < len(base_exp):
+                    matched_orig = base_exp[i]
+
+                # Ensure title & role
+                if not exp_item.get("title") or not exp_item.get("role"):
+                    t_val = (matched_orig.get("title") or matched_orig.get("role")) if matched_orig else None
+                    if not t_val:
+                        t_val = exp_item.get("title") or exp_item.get("role") or role or "Data Engineer"
+                    exp_item["title"] = t_val
+                    exp_item["role"] = t_val
+
+                # Ensure dates
                 cur_dates = str(exp_item.get("dates") or exp_item.get("date") or exp_item.get("period") or exp_item.get("duration") or "").strip()
-                if not cur_dates:
-                    c_name = exp_item.get("company", "").strip().lower()
-                    for orig_e in base_exp:
-                        orig_c = orig_e.get("company", "").strip().lower()
-                        if orig_c and (orig_c in c_name or c_name in orig_c):
-                            cur_dates = str(orig_e.get("dates") or orig_e.get("date") or "").strip()
-                            if not exp_item.get("location"):
-                                exp_item["location"] = orig_e.get("location", "")
-                            break
-                    if not cur_dates and i < len(base_exp):
-                        cur_dates = str(base_exp[i].get("dates") or base_exp[i].get("date") or "").strip()
-                        if not exp_item.get("location"):
-                            exp_item["location"] = base_exp[i].get("location", "")
+                if not cur_dates and matched_orig:
+                    cur_dates = str(matched_orig.get("dates") or matched_orig.get("date") or "").strip()
                 if cur_dates:
                     exp_item["dates"] = cur_dates
+
+                # Ensure location
+                if not exp_item.get("location") and matched_orig:
+                    exp_item["location"] = matched_orig.get("location", "")
+
 
         orig_docx_path = BASE_DIR / "master_resume_original.docx"
         user_data_dir = _resume_path.parent

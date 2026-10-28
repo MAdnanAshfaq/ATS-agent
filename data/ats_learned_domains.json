@@ -66,7 +66,7 @@
     }
   },
   "metrics": {
-    "total_lookups": 391,
+    "total_lookups": 401,
     "learned_hits": 30,
     "user_overrides": 61,
     "user_confirmations": 1
@@ -79,10 +79,10 @@
       "avg_density": 0.0457
     },
     "unknown": {
-      "total_runs": 23,
-      "passes": 21,
+      "total_runs": 27,
+      "passes": 25,
       "fails": 2,
-      "avg_density": 0.0231
+      "avg_density": 0.0208
     },
     "taleo": {
       "total_runs": 70,

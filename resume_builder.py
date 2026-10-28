@@ -294,22 +294,25 @@ def build_resume_docx(
                 dates = sanitize_text(f"{role_entry.get('start_date')} - {role_entry.get('end_date', 'Present')}")
             location = sanitize_text(role_entry.get("location", ""))
             
-            # Robust fallback to base_resume if dates or location missing
-            if (not dates or not location) and company_name:
+            # Robust fallback to base_resume if title, dates or location missing
+            if (not title or not dates or not location) and company_name:
                 base_exp = (resume.get("base_resume", {}) or {}).get("experience", []) or resume.get("_orig_experience", [])
                 for b_item in base_exp:
                     b_comp = b_item.get("company", "").strip().lower()
                     if b_comp and (b_comp in company_name.lower() or company_name.lower() in b_comp):
+                        if not title:
+                            title = sanitize_text(b_item.get("title") or b_item.get("role") or "")
                         if not dates:
                             dates = sanitize_text(b_item.get("dates") or b_item.get("date") or "")
                         if not location:
                             location = sanitize_text(b_item.get("location", ""))
                         break
             
-            bullets = role_entry.get("bullets", [])
-            
             if not title:
-                continue
+                title = clean_role or "Data Engineer"
+            
+            bullets = role_entry.get("bullets", [])
+
             
             # Authentic 2-line header matching original document:
             # Line 1: Title (bold) on left, Dates (regular) on right

@@ -790,16 +790,21 @@ def resume_json_to_html(
                 dates = sanitize_text(f"{exp.get('start_date')} - {exp.get('end_date', 'Present')}")
             loc = sanitize_text(exp.get("location", ""))
 
-            # Robust fallback: if dates missing, search base_resume inside resume dict
-            if not dates and company_name:
+            # Robust fallback: if title or dates missing, search base_resume inside resume dict
+            if (not title or not dates or not loc) and company_name:
                 base_exp = (resume.get("base_resume", {}) or {}).get("experience", []) or resume.get("_orig_experience", [])
                 for b_item in base_exp:
                     b_comp = b_item.get("company", "").strip().lower()
                     if b_comp and (b_comp in company_name.lower() or company_name.lower() in b_comp):
-                        dates = sanitize_text(b_item.get("dates") or b_item.get("date") or "")
+                        if not title:
+                            title = sanitize_text(b_item.get("title") or b_item.get("role") or "")
+                        if not dates:
+                            dates = sanitize_text(b_item.get("dates") or b_item.get("date") or "")
                         if not loc:
                             loc = sanitize_text(b_item.get("location", ""))
                         break
+            if not title:
+                title = clean_role or "Data Engineer"
             bullets = exp.get("bullets", [])
 
             entry_wrap = f'<div class="entry-item exp-item" data-exp-index="{exp_idx}">'

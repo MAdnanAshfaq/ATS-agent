@@ -530,8 +530,29 @@ def rewrite_resume(
             for orig_e in base_exp:
                 orig_comp = orig_e.get("company", "").lower().strip()
                 if orig_comp not in existing_companies:
-                    print(f"[Rewriter] Retaining missing past experience: {orig_e.get('title')} at {orig_e.get('company')}")
+                    t_show = orig_e.get("title") or orig_e.get("role") or "Data Engineer"
+                    print(f"[Rewriter] Retaining missing past experience: {t_show} at {orig_e.get('company')}")
                     rewritten_exp.append(orig_e)
+
+            # Ensure every experience entry has valid non-None title and role
+            for exp in rewritten_exp:
+                if isinstance(exp, dict):
+                    c_name = exp.get("company", "").strip().lower()
+                    if not exp.get("title") or not exp.get("role"):
+                        for orig_e in base_exp:
+                            if orig_e.get("company", "").strip().lower() == c_name:
+                                t_val = orig_e.get("title") or orig_e.get("role")
+                                if t_val:
+                                    if not exp.get("title"):
+                                        exp["title"] = t_val
+                                    if not exp.get("role"):
+                                        exp["role"] = t_val
+                                break
+                    if not exp.get("title"):
+                        exp["title"] = exp.get("role") or "Data Engineer"
+                    if not exp.get("role"):
+                        exp["role"] = exp.get("title") or "Data Engineer"
+
 
             # Clean skills array: remove full sentences or duties and extract atomic skills
             cleaned_skills = []

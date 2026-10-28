@@ -665,22 +665,30 @@ def execute_danis_engine_pipeline(
         if matched_rewrite:
             # Use rewritten entry but FORCE canonical company, title, dates from base_resume
             entry = dict(matched_rewrite)
-            entry["company"] = orig_e.get("company", entry.get("company"))
-            entry["title"] = orig_e.get("title", entry.get("title"))
-            entry["dates"] = orig_e.get("dates", entry.get("dates"))
-            entry["location"] = orig_e.get("location", entry.get("location"))
+            entry["company"] = orig_e.get("company") or entry.get("company")
+            entry_title = orig_e.get("title") or orig_e.get("role") or entry.get("title") or entry.get("role") or "Data Engineer"
+            entry["title"] = entry_title
+            entry["role"] = entry_title
+            entry["dates"] = orig_e.get("dates") or orig_e.get("date") or entry.get("dates") or ""
+            entry["location"] = orig_e.get("location") or entry.get("location") or ""
             final_exp.append(entry)
         else:
             # If LLM omitted or renamed, check if LLM produced an entry at the same index
             if idx < len(raw_rewritten_exp) and isinstance(raw_rewritten_exp[idx], dict):
                 entry = dict(raw_rewritten_exp[idx])
-                entry["company"] = orig_e.get("company")
-                entry["title"] = orig_e.get("title")
-                entry["dates"] = orig_e.get("dates")
-                entry["location"] = orig_e.get("location")
+                entry["company"] = orig_e.get("company") or entry.get("company")
+                entry_title = orig_e.get("title") or orig_e.get("role") or entry.get("title") or entry.get("role") or "Data Engineer"
+                entry["title"] = entry_title
+                entry["role"] = entry_title
+                entry["dates"] = orig_e.get("dates") or orig_e.get("date") or entry.get("dates") or ""
+                entry["location"] = orig_e.get("location") or entry.get("location") or ""
                 final_exp.append(entry)
             else:
-                final_exp.append(orig_e)
+                entry = dict(orig_e)
+                entry_title = orig_e.get("title") or orig_e.get("role") or "Data Engineer"
+                entry["title"] = entry_title
+                entry["role"] = entry_title
+                final_exp.append(entry)
 
     # Bullet sanitization across all experiences (purge 2-word lead-in fragments, ensure complete sentences)
     for exp_entry in final_exp:
