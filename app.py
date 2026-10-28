@@ -3475,7 +3475,16 @@ def analyze_job():
         # Safe defaults for matrix fields
         cand_name = base_resume.get("name", "Candidate")
         resume_name_tag = f"{cand_name.replace(' ', '_')}_Resume"
-        cand_title = base_resume.get("experience", [{}])[0].get("title", "Data Engineer")
+        cand_title = "Data Engineer"
+        exp_list = base_resume.get("experience")
+        if isinstance(exp_list, list) and exp_list:
+            first_exp = exp_list[0]
+            if isinstance(first_exp, dict):
+                cand_title = first_exp.get("title") or first_exp.get("role") or "Data Engineer"
+            elif isinstance(first_exp, str) and first_exp.strip():
+                cand_title = first_exp.strip()
+        elif isinstance(exp_list, dict):
+            cand_title = exp_list.get("title") or exp_list.get("role") or "Data Engineer"
         score_10 = matrix_data.get("score_scale_10", round(score / 10.0, 1))
         
         rating = matrix_data.get("score_rating")

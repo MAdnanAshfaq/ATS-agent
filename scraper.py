@@ -409,14 +409,24 @@ def extract_company_from_url(url: str) -> str:
                 return "EnergyHub"
             return res.title()
 
+    # rippling: ats.rippling.com/company-name/jobs/... or rippling.com/company-name/jobs/...
+    rippling = re.search(r'rippling\.com/([^/]+)', url.lower())
+    if rippling:
+        c_slug = rippling.group(1).replace('-', ' ').strip()
+        if c_slug and c_slug not in ("ats", "jobs", "recruiting", "company"):
+            if c_slug.lower() == "harborcompliance":
+                return "Harbor Compliance"
+            c_slug = re.sub(r'([a-z])([A-Z])', r'\1 \2', c_slug)
+            return c_slug.title()
+
     # indeed: indeed.com/cmp/company-name
     indeed_cmp = re.search(r'indeed\.[a-z.]+/cmp/([a-z0-9-]+)', url.lower())
     if indeed_cmp:
         return indeed_cmp.group(1).replace('-', ' ').title()
 
     # generic: extract domain, but ignore aggregator job board domains
-    AGGREGATOR_DOMAINS = {"hiringcafe", "indeed", "ziprecruiter", "linkedin", "dice", "glassdoor", "builtin", "handshake", "careerbuilder", "monster", "simplyhired", "jobvite"}
-    domain = re.search(r'https?://(?:www\.|jobs\.|myjobs\.)?([^./]+)', url)
+    AGGREGATOR_DOMAINS = {"hiringcafe", "indeed", "ziprecruiter", "linkedin", "dice", "glassdoor", "builtin", "handshake", "careerbuilder", "monster", "simplyhired", "jobvite", "rippling", "ats"}
+    domain = re.search(r'https?://(?:www\.|jobs\.|myjobs\.|ats\.)?([^./]+)', url)
     if domain and domain.group(1).lower() not in AGGREGATOR_DOMAINS:
         return domain.group(1).replace('-', ' ').title()
     
@@ -845,7 +855,15 @@ def get_cached_jd(url: str, max_age_hours: float = 168.0) -> Optional[dict]:
         role = d.get("role", "")
         is_v, _ = validate_jd_extraction(txt)
         r_v, _ = validate_role_title(role)
-        return is_v and r_v
+        if not (is_v and r_v):
+            return False
+        # Auto-correct company if it was cached under an ATS vendor or aggregator name
+        cached_co = (d.get("company") or "").lower().replace(" ", "")
+        if cached_co in {"ripplingrecruiting", "rippling", "ripplingats", "ats", "targetcompany", "unknowncompany"}:
+            new_co = extract_company_from_url(clean_url)
+            if new_co and new_co.lower() not in {"target company", "unknown company"}:
+                d["company"] = new_co
+        return True
 
     # 1. Memory cache
     if clean_url in _MEM_CACHE:
@@ -1210,7 +1228,7 @@ async def scrape_jd(url: str, force_refresh: bool = False) -> dict:
     JOB_BOARD_NAMES = {
         "hiringcafe", "indeed", "ziprecruiter", "linkedin", "dice",
         "glassdoor", "builtin", "handshake", "careerbuilder", "monster", "simplyhired", "jobvite", "target company", "unknown company",
-        "sjobs", "brassring"
+        "sjobs", "brassring", "rippling", "ripplingrecruiting", "ripplingats"
     }
 
     GEOGRAPHIC_OR_GENERIC = {
@@ -1233,7 +1251,7 @@ async def scrape_jd(url: str, force_refresh: bool = False) -> dict:
     if _is_invalid_co(company) or (role and company.lower() == role.lower()):
         # 1. From Page Title: e.g. "Data Architect at Pythian · Remote" or "Senior Data Engineer at Saint"
         if title:
-            t_clean = re.sub(r'\s*[-–—|]\s*(?:HiringCafe|Indeed|LinkedIn|ZipRecruiter|Glassdoor|BuiltIn).*$', '', title, flags=re.I).strip()
+            t_clean = re.sub(r'\s*[-–—|]\s*(?:HiringCafe|Indeed|LinkedIn|ZipRecruiter|Glassdoor|BuiltIn|Rippling).*$', '', title, flags=re.I).strip()
             if " at " in t_clean:
                 cand_co = t_clean.split(" at ", 1)[1].split("·")[0].split("•")[0].split("-")[0].split("|")[0].strip()
                 if not _is_invalid_co(cand_co):
