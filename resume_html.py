@@ -1216,19 +1216,27 @@ def _playwright_pdf_worker(html_content: str, output_pdf_path: str) -> bool:
     asyncio.set_event_loop(loop)
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-gpu",
-                    "--disable-dev-shm-usage",
-                    "--disable-extensions",
-                    "--disable-default-apps",
-                    "--disable-sync",
-                    "--no-first-run",
-                ]
-            )
+            launch_args = [
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-gpu",
+                "--disable-dev-shm-usage",
+                "--disable-extensions",
+                "--disable-default-apps",
+                "--disable-sync",
+                "--no-first-run",
+            ]
+            try:
+                browser = p.chromium.launch(headless=True, args=launch_args)
+            except Exception as launch_err:
+                err_text = str(launch_err).lower()
+                if "executable doesn't exist" in err_text or "install" in err_text or "browser" in err_text:
+                    logger.warning(f"[Playwright] Chromium not found on host. Installing chromium on-demand: {launch_err}")
+                    import subprocess
+                    subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
+                    browser = p.chromium.launch(headless=True, args=launch_args)
+                else:
+                    raise launch_err
             try:
                 page = browser.new_page()
                 page.set_default_timeout(15000)

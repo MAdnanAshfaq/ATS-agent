@@ -2616,7 +2616,22 @@
           body: JSON.stringify(payload)
         });
 
-        const data = await resp.json();
+        if (!resp.ok) {
+          const errText = await resp.text().catch(() => '');
+          let errMsg = `Save failed (${resp.status})`;
+          try {
+            const parsed = JSON.parse(errText);
+            if (parsed && parsed.error) errMsg = parsed.error;
+          } catch (_) {}
+          console.warn('[AutoSaver] Save response error:', errMsg);
+          const statusEl = document.getElementById('saveStatus');
+          if (statusEl) {
+            statusEl.innerHTML = '<span class="dot" style="background:#f59e0b"></span><span style="color:#f59e0b">Save pending</span>';
+          }
+          return;
+        }
+
+        const data = await resp.json().catch(() => ({}));
         if (data.success) {
           store.state.isDirty = false;
           const statusEl = document.getElementById('saveStatus');
@@ -2694,8 +2709,12 @@
           });
 
           if (!resp.ok) {
-            const errData = await resp.json().catch(() => ({}));
-            throw new Error(errData.error || `Export failed with status ${resp.status}`);
+            let errMsg = `Export failed with status ${resp.status}`;
+            try {
+              const errData = await resp.json();
+              if (errData && errData.error) errMsg = errData.error;
+            } catch (_) {}
+            throw new Error(errMsg);
           }
 
           const blob = await resp.blob();
@@ -2713,7 +2732,10 @@
           a.remove();
         } catch (err) {
           console.error('[PdfExporter] Failed:', err);
-          alert(`PDF Generation Error: ${err.message}`);
+          if (confirm(`PDF Generation Notice: ${err.message}\n\nWould you like to open your browser's instant print-to-PDF dialog for high-definition 1:1 vector export now?`)) {
+            InlineEditor.hideFloatingToolbar();
+            window.print();
+          }
         } finally {
           clearInterval(timer);
           btnDownload.innerHTML = origHtml;

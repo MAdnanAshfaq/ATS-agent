@@ -211,6 +211,8 @@ _buf_handler.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
 _buf_handler.setLevel(logging.INFO)
 _root_logger.addHandler(_buf_handler)
 
+logger = logging.getLogger("ats_app")
+
 GLOBAL_CONSOLE_BUFFER.add_line("🚀 ATS Agent Web Server ready. Live terminal console connected.", stream="stdout", category="general")
 
 # Suppress noisy Google GenAI SDK AFC (Automatic Function Calling) advisory warnings
@@ -2724,46 +2726,47 @@ def api_editor_save():
     Persist changes made in the Canva-grade visual editor to disk.
     Updates the target tailored_resume.json (or base_resume.json for master).
     """
-    data = request.get_json() or {}
-    rel_path = data.get("resume_path", "").strip()
-    resume_obj = data.get("resume") or {}
-    editor_styles = data.get("editor_styles")
-
-    if not resume_obj or not isinstance(resume_obj, dict):
-        return jsonify({"success": False, "error": "Invalid resume payload."}), 400
-
-    if editor_styles and isinstance(editor_styles, dict):
-        resume_obj["editor_styles"] = editor_styles
-
-    user_output_dir = get_user_output_dir()
-    user_resume_path = get_user_resume_path()
-    clean_fp = rel_path.replace("\\", "/").strip("/")
-
-    is_master = clean_fp in ("master", "master_resume", "master_resume.docx", "master.docx", "master.json")
-
-    if is_master:
-        target_json = user_resume_path
-    else:
-        candidate = (user_output_dir / clean_fp).resolve()
-        if candidate.is_dir():
-            candidate = candidate / "tailored_resume.json"
-        elif candidate.suffix.lower() != ".json":
-            candidate = candidate.parent / "tailored_resume.json"
-
-        if candidate.exists():
-            target_json = candidate
-        else:
-            folder_stem = Path(clean_fp).stem.split(".")[0]
-            matches = list(user_output_dir.rglob("tailored_resume.json"))
-            matched = [m for m in matches if folder_stem.lower() in str(m).lower()]
-            if matched:
-                target_json = matched[0]
-            elif matches:
-                target_json = matches[0]
-            else:
-                target_json = user_resume_path
-
     try:
+        data = request.get_json() or {}
+        rel_path = (data.get("resume_path") or "").strip()
+        resume_obj = data.get("resume") or {}
+        editor_styles = data.get("editor_styles")
+
+        if not resume_obj or not isinstance(resume_obj, dict):
+            return jsonify({"success": False, "error": "Invalid resume payload."}), 400
+
+        if editor_styles and isinstance(editor_styles, dict):
+            resume_obj["editor_styles"] = editor_styles
+
+        user_output_dir = get_user_output_dir()
+        user_resume_path = get_user_resume_path()
+        user_data_dir = current_user.data_dir if (current_user and current_user.is_authenticated) else (user_resume_path.parent if user_resume_path else BASE_DIR)
+        clean_fp = rel_path.replace("\\", "/").strip("/")
+
+        is_master = not clean_fp or clean_fp in ("master", "master_resume", "master_resume.docx", "master.docx", "master.json", "master.pdf")
+
+        if is_master:
+            target_json = user_resume_path
+        else:
+            candidate = (user_output_dir / clean_fp).resolve()
+            if candidate.is_dir():
+                candidate = candidate / "tailored_resume.json"
+            elif candidate.suffix.lower() != ".json":
+                candidate = candidate.parent / "tailored_resume.json"
+
+            if candidate.exists():
+                target_json = candidate
+            else:
+                folder_stem = Path(clean_fp).stem.split(".")[0]
+                matches = list(user_output_dir.rglob("tailored_resume.json")) if user_output_dir.exists() else []
+                matched = [m for m in matches if folder_stem.lower() in str(m).lower()]
+                if matched:
+                    target_json = matched[0]
+                elif matches:
+                    target_json = matches[0]
+                else:
+                    target_json = user_resume_path
+
         target_json.parent.mkdir(parents=True, exist_ok=True)
         with open(target_json, "w", encoding="utf-8") as f:
             json.dump(resume_obj, f, indent=2, ensure_ascii=False)
@@ -2833,20 +2836,16 @@ def api_editor_save():
         except Exception as log_err:
             logger.warning(f"[Editor Save] Local log sync warning: {log_err}")
 
-        # ── Document Disk Sync (.docx & .pdf) ─────────────────────────────────
+        # ── Document Disk Sync (.docx) ─────────────────────────────────────────
         try:
-            from resume_builder import build_resume_docx, convert_to_pdf
+            from resume_builder import build_resume_docx
             if is_master:
-                doc_path = build_resume_docx(resume_obj, "Master", "Profile", output_dir=str(user_data_dir))
-                if doc_path:
-                    convert_to_pdf(doc_path)
+                build_resume_docx(resume_obj, "Master", "Profile", output_dir=str(user_data_dir))
             else:
                 target_dir = target_json.parent
                 comp = resume_obj.get("target_company") or (target_dir.name.split("_")[0] if "_" in target_dir.name else "Company")
                 rol = resume_obj.get("target_role") or (target_dir.name.split("_", 1)[1] if "_" in target_dir.name else "Resume")
-                doc_path = build_resume_docx(resume_obj, comp, rol, output_dir=str(target_dir))
-                if doc_path:
-                    convert_to_pdf(doc_path)
+                build_resume_docx(resume_obj, comp, rol, output_dir=str(target_dir))
         except Exception as rebuild_err:
             logger.warning(f"[Editor Save] Document rebuild warning: {rebuild_err}")
 
@@ -2866,65 +2865,85 @@ def api_editor_save():
 def api_editor_export_pdf():
     """
     Generate an authentic PDF from visual editor state with 100% pixel-perfect parity.
-    Uses Playwright headless Chromium on the exact HTML/CSS rendered in the editor.
+    Uses Playwright headless Chromium on the exact HTML/CSS rendered in the editor,
+    with smart fallback to document generator if headless browser is unavailable.
     """
-    import uuid
-    data = request.get_json() or {}
-    resume_obj = data.get("resume") or {}
-    editor_styles = data.get("editor_styles") or resume_obj.get("editor_styles") or {}
-    rel_path = data.get("resume_path", "").strip()
-
-    if not resume_obj or not isinstance(resume_obj, dict):
-        return jsonify({"error": "Invalid resume payload"}), 400
-
-    from resume_html import resume_json_to_html, generate_pdf_from_html, _get_base_html_template
-    name = resume_obj.get("name", "Candidate")
-
-    # If the visual editor sent the exact rendered DOM, wrap it for 1:1 fidelity
-    raw_html = data.get("html")
-    if raw_html and isinstance(raw_html, str) and raw_html.strip():
-        html_content = _get_base_html_template(raw_html, title=f"{name} - Resume", editor_styles=editor_styles)
-    else:
-        # Fallback to generating HTML from JSON data
-        html_content = resume_json_to_html(resume_obj, editor_styles=editor_styles)
-
-    user_output_dir = get_user_output_dir()
-    clean_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', name).strip('_') or "Candidate"
-    tmp_pdf_dir = user_output_dir / ".temp_exports"
-    tmp_pdf_dir.mkdir(parents=True, exist_ok=True)
-    pdf_filename = f"{clean_name}_Resume.pdf"
-    output_pdf_path = tmp_pdf_dir / f"{uuid.uuid4().hex[:8]}_{pdf_filename}"
-
-    success = generate_pdf_from_html(
-        html_content=html_content,
-        output_pdf_path=str(output_pdf_path),
-        candidate_name=name,
-        role=resume_obj.get("target_role", "")
-    )
-
-    if not success or not output_pdf_path.exists():
-        return jsonify({"error": "PDF generation failed via Playwright engine."}), 500
-
-    # Also preserve the generated PDF in the tailored job folder
     try:
-        clean_fp = rel_path.replace("\\", "/").strip("/")
-        if clean_fp and clean_fp not in ("master", "master_resume", "master.docx", "master.json"):
-            target_folder = (user_output_dir / clean_fp).resolve()
-            if not target_folder.is_dir():
-                target_folder = target_folder.parent
-            if target_folder.exists() and target_folder.is_dir():
-                import shutil
-                dest_pdf = target_folder / pdf_filename
-                shutil.copy2(output_pdf_path, dest_pdf)
-    except Exception as pdf_copy_err:
-        logger.warning(f"[Export PDF] Copy to job folder note: {pdf_copy_err}")
+        import uuid
+        data = request.get_json() or {}
+        resume_obj = data.get("resume") or {}
+        editor_styles = data.get("editor_styles") or resume_obj.get("editor_styles") or {}
+        rel_path = data.get("resume_path", "").strip()
 
-    return send_file(
-        str(output_pdf_path),
-        as_attachment=True,
-        download_name=pdf_filename,
-        mimetype="application/pdf"
-    )
+        if not resume_obj or not isinstance(resume_obj, dict):
+            return jsonify({"error": "Invalid resume payload"}), 400
+
+        from resume_html import resume_json_to_html, generate_pdf_from_html, _get_base_html_template
+        name = resume_obj.get("name", "Candidate")
+
+        # If the visual editor sent the exact rendered DOM, wrap it for 1:1 fidelity
+        raw_html = data.get("html")
+        if raw_html and isinstance(raw_html, str) and raw_html.strip():
+            html_content = _get_base_html_template(raw_html, title=f"{name} - Resume", editor_styles=editor_styles)
+        else:
+            # Fallback to generating HTML from JSON data
+            html_content = resume_json_to_html(resume_obj, editor_styles=editor_styles)
+
+        user_output_dir = get_user_output_dir()
+        clean_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', name).strip('_') or "Candidate"
+        tmp_pdf_dir = user_output_dir / ".temp_exports"
+        tmp_pdf_dir.mkdir(parents=True, exist_ok=True)
+        pdf_filename = f"{clean_name}_Resume.pdf"
+        output_pdf_path = tmp_pdf_dir / f"{uuid.uuid4().hex[:8]}_{pdf_filename}"
+
+        success = generate_pdf_from_html(
+            html_content=html_content,
+            output_pdf_path=str(output_pdf_path),
+            candidate_name=name,
+            role=resume_obj.get("target_role", "")
+        )
+
+        # Fallback if Playwright failed on Render/container environment
+        if not success or not output_pdf_path.exists():
+            try:
+                from resume_builder import build_resume_docx, convert_to_pdf
+                comp = resume_obj.get("target_company") or "Company"
+                rol = resume_obj.get("target_role") or "Resume"
+                fallback_docx = build_resume_docx(resume_obj, comp, rol, output_dir=str(tmp_pdf_dir))
+                if fallback_docx:
+                    fallback_pdf = convert_to_pdf(fallback_docx)
+                    if fallback_pdf and os.path.exists(fallback_pdf) and os.path.getsize(fallback_pdf) > 1000:
+                        output_pdf_path = Path(fallback_pdf)
+                        success = True
+            except Exception as fb_err:
+                logger.warning(f"[Export PDF] Fallback document generator warning: {fb_err}")
+
+        if not success or not output_pdf_path.exists():
+            return jsonify({"error": "PDF generation failed. Please use 'Instant Print' (Ctrl+P) to save as high-definition PDF directly from your browser."}), 500
+
+        # Also preserve the generated PDF in the tailored job folder
+        try:
+            clean_fp = rel_path.replace("\\", "/").strip("/")
+            if clean_fp and clean_fp not in ("master", "master_resume", "master.docx", "master.json"):
+                target_folder = (user_output_dir / clean_fp).resolve()
+                if not target_folder.is_dir():
+                    target_folder = target_folder.parent
+                if target_folder.exists() and target_folder.is_dir():
+                    import shutil
+                    dest_pdf = target_folder / pdf_filename
+                    shutil.copy2(output_pdf_path, dest_pdf)
+        except Exception as pdf_copy_err:
+            logger.warning(f"[Export PDF] Copy to job folder note: {pdf_copy_err}")
+
+        return send_file(
+            str(output_pdf_path),
+            as_attachment=True,
+            download_name=pdf_filename,
+            mimetype="application/pdf"
+        )
+    except Exception as e:
+        logger.error(f"[Export PDF] Error: {e}")
+        return jsonify({"error": f"PDF Export error: {str(e)}"}), 500
 
 
 @app.route("/api/editor/ai-polish", methods=["POST"])
