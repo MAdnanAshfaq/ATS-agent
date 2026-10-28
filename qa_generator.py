@@ -31,33 +31,49 @@ def _clean_json(text: str) -> str:
     return text.strip()
 
 
-def answer_application_questions(
-    questions_input: str | List[str],
-    base_resume: dict,
-    jd_text: str = "",
-    company: str = "Target Company",
-    role: str = "Software Engineer",
-) -> List[Dict[str, Any]]:
-    """
-    Generate interview-true, human-voiced answers to application-specific questions.
+def _format_skills_list(skills_data: Any) -> str:
+    """Safely format skills whether list of strings, list of dicts, dict of categories, or comma-separated string."""
+    if not skills_data:
+        return ""
+    if isinstance(skills_data, str):
+        return skills_data
+    items = []
+    if isinstance(skills_data, dict):
+        for cat, sks in skills_data.items():
+            if isinstance(sks, list):
+                items.extend([str(s) for s in sks if s])
+            elif isinstance(sks, str):
+                items.append(f"{cat}: {sks}")
+            elif isinstance(sks, dict):
+                items.extend([str(v) for v in sks.values() if v])
+    elif isinstance(skills_data, list):
+        for sk in skills_data:
+            if isinstance(sk, str):
+                items.append(sk)
+            elif isinstance(sk, dict):
+                if "skills" in sk and isinstance(sk["skills"], list):
+                    items.extend([str(s) for s in sk["skills"] if s])
+                elif "name" in sk:
+                    items.append(str(sk["name"]))
+                elif "items" in sk and isinstance(sk["items"], list):
+                    items.extend([str(s) for s in sk["items"] if s])
+                else:
+                    for val in sk.values():
+                        if isinstance(val, list):
+                            items.extend([str(s) for s in val if s])
+                        elif isinstance(val, str):
+                            items.append(val)
+            else:
+                items.append(str(sk))
+    return ", ".join(items[:40])
 
-    Returns:
-        List of dicts: [
-            {
-                "question": str,
-                "answer": str,
-                "word_count": int,
-                "char_count": int,
-                "tone_type": str (e.g. "Culture / Passion", "Behavioral STAR", "Technical Experience")
-            }
-        ]
-    """
+
 def split_raw_questions(text: str) -> List[str]:
     """
     Intelligently split pasted questions text into individual, discrete questions.
     Handles question marks, asterisks, bullet points, numbers, and Yes/No options.
     """
-    text = text.replace('\r\n', '\n').replace('\r', '\n')
+    text = str(text or "").replace('\r\n', '\n').replace('\r', '\n')
     raw_blocks = re.split(r'\n\s*\n', text)
     extracted = []
 
@@ -69,19 +85,19 @@ def split_raw_questions(text: str) -> List[str]:
         for line in lines:
             is_new_q = bool(
                 re.match(r'^(?:\d+[\.\)]|\-|\*|Q\d*:?|Question\s*\d*:?)\s+', line, re.IGNORECASE) or
-                (current_question and re.search(r'[\?\*]\s*$', current_question[-1])) or
+                (current_question and re.search(r'[\?\*]\s*$', str(current_question[-1]))) or
                 re.match(r'^(?:Do you|Are you|Can you|Will you|Have you|Is this|Is the|What|Why|How|Tell us|Describe|Please|Due to)\b', line, re.IGNORECASE)
             )
             # Skip solitary Yes/No lines if they are checkboxes from copied web forms
             if line.lower() in ('yes', 'no', 'yes/no', 'n/a', 'true', 'false') and current_question:
                 continue
             if is_new_q and current_question:
-                extracted.append(' '.join(current_question))
+                extracted.append(' '.join([str(x) for x in current_question if x]))
                 current_question = [line]
             else:
                 current_question.append(line)
         if current_question:
-            extracted.append(' '.join(current_question))
+            extracted.append(' '.join([str(x) for x in current_question if x]))
 
     final = []
     for q in extracted:
@@ -92,7 +108,7 @@ def split_raw_questions(text: str) -> List[str]:
 
 
 def answer_application_questions(
-    questions_input: str | List[str],
+    questions_input: Any,
     base_resume: dict,
     jd_text: str = "",
     company: str = "Target Company",
@@ -112,23 +128,69 @@ def answer_application_questions(
             }
         ]
     """
-    if isinstance(questions_input, str):
-        questions = split_raw_questions(questions_input)
-    else:
-        questions = list(questions_input)
+    # 1. Normalize questions_input into a clean List[str]
+    raw_input = questions_input
+    if isinstance(raw_input, str):
+        s_clean = raw_input.strip()
+        if (s_clean.startswith("[") and s_clean.endswith("]")) or (s_clean.startswith("{") and s_clean.endswith("}")):
+            try:
+                parsed_json = json.loads(s_clean)
+                if isinstance(parsed_json, list):
+                    raw_input = parsed_json
+                elif isinstance(parsed_json, dict) and "questions" in parsed_json:
+                    raw_input = parsed_json["questions"]
+            except Exception:
+                pass
+
+    questions: List[str] = []
+    if isinstance(raw_input, str):
+        questions = split_raw_questions(raw_input)
+    elif isinstance(raw_input, list):
+        for q in raw_input:
+            if isinstance(q, str):
+                cleaned = q.strip()
+                if cleaned:
+                    questions.append(cleaned)
+            elif isinstance(q, dict):
+                q_text = q.get("question") or q.get("text") or q.get("title") or q.get("prompt") or ""
+                if not q_text:
+                    for v in q.values():
+                        if isinstance(v, str) and len(v.strip()) > 5:
+                            q_text = v.strip()
+                            break
+                if q_text:
+                    questions.append(str(q_text).strip())
+            else:
+                questions.append(str(q).strip())
+    elif raw_input:
+        questions = [str(raw_input).strip()]
 
     if not questions:
         return []
 
     client = get_gemini_client()
     ai_tells = load_ai_tells()
-    banned_words = ", ".join(ai_tells.get("banned_words", [])[:20])
-    cliche_openers = ", ".join(ai_tells.get("cliche_openers", [])[:15])
+    banned_words_raw = ai_tells.get("banned_words", [])
+    banned_words = ", ".join([str(w) for w in banned_words_raw[:20] if isinstance(w, (str, int, float))])
+    cliche_openers_raw = ai_tells.get("cliche_openers", [])
+    cliche_openers = ", ".join([str(c) for c in cliche_openers_raw[:15] if isinstance(c, (str, int, float))])
 
-    candidate_name = base_resume.get("name", "Candidate")
-    summary = base_resume.get("summary", "")
-    skills = ", ".join(base_resume.get("skills", [])[:25])
-    experience_snippet = json.dumps(base_resume.get("experience", []), indent=2, ensure_ascii=False)[:3500]
+    base_resume = base_resume or {}
+    candidate_name = str(base_resume.get("name") or "Candidate")
+
+    summary_raw = base_resume.get("summary", "")
+    if isinstance(summary_raw, list):
+        summary = " ".join([str(s) for s in summary_raw if s])
+    elif isinstance(summary_raw, dict):
+        summary = " ".join([f"{k}: {v}" for k, v in summary_raw.items() if v])
+    else:
+        summary = str(summary_raw or "")
+
+    skills = _format_skills_list(base_resume.get("skills", []))
+    experience_raw = base_resume.get("experience", [])
+    if isinstance(experience_raw, dict):
+        experience_raw = [experience_raw]
+    experience_snippet = json.dumps(experience_raw, indent=2, ensure_ascii=False)[:3500]
 
     system_prompt = f"""You are Dani's Elite Senior Engineer Application Q&A Copilot.
 You have been provided with an array of {len(questions)} application screening questions.
