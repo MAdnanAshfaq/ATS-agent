@@ -54,6 +54,24 @@ def is_key_invalid_error(e: Exception) -> bool:
     return "API_KEY_INVALID" in err_str or "API KEY NOT VALID" in err_str or "CONSUMER_INVALID" in err_str
 
 
+def is_auth_invalid_error(e: Exception) -> bool:
+    """Return True ONLY if error indicates a permanently revoked/invalid key or real 403 Forbidden."""
+    if is_quota_error(e):
+        return False
+    err_str = str(e).upper()
+    if is_key_invalid_error(e):
+        return True
+    code = getattr(e, "code", None) or getattr(e, "status_code", None)
+    if code == 403:
+        return True
+    # Ensure '403' is not part of a quota backoff number like 'retryDelay: 40330s'
+    if re.search(r'\b403\b', err_str) and "RETRYDELAY" not in err_str and "RESOURCE_EXHAUSTED" not in err_str:
+        return True
+    if "PERMISSION_DENIED" in err_str and "RESOURCE_EXHAUSTED" not in err_str:
+        return True
+    return False
+
+
 def extract_retry_delay(err: Exception) -> float:
     """Extract Google's requested backoff delay in seconds."""
     msg = str(err)
@@ -94,12 +112,11 @@ def record_key_failure(key: str, error: Exception):
     if not key or not isinstance(key, str):
         return
     clean = key.strip()
-    err_str = str(error).upper()
     now = time.time()
     with _KEY_LOCK:
-        if is_key_invalid_error(error) or "403" in err_str or "PERMISSION_DENIED" in err_str:
+        if is_auth_invalid_error(error):
             mark_key_dead(clean, reason="Invalid or Permission Denied")
-        elif is_quota_error(error) or "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+        elif is_quota_error(error) or "429" in str(error) or "RESOURCE_EXHAUSTED" in str(error).upper():
             delay = extract_retry_delay(error)
             cool_duration = max(delay, 60.0)
             _KEY_COOLDOWNS[clean] = now + min(cool_duration, 43200.0)
@@ -121,10 +138,9 @@ _MODEL_COOLDOWNS = {}
 _MODEL_LOCK = threading.Lock()
 
 DEFAULT_MODELS_CASCADE = [
-    "gemini-3.5-flash",
-    "gemini-3.5-flash-lite",
-    "gemini-3.8-flash",
-    "gemini-2.5-flash",
+    "gemini-3.5-flash-lite",  # Ultra-fast (~1.2s), high throughput, primary active model
+    "gemini-2.5-flash",       # Standard model (fallback when quota resets)
+    "gemini-3.7-flash",       # Advanced reasoning fallback
 ]
 
 
@@ -403,7 +419,7 @@ def execute_with_failover(fn: Callable[[genai.Client], Any], max_rotations: int 
             record_key_failure(current_k, e)
 
             # If the current active key is revoked or permission denied, purge it permanently and rotate
-            if is_key_invalid_error(e) or "403" in err_str or "PERMISSION_DENIED" in err_str:
+            if is_auth_invalid_error(e):
                 mark_key_dead(current_k, reason="Revoked or Permission Denied")
                 remaining = get_all_gemini_keys()
                 if remaining:

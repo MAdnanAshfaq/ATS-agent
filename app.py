@@ -3382,6 +3382,12 @@ def analyze_job():
             asyncio.set_event_loop(loop)
 
             sanitized_url = sanitize_jd_url(url.rstrip("/"))
+            # Check GLOBAL_ANALYSIS_CACHE first for instantaneous 0ms response
+            cached_full = GLOBAL_ANALYSIS_CACHE.get(sanitized_url) or GLOBAL_ANALYSIS_CACHE.get(url)
+            if cached_full and cached_full.get("matrix"):
+                print(f"[Analyze] ⚡ Instant cache hit from memory for {sanitized_url} — returning in 0ms!")
+                return jsonify(cached_full["matrix"])
+
             print(f"[Analyze] Analyzing JD from {sanitized_url}...")
 
             is_cloud_render = (os.environ.get("RENDER") == "true") or (sys.platform != "win32") or (os.environ.get("FLASK_ENV") == "production")
@@ -3409,14 +3415,14 @@ def analyze_job():
                     from simplify_reader import read_simplify_score
                     simplify_coro = asyncio.wait_for(
                         read_simplify_score(url, custom_company, custom_role),
-                        timeout=8.0
+                        timeout=3.0
                     )
                     # Parallel execution: both scrape and Simplify run concurrently, maximizing effectiveness and eliminating sequential lag
                     results = await asyncio.gather(scrape_coro, simplify_coro, return_exceptions=True)
                     return results[0], results[1]
                 else:
                     if is_aggregator_url:
-                        print(f"[Analyze] ⚡ Aggregator URL detected ({url.split('//')[-1].split('/')[0]}) — skipping Simplify extension browser to avoid 8s timeout, using Gemini Matcher directly.")
+                        print(f"[Analyze] ⚡ Aggregator URL detected ({url.split('//')[-1].split('/')[0]}) — skipping Simplify extension browser to avoid timeout, using Gemini Matcher directly.")
                     jd_res = await scrape_coro
                     return jd_res, None
 
@@ -3455,7 +3461,7 @@ def analyze_job():
                     matching_keywords = s_data.get("matching_keywords", [])
                     print(f"[Analyze] Simplify extension score: {score}% ({len(missing_keywords)} missing, {len(matching_keywords)} matching)")
             elif isinstance(simplify_result, asyncio.TimeoutError):
-                print("[Analyze] Simplify reader reached 8s timeout — using Gemini LLM Matcher")
+                print("[Analyze] Simplify reader reached timeout — using Gemini LLM Matcher directly")
             elif isinstance(simplify_result, Exception):
                 print(f"[Analyze] Simplify read note: {simplify_result}")
 

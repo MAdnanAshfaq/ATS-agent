@@ -160,10 +160,9 @@ def _create_temp_profile(profile_dir: Optional[str] = None) -> str:
     dst_default.mkdir(parents=True, exist_ok=True)
 
     if profile_dir and Path(profile_dir).exists():
-        src = Path(profile_dir)
-        cookies_dst = dst_default / "Network" / "Cookies"
-        # If cloned recently (< 30 mins) and cookies exist, reuse immediately to avoid disk lag
-        if cookies_dst.exists() and (time.time() - cookies_dst.stat().st_mtime) < 1800:
+        ext_settings_dst = dst_default / "Local Extension Settings" / SIMPLIFY_EXT_ID
+        # If extension state was already cloned recently (< 2 hours), reuse immediately to eliminate disk copying lag
+        if ext_settings_dst.exists() and (time.time() - ext_settings_dst.stat().st_mtime) < 7200:
             return str(dst_root)
 
         # 1. Selective Simplify Extension Settings
