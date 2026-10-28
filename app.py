@@ -2765,7 +2765,25 @@ def api_editor_save():
                 elif matches:
                     target_json = matches[0]
                 else:
-                    target_json = user_resume_path
+                    folder_name = _safe_slugify(clean_fp.replace('/', '_')) or "tailored_resume"
+                    target_json = user_output_dir / folder_name / "tailored_resume.json"
+
+        # Guard: never wipe existing experience/education on master resume with an empty skeleton
+        if is_master and user_resume_path and user_resume_path.exists():
+            try:
+                with open(user_resume_path, "r", encoding="utf-8") as rf:
+                    existing_master = json.load(rf)
+                if isinstance(existing_master, dict):
+                    if existing_master.get("experience") and not resume_obj.get("experience"):
+                        resume_obj["experience"] = existing_master["experience"]
+                    if existing_master.get("education") and not resume_obj.get("education"):
+                        resume_obj["education"] = existing_master["education"]
+                    if existing_master.get("contact") and not resume_obj.get("contact"):
+                        resume_obj["contact"] = existing_master["contact"]
+                    if existing_master.get("name") and (not resume_obj.get("name") or resume_obj.get("name") == "Test User"):
+                        resume_obj["name"] = existing_master["name"]
+            except Exception as guard_err:
+                logger.warning(f"[Editor Save] Master guard note: {guard_err}")
 
         target_json.parent.mkdir(parents=True, exist_ok=True)
         with open(target_json, "w", encoding="utf-8") as f:
@@ -4973,6 +4991,34 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
         from resume_builder import build_resume_docx
 
         base_resume = load_base_resume(str(_resume_path))
+        if not base_resume.get("experience") or not base_resume.get("education"):
+            # Self-heal: recover full resume from DB or backup if disk JSON was corrupted
+            if db_layer.is_db_available() and user_username:
+                try:
+                    db_r = db_layer.db_get_resume(user_username)
+                    if db_r and db_r.get("experience"):
+                        base_resume = db_r
+                        with open(_resume_path, "w", encoding="utf-8") as _rf:
+                            json.dump(base_resume, _rf, indent=2, ensure_ascii=False)
+                        logging.info(f"[Pipeline] Self-healed base resume from DB for {user_username}")
+                except Exception as db_heal_err:
+                    logging.warning(f"[Pipeline] DB self-heal note: {db_heal_err}")
+
+            if not base_resume.get("experience"):
+                user_data_dir = _resume_path.parent
+                backup_json = user_data_dir / "output" / "logs" / "tailored_resume.json"
+                if backup_json.exists():
+                    try:
+                        with open(backup_json, "r", encoding="utf-8") as bjf:
+                            recovered = json.load(bjf)
+                        if recovered.get("experience"):
+                            base_resume = recovered
+                            with open(_resume_path, "w", encoding="utf-8") as _rf:
+                                json.dump(base_resume, _rf, indent=2, ensure_ascii=False)
+                            logging.info(f"[Pipeline] Self-healed base resume from output logs for {user_username}")
+                    except Exception as b_heal_err:
+                        logging.warning(f"[Pipeline] Backup log self-heal note: {b_heal_err}")
+
         send_log(1, "Base Resume", f"Loaded master resume for {base_resume.get('name')}", status="success")
 
 
