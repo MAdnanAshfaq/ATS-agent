@@ -6643,6 +6643,20 @@ function updateHollaBuddyJobContext() {
     activeRo = window.lastResult.role;
   }
 
+  // Check if a tailored / drafted resume is active
+  let hasDraftedResume = false;
+  if (window.lastResult && window.lastResult.tailored_resume) {
+    hasDraftedResume = true;
+  } else {
+    try {
+      const stored = sessionStorage.getItem('ats_active_result');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && parsed.tailored_resume) hasDraftedResume = true;
+      }
+    } catch (_) {}
+  }
+
   if (activeCo && activeRo) {
     hollabuddyActiveJob = {
       company: activeCo,
@@ -6654,7 +6668,11 @@ function updateHollaBuddyJobContext() {
       badge.innerHTML = `<i class="fa-solid fa-crosshairs text-cyan"></i> Active Target: <strong>${escapeHtml(activeRo)}</strong> @ ${escapeHtml(activeCo)}`;
     }
     if (sub) {
-      sub.innerHTML = `<i class="fa-solid fa-circle-check text-emerald"></i> Resume & ${escapeHtml(activeCo)} Context Connected`;
+      if (hasDraftedResume) {
+        sub.innerHTML = `<i class="fa-solid fa-circle-check text-emerald"></i> Master + New Drafted Resume & ${escapeHtml(activeCo)} Connected`;
+      } else {
+        sub.innerHTML = `<i class="fa-solid fa-circle-check text-emerald"></i> Master Resume & ${escapeHtml(activeCo)} Context Connected`;
+      }
     }
   } else {
     hollabuddyActiveJob = null;
@@ -6662,7 +6680,11 @@ function updateHollaBuddyJobContext() {
       badge.innerHTML = `<i class="fa-solid fa-briefcase text-cyan"></i> Standalone Career Copilot (Available Anytime)`;
     }
     if (sub) {
-      sub.innerHTML = `<i class="fa-solid fa-bolt text-emerald"></i> Master Resume Connected · Instant Answers`;
+      if (hasDraftedResume) {
+        sub.innerHTML = `<i class="fa-solid fa-bolt text-emerald"></i> Master & Latest Drafted Resume Connected · Instant Answers`;
+      } else {
+        sub.innerHTML = `<i class="fa-solid fa-bolt text-emerald"></i> Master Resume Connected · Instant Answers`;
+      }
     }
   }
 }
@@ -6788,6 +6810,22 @@ async function sendHollaBuddyMessage() {
   scrollHollaBuddyToBottom();
 
   try {
+    // Retrieve drafted / tailored resume if available from window.lastResult or sessionStorage
+    let draftedResume = null;
+    if (window.lastResult && window.lastResult.tailored_resume) {
+      draftedResume = window.lastResult.tailored_resume;
+    } else {
+      try {
+        const stored = sessionStorage.getItem('ats_active_result');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && parsed.tailored_resume) {
+            draftedResume = parsed.tailored_resume;
+          }
+        }
+      } catch (_) {}
+    }
+
     const payload = {
       message: message,
       history: hollabuddyChatHistory,
@@ -6795,6 +6833,7 @@ async function sendHollaBuddyMessage() {
       role: hollabuddyActiveJob ? hollabuddyActiveJob.role : "",
       url: hollabuddyActiveJob ? hollabuddyActiveJob.url : "",
       jd_text: hollabuddyActiveJob ? hollabuddyActiveJob.jd_text : "",
+      drafted_resume: draftedResume,
     };
 
     const res = await fetch("/api/hollabuddy/chat", {

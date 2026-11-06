@@ -3222,7 +3222,8 @@ def download_launcher():
 def hollabuddy_chat():
     """
     HollaBuddy AI Career Copilot Chat Endpoint.
-    Instantly contextualized with candidate's master resume and optional active job context.
+    Instantly contextualized with candidate's master resume, optional active job context,
+    and the new drafted/tailored resume (when available).
     Does NOT require running the job analyzer first.
     """
     data = request.json or {}
@@ -3232,6 +3233,7 @@ def hollabuddy_chat():
     role = data.get("role", "").strip()
     url = data.get("url", "").strip()
     jd_text = data.get("jd_text", "").strip()
+    drafted_resume = data.get("drafted_resume") or data.get("tailored_resume")
 
     if not message:
         return jsonify({"error": "Message cannot be empty."}), 400
@@ -3239,6 +3241,42 @@ def hollabuddy_chat():
     user_resume_path = get_user_resume_path()
     from agent import load_base_resume
     base_resume = load_base_resume(str(user_resume_path))
+
+    # Fallback: If drafted_resume not passed from client, look up latest from history or local run
+    if not drafted_resume and current_user.is_authenticated:
+        try:
+            if db_layer.is_db_available():
+                all_hist = db_layer.db_get_history(current_user.username)
+                if all_hist:
+                    matched_item = None
+                    if company:
+                        for h in all_hist:
+                            if h.get("company", "").strip().lower() == company.lower():
+                                matched_item = h
+                                break
+                    if not matched_item:
+                        matched_item = all_hist[0]
+                    t_cand = matched_item.get("tailored_resume") or matched_item.get("resume_json") or matched_item.get("output_data")
+                    if isinstance(t_cand, str):
+                        try:
+                            t_cand = json.loads(t_cand)
+                        except Exception:
+                            pass
+                    if isinstance(t_cand, dict) and t_cand.get("experience"):
+                        drafted_resume = t_cand
+        except Exception as e:
+            logging.debug(f"[HollaBuddy] Could not load fallback drafted resume from DB: {e}")
+
+    if not drafted_resume and hasattr(current_user, 'output_dir'):
+        try:
+            user_out = Path(current_user.output_dir)
+            if user_out.exists():
+                json_files = sorted(user_out.rglob("tailored_resume.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+                if json_files:
+                    with open(json_files[0], "r", encoding="utf-8") as f:
+                        drafted_resume = json.load(f)
+        except Exception as e:
+            logging.debug(f"[HollaBuddy] Could not load fallback drafted resume from output_dir: {e}")
 
     job_context = None
     if company or role or jd_text or url:
@@ -3260,6 +3298,7 @@ def hollabuddy_chat():
         message=message,
         history=history,
         base_resume=base_resume,
+        drafted_resume=drafted_resume,
         job_context=job_context,
         user_settings=user_settings,
     )

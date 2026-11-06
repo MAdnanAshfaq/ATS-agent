@@ -20,17 +20,23 @@ from google.genai import types
 
 HOLLABUDDY_SYSTEM_PROMPT = """You are **HollaBuddy**, an ultra-smart, encouraging, and razor-sharp personal career copilot and interview wingman.
 
-You have direct, permanent access to the candidate's authentic master resume profile below. Your mission is to help the candidate land interviews, answer tough job application questions, craft compelling pitches, and prepare for any career conversation.
+You have direct access to BOTH the candidate's authentic master resume profile AND their newly drafted/tailored resume (when customized for a specific target role). Your mission is to help the candidate land interviews, answer tough job application questions, craft compelling pitches, review drafted bullets, explain changes, and prepare for any career conversation.
 
-### CANDIDATE MASTER TRUTH:
+### CANDIDATE MASTER TRUTH (Ground Truth Profile):
 {candidate_truth}
+
+### NEW DRAFTED / TAILORED RESUME (Job-Specific Draft):
+{drafted_resume}
 
 ### CURRENT JOB / COMPANY CONTEXT (Optional, if mentioned or active):
 {job_context}
 
 ### YOUR OPERATIONAL PRINCIPLES:
-1. **AUTHENTIC GROUNDING (Rule 0)**:
+1. **AUTHENTIC GROUNDING & DUAL-RESUME AWARENESS (Rule 0)**:
    - Ground every claim, year of experience, tool, and metric in the candidate's actual master resume above.
+   - You have full visibility into BOTH the **Master Resume** (base ground truth) and the **New Drafted / Tailored Resume** (generated specifically for the active job posting).
+   - When asked what changed, what was tailored, or how their bullets were adapted for the role: compare the drafted resume against the master resume, pointing out specific keyword inclusions, metric front-loading, and role-tailored bullet points.
+   - When reviewing or refining resume bullets, work directly from the drafted resume bullets, enhancing them while keeping them 100% authentic to the candidate's real master background.
    - NEVER hallucinate companies, degrees, or years that do not exist in the candidate's profile.
    - If asked about a skill or technology not in the candidate's background, be candid: explain what adjacent experience they have or how they can bridge the gap honestly.
 
@@ -67,11 +73,13 @@ def chat_with_hollabuddy(
     message: str,
     history: list[dict[str, str]] | None = None,
     base_resume: dict[str, Any] | None = None,
+    drafted_resume: dict[str, Any] | None = None,
     job_context: str | dict | None = None,
     user_settings: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
-    Generate an instant response from HollaBuddy using the candidate's master resume.
+    Generate an instant response from HollaBuddy using the candidate's master resume
+    and optional new drafted/tailored resume.
 
     Uses the full multi-key failover pool from gemini_client.py:
       - GEMINI_API_KEY (Primary)
@@ -81,6 +89,7 @@ def chat_with_hollabuddy(
         message: User's chat message or question prompt
         history: List of prior turns [{"role": "user"|"assistant", "content": "..."}]
         base_resume: Candidate's master resume JSON (ground truth)
+        drafted_resume: Candidate's newly tailored/drafted resume JSON (for active job)
         job_context: Optional active job posting string or dict
         user_settings: Optional user settings for custom API keys
 
@@ -113,11 +122,17 @@ def chat_with_hollabuddy(
             "error_code": "no_api_key",
         }
 
-    # Format Candidate Truth
+    # Format Candidate Truth (Master Resume)
     if base_resume:
         cand_str = json.dumps(base_resume, indent=2, ensure_ascii=False)
     else:
         cand_str = "No master resume uploaded yet. The candidate is setting up their profile."
+
+    # Format Drafted / Tailored Resume
+    if drafted_resume:
+        draft_str = json.dumps(drafted_resume, indent=2, ensure_ascii=False)
+    else:
+        draft_str = "No job-specific drafted resume created yet. The candidate is currently referencing their master resume."
 
     # Format Job Context
     if isinstance(job_context, dict):
@@ -134,7 +149,8 @@ def chat_with_hollabuddy(
 
     system_content = HOLLABUDDY_SYSTEM_PROMPT.format(
         candidate_truth=cand_str,
-        job_context=job_str
+        drafted_resume=draft_str,
+        job_context=job_str,
     )
 
     # Build conversation contents
@@ -261,7 +277,13 @@ def chat_with_hollabuddy(
 def _generate_quick_followups(query: str, reply: str) -> list[str]:
     """Provide intelligent 1-click follow-up prompt chips based on query."""
     q_lower = query.lower()
-    if any(w in q_lower for w in ("outage", "problem", "conflict", "tell me about", "describe a time")):
+    if any(w in q_lower for w in ("draft", "new resume", "tailored", "change", "diff", "bullet")):
+        return [
+            "What keywords were added to the draft?",
+            "Make the top bullet punchier and shorter",
+            "How does this draft compare to the job description?"
+        ]
+    elif any(w in q_lower for w in ("outage", "problem", "conflict", "tell me about", "describe a time")):
         return [
             "Make it shorter (under 100 words)",
             "Emphasize the measurable metrics",
@@ -281,7 +303,7 @@ def _generate_quick_followups(query: str, reply: str) -> list[str]:
         ]
     else:
         return [
+            "What changed in my drafted resume?",
             "Help me answer an application question",
-            "What are my strongest skills?",
             "Draft a 30s elevator pitch"
         ]
