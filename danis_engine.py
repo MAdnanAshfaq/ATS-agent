@@ -322,55 +322,44 @@ Draft the optimized resume now as valid JSON."""
 
     last_err = None
     keys = get_all_gemini_keys()
-    max_attempts = max(4, len(keys) * 2)
+    max_attempts = min(len(keys), 3) if keys else 1
 
     for attempt in range(1, max_attempts + 1):
         models = get_candidate_models()
         for model_name in models:
-            for m_attempt in range(2):
-                try:
-                    current_client = get_gemini_client()
-                    response = current_client.models.generate_content(
-                        model=model_name,
-                        contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
-                        config=get_standard_genai_config(model_name=model_name, max_output_tokens=4096, temperature=0.3),
-                    )
-                    raw_text = extract_clean_text(response)
-                    if not raw_text:
-                        raise ValueError(f"Model {model_name} returned empty text or only thought tokens")
-                    record_model_success(model_name)
-                    parsed = json.loads(_clean_json(raw_text))
-                    return deterministic_voice_cleanup(parsed)
-                except Exception as e:
-                    last_err = e
-                    err_str = str(e).upper()
-                    print(f"[Dani's Engine - Writer] {model_name} note: {e}")
+            try:
+                current_client = get_gemini_client()
+                response = current_client.models.generate_content(
+                    model=model_name,
+                    contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
+                    config=get_standard_genai_config(model_name=model_name, max_output_tokens=4096, temperature=0.3),
+                )
+                raw_text = extract_clean_text(response)
+                if not raw_text:
+                    raise ValueError(f"Model {model_name} returned empty text or only thought tokens")
+                record_model_success(model_name)
+                parsed = json.loads(_clean_json(raw_text))
+                return deterministic_voice_cleanup(parsed)
+            except Exception as e:
+                last_err = e
+                print(f"[Dani's Engine - Writer] {model_name} note: {e}")
 
-                    if is_key_invalid_error(e):
-                        mark_key_dead(get_active_key(), reason="API key invalid")
-                        if get_all_gemini_keys():
-                            rotate_key(reason="Purged invalid key")
-                        break
-
-                    if ("503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str) and m_attempt == 0:
-                        time.sleep(1.5)
-                        continue
-
-                    record_model_failure(model_name, e)
-                    if "404" in err_str or "NOT_FOUND" in err_str:
-                        break
-
-                    time.sleep(0.5)
+                if is_key_invalid_error(e):
+                    mark_key_dead(get_active_key(), reason="API key invalid")
+                    if get_all_gemini_keys():
+                        rotate_key(reason="Purged invalid key")
                     break
+
+                record_model_failure(model_name, e)
+                continue
 
         # If all models on the current active key failed, rotate to the backup key
         keys = get_all_gemini_keys()
-        if len(keys) > 1:
+        if len(keys) > 1 and attempt < max_attempts:
             rotate_key(reason=f"Attempt {attempt} models exhausted — rotating to backup key")
-            time.sleep(1.0)
+            time.sleep(0.3)
         else:
-            delay = extract_retry_delay(last_err) if last_err else 5.0
-            time.sleep(min(delay, 8.0))
+            break
 
     raise RuntimeError(f"Writer failed across all models: {last_err}")
 

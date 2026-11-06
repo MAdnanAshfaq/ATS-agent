@@ -739,11 +739,12 @@ def rewrite_resume(
                     print(f"[Rewriter] 503 / Quota on {model} -> Rotated key to backup key!")
                     time.sleep(0.5)
                 else:
-                    delay = extract_retry_delay(e) if is_quota_error(e) else 5.0
-                    print(f"[Rewriter] Single key hit limit/503 — waiting {delay:.0f}s before retry...")
-                    time.sleep(delay)
+                    if is_quota_error(e):
+                        print("[Rewriter] Quota exhausted on available keys — stopping retries and proceeding to manual injection fallback.")
+                        break
+                    time.sleep(1.0)
             elif attempt < max_retries:
-                time.sleep(1)
+                time.sleep(0.5)
             continue
 
     # All retries exhausted — do a final manual injection pass

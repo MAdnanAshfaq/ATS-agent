@@ -108,9 +108,12 @@ STRICT BANNED PHRASES:
 
 Return ONLY the clean cover letter text (including date and recipient header). Do not wrap in markdown fences."""
 
+    from gemini_client import get_candidate_models, get_standard_genai_config, extract_clean_text
+
     def _call_gemini(client):
-        for model in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"]:
+        for model in get_candidate_models():
             try:
+                cfg = get_standard_genai_config(model_name=model, max_output_tokens=1500, temperature=0.4)
                 response = client.models.generate_content(
                     model=model,
                     contents=[
@@ -119,15 +122,12 @@ Return ONLY the clean cover letter text (including date and recipient header). D
                             parts=[types.Part(text=prompt)],
                         )
                     ],
-                    config=types.GenerateContentConfig(
-                        temperature=0.4,
-                        max_output_tokens=1500,
-                        thinking_config=types.ThinkingConfig(thinking_budget=0),
-                    ),
+                    config=cfg,
                 )
-                if response.text and len(response.text.strip()) > 100:
-                    print(f"[Cover Letter] Generated successfully with {model} ({len(response.text.strip())} chars)")
-                    return response.text.strip()
+                txt = extract_clean_text(response)
+                if txt and len(txt.strip()) > 100:
+                    print(f"[Cover Letter] Generated successfully with {model} ({len(txt.strip())} chars)")
+                    return txt.strip()
             except Exception as e:
                 print(f"[Cover Letter] Model {model} note: {e}")
                 if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):

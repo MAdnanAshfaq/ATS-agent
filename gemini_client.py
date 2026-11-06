@@ -139,8 +139,8 @@ _MODEL_LOCK = threading.Lock()
 
 DEFAULT_MODELS_CASCADE = [
     "gemini-3.5-flash-lite",  # Ultra-fast (~1.2s), high throughput, primary active model
-    "gemini-2.5-flash",       # Standard model (fallback when quota resets)
-    "gemini-3.7-flash",       # Advanced reasoning fallback
+    "gemini-3.5-flash",       # Fast, high-capacity fallback (~2.5s)
+    "gemini-2.5-flash",       # Standard model fallback
 ]
 
 
@@ -366,12 +366,21 @@ def rotate_key(reason: str = "quota") -> str:
     return new_key
 
 
-def get_gemini_client(force_rotate: bool = False) -> genai.Client:
-    """Get a GenAI client initialized with the current active API key."""
+def get_gemini_client(force_rotate: bool = False, timeout_seconds: float = 25.0) -> genai.Client:
+    """Get a GenAI client initialized with active API key and strict HTTP socket timeout."""
     if force_rotate:
         rotate_key(reason="manual request")
     key = get_active_key()
-    return genai.Client(api_key=key)
+    try:
+        import httpx
+        http_opts = types.HttpOptions(
+            client_args={
+                "timeout": httpx.Timeout(timeout_seconds, connect=7.0)
+            }
+        )
+        return genai.Client(api_key=key, http_options=http_opts)
+    except Exception:
+        return genai.Client(api_key=key)
 
 
 def is_quota_error(exc: Exception) -> bool:
@@ -403,7 +412,8 @@ def execute_with_failover(fn: Callable[[genai.Client], Any], max_rotations: int 
         raise RuntimeError("GEMINI_API_KEY is not configured in .env.")
 
     if max_rotations is None:
-        max_rotations = max(3, len(keys) * 2)
+        # Rotate through each available key once (at most 3 keys to avoid long browser delays)
+        max_rotations = min(len(keys), 3)
 
     last_exception = None
     for attempt in range(max_rotations):
@@ -422,7 +432,7 @@ def execute_with_failover(fn: Callable[[genai.Client], Any], max_rotations: int 
             if is_auth_invalid_error(e):
                 mark_key_dead(current_k, reason="Revoked or Permission Denied")
                 remaining = get_all_gemini_keys()
-                if remaining:
+                if remaining and attempt < max_rotations - 1:
                     rotate_key(reason="Invalid key purged")
                     continue
                 raise e
@@ -430,14 +440,13 @@ def execute_with_failover(fn: Callable[[genai.Client], Any], max_rotations: int 
             # Handle quota exhausted, 503 high demand spike, or model unavailable
             if is_quota_error(e) or "503" in str(e) or "UNAVAILABLE" in err_str or "404" in err_str or "NOT_FOUND" in err_str:
                 active_keys = get_all_gemini_keys()
-                if len(active_keys) > 1:
+                if len(active_keys) > 1 and attempt < max_rotations - 1:
                     rotate_key(reason=f"Failover ({type(e).__name__} / Rate-Limit/503/404)")
-                    time.sleep(0.5)
+                    time.sleep(0.2)
                     continue
                 else:
-                    print(f"[Gemini Pool] [WARN] Single API key busy/quota: {e}. Waiting 4s...")
-                    time.sleep(4)
-                    continue
+                    # Single key with daily quota limit or final key in pool — do not loop/sleep repeatedly
+                    raise e
             else:
                 raise e
 

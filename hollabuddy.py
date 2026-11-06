@@ -149,7 +149,10 @@ def chat_with_hollabuddy(
     user_text = message.strip()
     chat_contents.append(types.Content(role="user", parts=[types.Part(text=user_text)]))
 
-    from gemini_client import get_candidate_models, extract_clean_text, get_standard_genai_config, record_model_failure, record_model_success
+    from gemini_client import (
+        get_candidate_models, extract_clean_text, get_standard_genai_config,
+        record_model_failure, record_model_success, clear_thread_gemini_keys
+    )
     last_err = None
     all_quota_exhausted = False
     used_model = None
@@ -158,29 +161,24 @@ def chat_with_hollabuddy(
         nonlocal used_model, last_err
         call_err = None
         for m in get_candidate_models():
-            for m_attempt in range(2):
-                try:
-                    cfg = get_standard_genai_config(model_name=m, max_output_tokens=4096, temperature=0.55, top_p=0.92)
-                    cfg.system_instruction = system_content
-                    cfg.automatic_function_calling = types.AutomaticFunctionCallingConfig(disable=True)
-                    resp = client.models.generate_content(
-                        model=m,
-                        contents=chat_contents,
-                        config=cfg,
-                    )
-                    txt = extract_clean_text(resp)
-                    if txt:
-                        record_model_success(m)
-                        used_model = m
-                        return resp
-                except Exception as me:
-                    me_str = str(me).upper()
-                    if ("503" in me_str or "UNAVAILABLE" in me_str) and m_attempt == 0:
-                        time.sleep(1.0)
-                        continue
-                    record_model_failure(m, me)
-                    call_err = me
-                    break
+            try:
+                cfg = get_standard_genai_config(model_name=m, max_output_tokens=4096, temperature=0.55, top_p=0.92)
+                cfg.system_instruction = system_content
+                cfg.automatic_function_calling = types.AutomaticFunctionCallingConfig(disable=True)
+                resp = client.models.generate_content(
+                    model=m,
+                    contents=chat_contents,
+                    config=cfg,
+                )
+                txt = extract_clean_text(resp)
+                if txt:
+                    record_model_success(m)
+                    used_model = m
+                    return resp
+            except Exception as me:
+                record_model_failure(m, me)
+                call_err = me
+                continue
         if call_err:
             raise call_err
         raise RuntimeError("All candidate models failed")
@@ -224,6 +222,8 @@ def chat_with_hollabuddy(
         print(f"[HollaBuddy] Chat failed after all key rotations: {e}")
         if is_quota_error(e):
             all_quota_exhausted = True
+    finally:
+        clear_thread_gemini_keys()
 
 
     # --- Compose a clear, actionable error response ---

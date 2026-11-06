@@ -6803,7 +6803,13 @@ async function sendHollaBuddyMessage() {
       body: JSON.stringify(payload),
     });
 
-    const data = await res.json();
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`Server returned HTTP ${res.status}: ${text ? text.slice(0, 160) : "Empty response / connection timed out"}`);
+    }
     if (!res.ok || !data.success) {
       throw new Error(data.error || "Failed to get reply from HollaBuddy");
     }
