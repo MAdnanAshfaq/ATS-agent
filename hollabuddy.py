@@ -18,9 +18,9 @@ from google import genai
 from google.genai import types
 
 
-HOLLABUDDY_SYSTEM_PROMPT = """You are **HollaBuddy**, an ultra-smart, encouraging, and razor-sharp personal career copilot and interview wingman.
+HOLLABUDDY_SYSTEM_PROMPT = """You are **HollaBuddy**, an ultra-smart, encouraging, and razor-sharp personal career copilot, interview wingman, and **AUTONOMOUS PIPELINE CONTROLLER**.
 
-You have direct access to BOTH the candidate's authentic master resume profile AND their newly drafted/tailored resume (when customized for a specific target role). Your mission is to help the candidate land interviews, answer tough job application questions, craft compelling pitches, review drafted bullets, explain changes, and prepare for any career conversation.
+You have direct access to the candidate's authentic master resume profile, their newly drafted/tailored resume (when customized for a specific target role), and the live ATS pipeline state. Your mission is to help the candidate land interviews, answer tough job application questions, craft compelling pitches, review drafted bullets, explain changes, and **actively control the ATS tailoring pipeline**.
 
 ### CANDIDATE MASTER TRUTH (Ground Truth Profile):
 {candidate_truth}
@@ -31,6 +31,9 @@ You have direct access to BOTH the candidate's authentic master resume profile A
 ### CURRENT JOB / COMPANY CONTEXT (Optional, if mentioned or active):
 {job_context}
 
+### LIVE PIPELINE STATUS & KEYWORD MATCH CONTEXT:
+{pipeline_status}
+
 ### YOUR OPERATIONAL PRINCIPLES:
 1. **AUTHENTIC GROUNDING & DUAL-RESUME AWARENESS (Rule 0)**:
    - Ground every claim, year of experience, tool, and metric in the candidate's actual master resume above.
@@ -40,7 +43,19 @@ You have direct access to BOTH the candidate's authentic master resume profile A
    - NEVER hallucinate companies, degrees, or years that do not exist in the candidate's profile.
    - If asked about a skill or technology not in the candidate's background, be candid: explain what adjacent experience they have or how they can bridge the gap honestly.
 
-2. **DANI'S HUMAN-VOICE & ANTI-AI MANDATE (Rules 0–16)**:
+2. **AUTONOMOUS PIPELINE CONTROLLER MANDATE**:
+   - You are the active controller for the whole ATS pipeline after URL job analysis! When the candidate tells you to do something, or when your guidance naturally recommends executing an action, you can trigger system controller actions using clean action tags at the end of your response:
+     * `[[ACTION:tailor_resume]]` or `[[ACTION:tailor_resume|keywords=kw1,kw2]]`: Starts the resume tailoring pipeline to embed missing keywords and rebuild Word DOCX & PDF.
+     * `[[ACTION:refine_resume|instruction=...]]`: Surgically modifies bullets/sections in the tailored resume and rebuilds documents in ~2s.
+     * `[[ACTION:generate_cover_letter]]`: Generates a job-tailored cover letter for this role.
+     * `[[ACTION:open_editor]]`: Opens the Canva-grade visual PDF studio editor with full job context.
+     * `[[ACTION:open_preview]]`: Opens the live in-browser document preview modal.
+     * `[[ACTION:answer_questions|questions=...]]`: Runs the Q&A Copilot to draft authentic STAR answers.
+     * `[[ACTION:audit_ats|platform=...]]`: Runs a deep ATS compliance audit (Workday/Greenhouse/Taleo/Safe Mode).
+     * `[[ACTION:download_resume|format=pdf]]` or `[[ACTION:download_resume|format=docx]]`: Triggers instant download of the tailored resume.
+   - When the user asks you to execute an action (e.g. "Tailor my resume", "Refine my latest bullet to emphasize cost savings", "Make a cover letter", "Open the editor", "Download as PDF"), explain what you are doing in your warm, friendly voice and include the exact `[[ACTION:...]]` tag at the bottom of your message.
+
+3. **DANI'S HUMAN-VOICE & ANTI-AI MANDATE (Rules 0–16)**:
    - **STRICTLY BANNED AI BUZZWORDS**: NEVER use these statistical-average AI filler words:
      `delve`, `tapestry`, `robust`, `seamless`, `seamlessly`, `multifaceted`, `holistic`, `synergy`, `pivotal`, `testament`, `transformative`, `groundbreaking`, `cutting-edge`, `game-changer`, `beacon`, `cornerstone`, `linchpin`, `vibrant`, `dynamic`, `paramount`, `relentless`, `unwavering`, `moreover`, `furthermore`, `additionally`, `in conclusion`, `fast-paced environment`, `deep dive`.
    - **STRICTLY BANNED CLICHÉ OPENERS**: NEVER open sentences or bullets with overused AI verbs:
@@ -53,18 +68,18 @@ You have direct access to BOTH the candidate's authentic master resume profile A
    - **QUANTIFIED EVIDENCE**: Use real numbers, percentages, dollar amounts, and scale metrics from their background.
    - **STAR STRUCTURE**: For behavioral questions ("Tell me about a time..."), use concise Situation/Task -> Action -> Measurable Result format (typically 80-150 words).
 
-3. **CLEAN, READABLE FORMATTING MANDATE (CRITICAL)**:
+4. **CLEAN, READABLE FORMATTING MANDATE (CRITICAL)**:
    - When providing a **written application answer** or **drafted bullet**, deliver it cleanly using Markdown blockquotes with `>` syntax (e.g. `> At [Company], I built...`) or standard paragraphs.
    - **NEVER put written prose, cover letter paragraphs, or application answers inside monospace code blocks (` ``` `)**. Code blocks are ONLY for actual programming code (SQL, Python, Bash).
    - **NEVER format text into side-by-side text columns, fixed-width ASCII tables, or narrow vertical word splits.** Never break words or sentences into narrow columns of text.
    - If comparing items, use standard GitHub Markdown tables (`| Col 1 | Col 2 |`).
    - Always write answers in natural, flowing English paragraphs with standard line lengths so the candidate can immediately 1-click copy them into employer application forms.
 
-4. **CONVERSATIONAL PERSONALITY**:
+5. **CONVERSATIONAL PERSONALITY**:
    - As HollaBuddy in chat, you are warm, friendly, supportive, and motivating (use a conversational, upbeat buddy vibe with occasional emojis like 🚀, 💡, 🎯, ✨).
    - Keep conversational remarks brief so the actual drafted answers are immediately prominent and readable.
 
-5. **AVAILABILITY**:
+6. **AVAILABILITY**:
    - You are available anytime for any question: application prompts, salary negotiation advice, elevator pitches, resume critique, or explaining complex past projects.
 """
 
@@ -75,11 +90,13 @@ def chat_with_hollabuddy(
     base_resume: dict[str, Any] | None = None,
     drafted_resume: dict[str, Any] | None = None,
     job_context: str | dict | None = None,
+    pipeline_state: dict[str, Any] | None = None,
     user_settings: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
-    Generate an instant response from HollaBuddy using the candidate's master resume
-    and optional new drafted/tailored resume.
+    Generate an instant response from HollaBuddy using the candidate's master resume,
+    optional new drafted/tailored resume, and live pipeline status.
+    Acts as the AUTONOMOUS PIPELINE CONTROLLER after URL job analysis.
 
     Uses the full multi-key failover pool from gemini_client.py:
       - GEMINI_API_KEY (Primary)
@@ -91,10 +108,11 @@ def chat_with_hollabuddy(
         base_resume: Candidate's master resume JSON (ground truth)
         drafted_resume: Candidate's newly tailored/drafted resume JSON (for active job)
         job_context: Optional active job posting string or dict
+        pipeline_state: Optional live pipeline status and keyword match details
         user_settings: Optional user settings for custom API keys
 
     Returns:
-        {"reply": str, "suggested_followups": list[str]}
+        {"reply": str, "action": dict|None, "suggested_followups": list[str]}
         On quota exhaustion: adds "error_code": "quota_exhausted" so the UI can show a banner.
     """
     # --- Inject all user API keys into thread-local pool so gemini_client sees them ---
@@ -147,10 +165,33 @@ def chat_with_hollabuddy(
     else:
         job_str = "No active job posting loaded. The user is asking standalone or general questions."
 
+    # Format Live Pipeline Status
+    if pipeline_state and isinstance(pipeline_state, dict):
+        p_lines = []
+        p_lines.append(f"- Active Company: {pipeline_state.get('company') or 'Not specified'}")
+        p_lines.append(f"- Active Role: {pipeline_state.get('role') or 'Not specified'}")
+        p_lines.append(f"- ATS Target Platform: {pipeline_state.get('ats_platform') or 'Safe Mode'}")
+        if pipeline_state.get('score_before') is not None:
+            p_lines.append(f"- Initial ATS Match Score: {pipeline_state.get('score_before')}%")
+        if pipeline_state.get('score_after') is not None:
+            p_lines.append(f"- Tailored ATS Match Score: {pipeline_state.get('score_after')}%")
+        missing_kw = pipeline_state.get('missing_keywords') or []
+        if missing_kw:
+            p_lines.append(f"- Missing Keywords to inject ({len(missing_kw)}): {', '.join(missing_kw[:20])}")
+        matched_kw = pipeline_state.get('matched_keywords') or []
+        if matched_kw:
+            p_lines.append(f"- Matched Keywords ({len(matched_kw)}): {', '.join(matched_kw[:20])}")
+        p_lines.append(f"- Resume Tailored/Generated: {'Yes' if pipeline_state.get('has_tailored_resume') else 'No'}")
+        p_lines.append(f"- Cover Letter Generated: {'Yes' if pipeline_state.get('has_cover_letter') else 'No'}")
+        pipeline_status_str = "\n".join(p_lines)
+    else:
+        pipeline_status_str = "No active pipeline state provided. Candidate may be on master profile or fresh session."
+
     system_content = HOLLABUDDY_SYSTEM_PROMPT.format(
         candidate_truth=cand_str,
         drafted_resume=draft_str,
         job_context=job_str,
+        pipeline_status=pipeline_status_str,
     )
 
     # Build conversation contents
@@ -224,11 +265,33 @@ def chat_with_hollabuddy(
                 "Reply **\"Continue\"** and I'll pick up right where I left off!*"
             )
 
-        followups = _generate_quick_followups(user_text, reply_text)
+        # Extract and parse action controller tag if present
+        action_data = None
+        action_match = re.search(r'\[\[ACTION:([a-zA-Z0-9_]+)(?:\|([^\]]+))?\]\]', reply_text)
+        if action_match:
+            action_type = action_match.group(1).strip()
+            raw_params = (action_match.group(2) or "").strip()
+            params = {}
+            if raw_params:
+                for chunk in raw_params.split("|"):
+                    if "=" in chunk:
+                        k, v = chunk.split("=", 1)
+                        params[k.strip()] = v.strip()
+                    else:
+                        params[chunk.strip()] = True
+            action_data = {
+                "type": action_type,
+                "params": params
+            }
+            # Strip tag from the reply shown to user
+            reply_text = re.sub(r'\[\[ACTION:[^\]]+\]\]', '', reply_text).strip()
+
+        followups = _generate_quick_followups(user_text, reply_text, pipeline_state=pipeline_state)
         if was_truncated and "Continue" not in followups:
             followups = ["Continue"] + followups[:2]
         return {
             "reply": reply_text,
+            "action": action_data,
             "suggested_followups": followups,
             "model_used": used_model or "gemini",
             "keys_in_pool": len(keys),
@@ -262,6 +325,7 @@ def chat_with_hollabuddy(
             )
         return {
             "reply": quota_msg,
+            "action": None,
             "suggested_followups": ["Open Settings", "Try again in a moment"],
             "error_code": "quota_exhausted",
             "keys_in_pool": key_count,
@@ -269,19 +333,48 @@ def chat_with_hollabuddy(
 
     return {
         "reply": f"Sorry! I hit a temporary connection issue. Please try again in a moment! 🔄\n\n*(Technical detail: {last_err})*",
+        "action": None,
         "suggested_followups": ["Try again", "What can you help me with?"],
         "error_code": "transient_error",
     }
 
 
-def _generate_quick_followups(query: str, reply: str) -> list[str]:
-    """Provide intelligent 1-click follow-up prompt chips based on query."""
+def _generate_quick_followups(query: str, reply: str, pipeline_state: dict[str, Any] | None = None) -> list[str]:
+    """Provide intelligent 1-click follow-up prompt chips based on query and pipeline state."""
     q_lower = query.lower()
-    if any(w in q_lower for w in ("draft", "new resume", "tailored", "change", "diff", "bullet")):
+
+    # Prioritize pipeline controller followups when user is in active job context
+    has_analyzed = False
+    has_tailored = False
+    if pipeline_state and isinstance(pipeline_state, dict):
+        has_analyzed = bool(pipeline_state.get("company") or pipeline_state.get("role"))
+        has_tailored = bool(pipeline_state.get("has_tailored_resume"))
+
+    if any(w in q_lower for w in ("tailor", "generate", "pipeline", "run")):
         return [
-            "What keywords were added to the draft?",
-            "Make the top bullet punchier and shorter",
-            "How does this draft compare to the job description?"
+            "Open the Visual Editor",
+            "Generate a cover letter for this role",
+            "What keywords were added?",
+            "Audit ATS compatibility"
+        ]
+    elif any(w in q_lower for w in ("draft", "new resume", "change", "diff", "bullet", "refine")):
+        return [
+            "Open the Visual Editor",
+            "Refine top bullet for measurable impact",
+            "Generate a tailored cover letter",
+            "Download tailored resume (PDF)"
+        ]
+    elif any(w in q_lower for w in ("editor", "edit")):
+        return [
+            "Which missing keywords should I add in the editor?",
+            "Make my summary punchier",
+            "Audit ATS compatibility"
+        ]
+    elif any(w in q_lower for w in ("cover letter", "cover_letter")):
+        return [
+            "Tailor cover letter for a hiring manager",
+            "Download tailored resume (PDF)",
+            "Open the Visual Editor"
         ]
     elif any(w in q_lower for w in ("outage", "problem", "conflict", "tell me about", "describe a time")):
         return [
@@ -291,19 +384,27 @@ def _generate_quick_followups(query: str, reply: str) -> list[str]:
         ]
     elif any(w in q_lower for w in ("strength", "fit", "skills", "match")):
         return [
+            "Tailor my resume for this job",
             "Give me a 30-second elevator pitch",
-            "What might be my biggest interview risk?",
-            "Draft an application answer for why I want this role"
-        ]
-    elif any(w in q_lower for w in ("pitch", "introduce", "about yourself")):
-        return [
-            "Make it more punchy",
-            "Tailor it for a hiring manager vs recruiter",
-            "What questions should I ask the interviewer?"
+            "What might be my biggest interview risk?"
         ]
     else:
+        if has_analyzed and not has_tailored:
+            return [
+                "Tailor my resume for this role",
+                "What are my missing keywords?",
+                "Open the Visual Editor",
+                "Draft a 30s elevator pitch"
+            ]
+        elif has_tailored:
+            return [
+                "Open the Visual Editor",
+                "Generate a tailored cover letter",
+                "What changed in my drafted resume?",
+                "Download tailored resume (PDF)"
+            ]
         return [
-            "What changed in my drafted resume?",
             "Help me answer an application question",
+            "Open the Visual Editor",
             "Draft a 30s elevator pitch"
         ]

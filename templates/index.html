@@ -2544,6 +2544,25 @@
       <span class="hollabuddy-banner-tip">Available anytime · no analyzer required</span>
     </div>
 
+    <!-- HollaBuddy Autonomous Pipeline Controller Bar -->
+    <div class="hollabuddy-pipeline-controller-bar" id="hollabuddy-pipeline-controller-bar" style="display:flex; gap:5px; padding:6px 14px; background:rgba(56,189,248,0.06); border-bottom:1px solid rgba(56,189,248,0.18); overflow-x:auto; flex-shrink:0;">
+      <button type="button" class="hb-ctrl-btn" onclick="executeHollaBuddyControllerShortcut('tailor')" title="Start resume tailoring pipeline" style="font-size:10.5px; padding:3px 9px; border-radius:5px; background:rgba(56,189,248,0.14); border:1px solid rgba(56,189,248,0.35); color:#38bdf8; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:4px; white-space:nowrap;">
+        <i class="fa-solid fa-wand-magic-sparkles"></i> Tailor Resume
+      </button>
+      <button type="button" class="hb-ctrl-btn" onclick="executeHollaBuddyControllerShortcut('editor')" title="Open Canva-Grade Visual Studio Editor" style="font-size:10.5px; padding:3px 9px; border-radius:5px; background:rgba(168,85,247,0.14); border:1px solid rgba(168,85,247,0.35); color:#c084fc; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:4px; white-space:nowrap;">
+        <i class="fa-solid fa-pen-to-square"></i> Visual Editor
+      </button>
+      <button type="button" class="hb-ctrl-btn" onclick="executeHollaBuddyControllerShortcut('cover_letter')" title="Generate Job-Tailored Cover Letter" style="font-size:10.5px; padding:3px 9px; border-radius:5px; background:rgba(16,185,129,0.14); border:1px solid rgba(16,185,129,0.35); color:#34d399; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:4px; white-space:nowrap;">
+        <i class="fa-solid fa-file-lines"></i> Cover Letter
+      </button>
+      <button type="button" class="hb-ctrl-btn" onclick="executeHollaBuddyControllerShortcut('preview')" title="Live Document Preview" style="font-size:10.5px; padding:3px 9px; border-radius:5px; background:rgba(245,158,11,0.14); border:1px solid rgba(245,158,11,0.35); color:#fbbf24; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:4px; white-space:nowrap;">
+        <i class="fa-solid fa-eye"></i> Preview
+      </button>
+      <button type="button" class="hb-ctrl-btn" onclick="executeHollaBuddyControllerShortcut('download')" title="Download Tailored PDF" style="font-size:10.5px; padding:3px 9px; border-radius:5px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.18); color:var(--t0); font-weight:700; cursor:pointer; display:flex; align-items:center; gap:4px; white-space:nowrap;">
+        <i class="fa-solid fa-download"></i> PDF
+      </button>
+    </div>
+
     <!-- API Key Health Bar (loaded on drawer open) -->
     <div class="hollabuddy-api-health-bar hidden" id="hollabuddy-api-health-bar">
       <div class="hb-health-label"><i class="fa-solid fa-key"></i> API Keys</div>
@@ -2582,8 +2601,14 @@
           <i class="fa-solid fa-robot"></i>
         </div>
         <div class="hollabuddy-bubble">
-          <p>Hello! I'm <strong>HollaBuddy</strong>, your career copilot &amp; interview wingman.</p>
-          <p style="margin-top:6px;">Your master resume and newly drafted/tailored resumes are directly loaded in context. You can ask me to review tailored bullets, explain what changed from your master resume, draft application answers, or prep for interview questions. How can I help?</p>
+          <p>Hello! I'm <strong>HollaBuddy</strong>, your career copilot &amp; autonomous pipeline controller.</p>
+          <p style="margin-top:6px;">Your master resume, drafted resumes, and the entire tailoring pipeline are directly in my control. You can tell me to:
+          <br>&bull; <em>"Tailor my resume for this role"</em>
+          <br>&bull; <em>"Open the visual editor"</em>
+          <br>&bull; <em>"Generate a cover letter"</em>
+          <br>&bull; <em>"Refine my top bullet to add cost metrics"</em>
+          <br>&bull; <em>"Download my PDF resume"</em></p>
+          <p style="margin-top:6px;">How can I help you take control of this application today?</p>
         </div>
       </div>
     </div>

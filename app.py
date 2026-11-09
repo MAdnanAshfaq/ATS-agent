@@ -2720,10 +2720,115 @@ def visual_editor_page(filepath):
             "sectionOrder": ["summary", "skills", "experience", "education", "certifications", "projects"]
         }
 
+    # Extract complete job context (Company, Role, JD Text, Keywords, ATS Platform, Match Scores)
+    target_dir = None
+    if clean_fp not in ("master", "master_resume", "master.docx", "master.json", "master.pdf"):
+        cand = (user_output_dir / clean_fp).resolve()
+        if cand.is_dir():
+            target_dir = cand
+        elif cand.parent.is_dir() and cand.parent != user_output_dir:
+            target_dir = cand.parent
+
+    company = ""
+    role = resume_data.get("target_role") or ""
+    url = ""
+    jd_text = ""
+    missing_keywords = []
+    matched_keywords = []
+    ats_platform = "Safe Mode"
+    score_before = None
+    score_after = None
+
+    if target_dir:
+        # Check for saved job_description.txt
+        jd_file = target_dir / "job_description.txt"
+        if jd_file.exists():
+            try:
+                jd_text = jd_file.read_text(encoding="utf-8").strip()
+            except Exception:
+                pass
+
+        # Try parsing company & role from folder name e.g. Snowflake_StaffDataEngineer
+        folder_parts = target_dir.name.split("_", 1)
+        if len(folder_parts) == 2:
+            company = folder_parts[0].replace("-", " ")
+            if not role:
+                role = folder_parts[1].replace("-", " ")
+
+    # Search NeonDB history for rich job metadata
+    if db_layer.is_db_available() and current_user.is_authenticated:
+        try:
+            hist = db_layer.db_get_history(current_user.username)
+            folder_name = target_dir.name.lower() if target_dir else clean_fp.lower()
+            for h in hist:
+                rid = h.get("_db_run_id") or h.get("run_id") or ""
+                out_f = (h.get("output_file") or "").lower()
+                c_slug = _safe_slugify(h.get("company", "")).lower()
+                r_slug = _safe_slugify(h.get("role", "")).lower()
+                comp_role_slug = f"{c_slug}_{r_slug}" if c_slug and r_slug else ""
+                if (rid and rid.lower() in folder_name) or (folder_name and (folder_name in out_f or folder_name == comp_role_slug)):
+                    if not company or company == "Target Company":
+                        company = h.get("company", "")
+                    if not role or role == "Target Role":
+                        role = h.get("role", "")
+                    if not url:
+                        url = h.get("url", "")
+                    if not jd_text:
+                        jd_text = h.get("jd_text", "")
+                    missing_keywords = h.get("still_missing") or h.get("missing_keywords") or []
+                    matched_keywords = h.get("embedded_keywords") or h.get("newly_added") or []
+                    ats_platform = h.get("ats_platform") or h.get("ats_profile_name") or ats_platform
+                    score_before = h.get("score_before")
+                    score_after = h.get("score_after")
+                    break
+        except Exception as e:
+            logger.debug(f"[Editor] Error reading DB history for job context: {e}")
+
+    # Fallback to local logs
+    if (not jd_text or not missing_keywords) and user_output_dir:
+        try:
+            logs_dir = user_output_dir / "logs"
+            if logs_dir.exists():
+                for lf in sorted(logs_dir.glob("run_*.json"), reverse=True):
+                    try:
+                        with open(lf, "r", encoding="utf-8") as jf:
+                            ldata = json.load(jf)
+                        out_f = ldata.get("output_file", "")
+                        if (target_dir and target_dir.name in out_f) or (company and ldata.get("company", "").lower() == company.lower()):
+                            if not company: company = ldata.get("company", "")
+                            if not role: role = ldata.get("role", "")
+                            if not url: url = ldata.get("url", "")
+                            if not jd_text: jd_text = ldata.get("jd_text", "")
+                            if not missing_keywords: missing_keywords = ldata.get("still_missing") or ldata.get("missing_keywords") or []
+                            if not matched_keywords: matched_keywords = ldata.get("embedded_keywords") or ldata.get("newly_added") or []
+                            ats_platform = ldata.get("ats_platform") or ats_platform
+                            if score_before is None: score_before = ldata.get("score_before")
+                            if score_after is None: score_after = ldata.get("score_after")
+                            break
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
+    editor_job_context = {
+        "company": company or "Master Profile",
+        "role": role or "Resume",
+        "url": url,
+        "jd_text": jd_text,
+        "missing_keywords": missing_keywords,
+        "matched_keywords": matched_keywords,
+        "ats_platform": ats_platform,
+        "score_before": score_before,
+        "score_after": score_after,
+        "is_master": clean_fp in ("master", "master_resume", "master.docx", "master.json", "master.pdf"),
+    }
+
     return render_template(
         "editor.html",
         resume_json=json.dumps(resume_data),
         resume_path=clean_fp,
+        job_context=editor_job_context,
+        job_context_json=json.dumps(editor_job_context, ensure_ascii=False),
         cache_buster=int(time.time())
     )
 
@@ -3292,6 +3397,23 @@ def hollabuddy_chat():
         if cached:
             job_context = cached
 
+    # Fallback / construct pipeline_state
+    pipeline_state = data.get("pipeline_state") or {}
+    if not pipeline_state:
+        pipeline_state = {
+            "company": company,
+            "role": role,
+            "has_tailored_resume": bool(drafted_resume),
+            "ats_platform": "Safe Mode",
+        }
+    else:
+        if not pipeline_state.get("company") and company:
+            pipeline_state["company"] = company
+        if not pipeline_state.get("role") and role:
+            pipeline_state["role"] = role
+        if "has_tailored_resume" not in pipeline_state:
+            pipeline_state["has_tailored_resume"] = bool(drafted_resume)
+
     from hollabuddy import chat_with_hollabuddy
     user_settings = get_user_settings() if hasattr(current_user, 'data_dir') else None
     res = chat_with_hollabuddy(
@@ -3300,6 +3422,7 @@ def hollabuddy_chat():
         base_resume=base_resume,
         drafted_resume=drafted_resume,
         job_context=job_context,
+        pipeline_state=pipeline_state,
         user_settings=user_settings,
     )
     return jsonify({"success": True, **res})

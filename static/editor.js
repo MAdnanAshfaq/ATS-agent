@@ -2267,7 +2267,10 @@
             text: this.currentTargetText || '',
             mode: mode,
             instruction: customInstruction,
-            target_role: store.state.resume?.target_role || '',
+            target_role: (window.jobContext && window.jobContext.role) || store.state.resume?.target_role || '',
+            company: (window.jobContext && window.jobContext.company) || '',
+            missing_keywords: (window.jobContext && window.jobContext.missing_keywords) || [],
+            jd_text: (window.jobContext && window.jobContext.jd_text) || '',
             current_resume: store.state.resume,
             resume_path: config.resumePath || ''
           })
@@ -2385,6 +2388,150 @@
       this.lastPolishedText = '';
       this.lastRefinedResume = null;
       this.lastChangeSummary = null;
+    }
+  }
+
+
+  // ═══════════════════════════════════════════════════════════════════
+  // 10B. TARGET JOB & KEYWORDS CONTEXT CONTROLLER
+  // ═══════════════════════════════════════════════════════════════════
+
+  class JobContextController {
+    static init() {
+      const ctx = window.jobContext || {};
+      const missingChips = document.getElementById('pjMissingChipsContainer');
+      const matchedChips = document.getElementById('pjMatchedChipsContainer');
+      const missingCount = document.getElementById('pjMissingCount');
+      const matchedCount = document.getElementById('pjMatchedCount');
+      const searchInput = document.getElementById('pjJdSearchInput');
+      const jdContainer = document.getElementById('pjJdTextContainer');
+      const copyBtn = document.getElementById('btnCopyJdText');
+      const headerBtn = document.getElementById('btnOpenJobContextTab');
+
+      // Header button switches to "Target Job" tab
+      if (headerBtn) {
+        headerBtn.addEventListener('click', () => {
+          document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
+          document.querySelectorAll('.sidebar-panel').forEach(p => p.classList.remove('active'));
+          const jobTab = document.getElementById('tabJob');
+          const jobPanel = document.getElementById('panelJob');
+          if (jobTab) jobTab.classList.add('active');
+          if (jobPanel) jobPanel.classList.add('active');
+        });
+      }
+
+      // Populate Missing Keywords Palette
+      const missingList = ctx.missing_keywords || [];
+      if (missingCount) missingCount.textContent = missingList.length;
+      if (missingChips) {
+        if (missingList.length === 0) {
+          missingChips.innerHTML = '<span style="font-size:11px; color:var(--editor-text-muted); font-style:italic;">No missing keywords recorded.</span>';
+        } else {
+          missingChips.innerHTML = missingList.map(kw => `
+            <button type="button" class="pj-kw-chip" data-kw="${BlockRenderer.escapeHtml(kw)}" title="Click to insert '${BlockRenderer.escapeHtml(kw)}' into active resume bullet" style="display:inline-flex; align-items:center; gap:4px; font-size:10.5px; padding:3px 8px; border-radius:4px; background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.35); color:#fbbf24; cursor:pointer; font-weight:600; transition:all 0.15s ease;">
+              <i class="fa-solid fa-plus" style="font-size:9px;"></i> ${BlockRenderer.escapeHtml(kw)}
+            </button>
+          `).join('');
+
+          // Click handler to inject keyword
+          missingChips.querySelectorAll('.pj-kw-chip').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+              e.preventDefault();
+              const kw = btn.getAttribute('data-kw');
+              JobContextController.injectKeyword(kw, btn);
+            });
+          });
+        }
+      }
+
+      // Populate Matched Keywords Palette
+      const matchedList = ctx.matched_keywords || [];
+      if (matchedCount) matchedCount.textContent = matchedList.length;
+      if (matchedChips) {
+        if (matchedList.length === 0) {
+          matchedChips.innerHTML = '<span style="font-size:11px; color:var(--editor-text-muted); font-style:italic;">No pre-matched keywords recorded.</span>';
+        } else {
+          matchedChips.innerHTML = matchedList.map(kw => `
+            <span style="display:inline-flex; align-items:center; gap:4px; font-size:10px; padding:2px 7px; border-radius:4px; background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.3); color:#34d399; font-weight:500;">
+              <i class="fa-solid fa-check" style="font-size:8px;"></i> ${BlockRenderer.escapeHtml(kw)}
+            </span>
+          `).join('');
+        }
+      }
+
+      // Copy JD Button
+      if (copyBtn && jdContainer) {
+        copyBtn.addEventListener('click', () => {
+          const text = jdContainer.innerText.trim();
+          if (text) {
+            navigator.clipboard.writeText(text);
+            copyBtn.innerHTML = '<i class="fa-solid fa-check" style="color:#10b981;"></i> Copied!';
+            setTimeout(() => {
+              copyBtn.innerHTML = '<i class="fa-solid fa-copy"></i> Copy JD';
+            }, 1800);
+          }
+        });
+      }
+
+      // Filter JD text
+      if (searchInput && jdContainer) {
+        const fullJd = ctx.jd_text || jdContainer.innerText;
+        searchInput.addEventListener('input', () => {
+          const term = searchInput.value.trim().toLowerCase();
+          if (!term) {
+            jdContainer.innerText = fullJd;
+            return;
+          }
+          const lines = fullJd.split('\n');
+          const matchedLines = lines.filter(l => l.toLowerCase().includes(term));
+          jdContainer.innerText = matchedLines.length > 0 ? matchedLines.join('\n') : `No lines matched "${term}"`;
+        });
+      }
+    }
+
+    static injectKeyword(kw, btnEl) {
+      let target = AiPolishController.currentTargetEl;
+      if (!target) {
+        const focused = document.activeElement;
+        if (focused && focused.getAttribute('contenteditable') === 'true') {
+          target = focused;
+        } else {
+          target = document.querySelector('.bullet-item') || document.querySelector('.summary-text');
+        }
+      }
+
+      if (!target) {
+        alert('Please click on a bullet or section on the resume sheet to inject this keyword.');
+        return;
+      }
+
+      const currentText = target.innerText.trim();
+      if (!currentText.toLowerCase().includes(kw.toLowerCase())) {
+        if (target.classList.contains('bullet-item') || target.getAttribute('data-edit') === 'bullet') {
+          target.innerText = `${currentText} (${kw})`;
+        } else {
+          target.innerText = `${currentText}, ${kw}`;
+        }
+
+        // Highlight element with emerald glow
+        target.style.transition = 'box-shadow 0.3s ease';
+        target.style.boxShadow = '0 0 10px rgba(16,185,129,0.7)';
+        setTimeout(() => {
+          target.style.boxShadow = '';
+        }, 1200);
+
+        if (btnEl) {
+          btnEl.style.background = 'rgba(16,185,129,0.2)';
+          btnEl.style.borderColor = 'rgba(16,185,129,0.5)';
+          btnEl.style.color = '#34d399';
+          btnEl.innerHTML = `<i class="fa-solid fa-check"></i> ${BlockRenderer.escapeHtml(kw)}`;
+        }
+
+        const block = target.closest('.editor-block');
+        if (block) {
+          document.dispatchEvent(new CustomEvent('editor:content-change'));
+        }
+      }
     }
   }
 
@@ -2915,6 +3062,7 @@
     ColorPopoverController.init();
     InspectorController.init();
     SidebarController.init();
+    JobContextController.init();
     ZoomController.init();
     DragManager.init();
     PageOverflowDetector.initAutoFit();

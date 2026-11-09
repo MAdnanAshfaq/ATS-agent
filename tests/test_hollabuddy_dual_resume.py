@@ -115,6 +115,100 @@ class TestHollaBuddyDualResume(unittest.TestCase):
         followups = _generate_quick_followups("Can you review my new drafted resume?", "Here is the critique")
         self.assertTrue(any("draft" in f.lower() or "keyword" in f.lower() or "bullet" in f.lower() for f in followups))
 
+    @patch("hollabuddy.get_all_gemini_keys", return_value=["test_gemini_key_123"])
+    @patch("hollabuddy.execute_with_failover")
+    def test_hollabuddy_extracts_controller_action_tailor_resume(self, mock_exec, mock_keys):
+        def fake_execute(call_fn):
+            mock_client = MagicMock()
+            mock_response = MagicMock()
+            mock_response.text = "I'm starting the resume tailoring pipeline for Snowflake now!\n[[ACTION:tailor_resume|keywords=Snowflake,PySpark,dbt]]"
+            mock_response.candidates = [MagicMock(finish_reason="STOP")]
+            mock_client.models.generate_content.return_value = mock_response
+            return call_fn(mock_client)
+
+        mock_exec.side_effect = fake_execute
+
+        res = chat_with_hollabuddy(
+            message="Tailor my resume for this Snowflake role",
+            base_resume=self.base_resume,
+            pipeline_state={"company": "Snowflake", "role": "Data Engineer"}
+        )
+
+        self.assertIsNotNone(res.get("action"))
+        self.assertEqual(res["action"]["type"], "tailor_resume")
+        self.assertEqual(res["action"]["params"].get("keywords"), "Snowflake,PySpark,dbt")
+        # Action tag must be cleanly removed from user reply
+        self.assertNotIn("[[ACTION:", res["reply"])
+        self.assertIn("I'm starting the resume tailoring pipeline", res["reply"])
+
+    @patch("hollabuddy.get_all_gemini_keys", return_value=["test_gemini_key_123"])
+    @patch("hollabuddy.execute_with_failover")
+    def test_hollabuddy_extracts_controller_action_refine_and_open_editor(self, mock_exec, mock_keys):
+        def fake_execute(call_fn):
+            mock_client = MagicMock()
+            mock_response = MagicMock()
+            mock_response.text = "Applying revisions and opening the Visual Studio Editor for you!\n[[ACTION:refine_resume|instruction=Add 30% latency reduction]]"
+            mock_response.candidates = [MagicMock(finish_reason="STOP")]
+            mock_client.models.generate_content.return_value = mock_response
+            return call_fn(mock_client)
+
+        mock_exec.side_effect = fake_execute
+
+        res = chat_with_hollabuddy(
+            message="Make my top bullet emphasize latency reduction",
+            base_resume=self.base_resume,
+            drafted_resume=self.drafted_resume,
+        )
+
+        self.assertIsNotNone(res.get("action"))
+        self.assertEqual(res["action"]["type"], "refine_resume")
+        self.assertEqual(res["action"]["params"].get("instruction"), "Add 30% latency reduction")
+        self.assertNotIn("[[ACTION:", res["reply"])
+
+    @patch("hollabuddy.get_all_gemini_keys", return_value=["test_gemini_key_123"])
+    @patch("hollabuddy.execute_with_failover")
+    def test_hollabuddy_system_prompt_includes_pipeline_state(self, mock_exec, mock_keys):
+        captured_system_instruction = None
+
+        def fake_execute(call_fn):
+            nonlocal captured_system_instruction
+            mock_client = MagicMock()
+            mock_response = MagicMock()
+            mock_response.text = "Understood."
+            mock_response.candidates = [MagicMock(finish_reason="STOP")]
+
+            def fake_generate_content(model, contents, config):
+                nonlocal captured_system_instruction
+                captured_system_instruction = config.system_instruction
+                return mock_response
+
+            mock_client.models.generate_content.side_effect = fake_generate_content
+            return call_fn(mock_client)
+
+        mock_exec.side_effect = fake_execute
+
+        pipeline_state = {
+            "company": "Databricks",
+            "role": "Solutions Architect",
+            "ats_platform": "Workday",
+            "score_before": 68,
+            "missing_keywords": ["Delta Lake", "Unity Catalog", "MLflow"],
+            "has_tailored_resume": False
+        }
+
+        chat_with_hollabuddy(
+            message="What should I do next?",
+            base_resume=self.base_resume,
+            pipeline_state=pipeline_state
+        )
+
+        self.assertIn("Databricks", captured_system_instruction)
+        self.assertIn("Solutions Architect", captured_system_instruction)
+        self.assertIn("Delta Lake", captured_system_instruction)
+        self.assertIn("Workday", captured_system_instruction)
+        self.assertIn("AUTONOMOUS PIPELINE CONTROLLER MANDATE", captured_system_instruction)
+
 
 if __name__ == "__main__":
     unittest.main()
+

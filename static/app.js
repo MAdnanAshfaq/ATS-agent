@@ -6826,14 +6826,35 @@ async function sendHollaBuddyMessage() {
       } catch (_) {}
     }
 
+    const activeCompany = (hollabuddyActiveJob ? hollabuddyActiveJob.company : "") || analyzeCompany || (window.lastResult ? window.lastResult.company : "");
+    const activeRole = (hollabuddyActiveJob ? hollabuddyActiveJob.role : "") || analyzeRole || (window.lastResult ? window.lastResult.role : "");
+    const activeUrl = (hollabuddyActiveJob ? hollabuddyActiveJob.url : "") || (document.getElementById("job-url-input") ? document.getElementById("job-url-input").value.trim() : "");
+    const activeJdText = (hollabuddyActiveJob ? hollabuddyActiveJob.jd_text : "") || analyzeJdText || (window.lastResult ? window.lastResult.jd_text : "");
+
+    const pipelineState = {
+      has_analyzed: !!(activeCompany || activeRole),
+      company: activeCompany,
+      role: activeRole,
+      url: activeUrl,
+      ats_platform: (window.lastResult ? window.lastResult.ats_platform : "") || (window.currentAtsProfile ? window.currentAtsProfile.id : "safe_mode"),
+      score_before: (window.lastResult ? window.lastResult.score_before : null) || (typeof window.analyzeScoreBefore !== "undefined" ? window.analyzeScoreBefore : null),
+      score_after: (window.lastResult ? window.lastResult.score_after : null),
+      missing_keywords: (analyzedMissingKeywords && analyzedMissingKeywords.length > 0) ? analyzedMissingKeywords : (window.lastResult ? (window.lastResult.still_missing || []) : []),
+      matched_keywords: window.lastResult ? (window.lastResult.newly_added || window.lastResult.matched_keywords || []) : [],
+      has_tailored_resume: !!(draftedResume || (window.lastResult && window.lastResult.tailored_resume)),
+      has_cover_letter: !!(window.lastResult && window.lastResult.cover_letter_text),
+      relative_path: window.lastResult ? window.lastResult.relative_path : "",
+    };
+
     const payload = {
       message: message,
       history: hollabuddyChatHistory,
-      company: hollabuddyActiveJob ? hollabuddyActiveJob.company : "",
-      role: hollabuddyActiveJob ? hollabuddyActiveJob.role : "",
-      url: hollabuddyActiveJob ? hollabuddyActiveJob.url : "",
-      jd_text: hollabuddyActiveJob ? hollabuddyActiveJob.jd_text : "",
+      company: activeCompany,
+      role: activeRole,
+      url: activeUrl,
+      jd_text: activeJdText,
       drafted_resume: draftedResume,
+      pipeline_state: pipelineState,
     };
 
     const res = await fetch("/api/hollabuddy/chat", {
@@ -6861,6 +6882,12 @@ async function sendHollaBuddyMessage() {
       appendHollaBuddyQuotaBanner(data.reply, data.keys_in_pool || 1, data.suggested_followups);
     } else {
       appendHollaBuddyMessage("assistant", data.reply, data.suggested_followups);
+    }
+
+    // Pipeline Controller: Render action card & trigger execution if returned by HollaBuddy
+    if (data.action) {
+      appendHollaBuddyActionCard(data.action);
+      executeHollaBuddyAction(data.action);
     }
 
   } catch (err) {
@@ -6929,6 +6956,182 @@ function appendHollaBuddyQuotaBanner(replyMarkdown, keyCount, followups = []) {
   `;
   container.appendChild(banner);
   scrollHollaBuddyToBottom();
+}
+
+/** Render an Action Controller pill inside the HollaBuddy message thread */
+function appendHollaBuddyActionCard(action) {
+  const container = document.getElementById("hollabuddy-messages");
+  if (!container || !action) return;
+
+  const card = document.createElement("div");
+  card.className = "hollabuddy-msg hollabuddy-msg-bot hollabuddy-action-msg";
+  card.style.marginTop = "6px";
+  card.style.marginBottom = "8px";
+
+  const actionLabels = {
+    tailor_resume: "🚀 Tailor Resume Pipeline",
+    refine_resume: "✨ Refine & Rebuild Bullets",
+    generate_cover_letter: "📄 Generate Tailored Cover Letter",
+    open_editor: "🎨 Launch Visual Studio Editor",
+    open_preview: "👁️ In-Browser Live Preview",
+    answer_questions: "💡 Draft Application Answers",
+    audit_ats: "🛡️ Run ATS Compliance Audit",
+    download_resume: "⬇️ Download Tailored Resume"
+  };
+
+  const actionDescriptions = {
+    tailor_resume: "Starting full resume tailoring pipeline with targeted keyword embedding...",
+    refine_resume: action.params?.instruction ? `Applying surgical revision: "${action.params.instruction}"` : "Revising tailored bullets and rebuilding Word/PDF...",
+    generate_cover_letter: "Drafting human-voice cover letter with candidate STAR evidence...",
+    open_editor: "Opening Canva-grade visual resume editor with full job description context...",
+    open_preview: "Opening live document inspector and in-browser editor...",
+    answer_questions: "Generating authentic application responses with STAR metrics...",
+    audit_ats: "Checking compatibility across major enterprise ATS scanners...",
+    download_resume: `Preparing ${(action.params?.format || 'PDF').toUpperCase()} download...`
+  };
+
+  const label = actionLabels[action.type] || `⚡ Pipeline Controller: ${action.type}`;
+  const desc = actionDescriptions[action.type] || "Executing pipeline action...";
+
+  card.innerHTML = `
+    <div class="hollabuddy-msg-avatar" style="background:rgba(56,189,248,0.2); border:1px solid rgba(56,189,248,0.5); color:#38bdf8;">
+      <i class="fa-solid fa-bolt"></i>
+    </div>
+    <div class="hollabuddy-bubble hollabuddy-bubble-bot" style="background:rgba(56,189,248,0.07); border:1px solid rgba(56,189,248,0.28); padding:10px 14px; border-radius:12px;">
+      <div style="font-size:10.5px; font-weight:800; color:#38bdf8; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px; display:flex; align-items:center; gap:6px;">
+        <span style="width:7px; height:7px; border-radius:50%; background:#10b981; box-shadow:0 0 6px #10b981; display:inline-block;"></span>
+        Pipeline Controller Action Executed
+      </div>
+      <div style="font-size:12.5px; font-weight:700; color:var(--t0); margin-bottom:3px;">
+        ${escapeHtml(label)}
+      </div>
+      <div style="font-size:11.5px; color:var(--t2); line-height:1.4;">
+        ${escapeHtml(desc)}
+      </div>
+    </div>
+  `;
+  container.appendChild(card);
+  scrollHollaBuddyToBottom();
+}
+
+/** Execute a pipeline control action triggered by HollaBuddy */
+async function executeHollaBuddyAction(action) {
+  if (!action || !action.type) return;
+
+  switch (action.type) {
+    case "tailor_resume": {
+      if (action.params && action.params.keywords) {
+        const kws = String(action.params.keywords).split(",").map(k => k.trim()).filter(Boolean);
+        kws.forEach(k => selectedMissingKeywords.add(k));
+        if (typeof renderMissingKeywords === "function") {
+          renderMissingKeywords(analyzedMissingKeywords);
+        }
+      }
+      showToast("HollaBuddy triggered resume tailoring!", "info");
+      if (typeof runAgent === "function") {
+        runAgent();
+      }
+      break;
+    }
+
+    case "refine_resume": {
+      const instruction = action.params ? action.params.instruction : "";
+      if (!instruction) {
+        showToast("No revision instruction provided", "warning");
+        return;
+      }
+      const refineInput = document.getElementById("refine-instruction-input");
+      if (refineInput) refineInput.value = instruction;
+      showToast(`HollaBuddy refining resume: "${instruction.slice(0, 45)}..."`, "info");
+      if (typeof submitResumeRefinement === "function") {
+        await submitResumeRefinement();
+      }
+      break;
+    }
+
+    case "generate_cover_letter": {
+      showToast("HollaBuddy generating cover letter...", "info");
+      if (typeof openCurrentCoverLetter === "function") {
+        openCurrentCoverLetter();
+      } else if (typeof regenerateCoverLetter === "function") {
+        regenerateCoverLetter();
+      }
+      break;
+    }
+
+    case "open_editor": {
+      showToast("Opening Visual Studio Editor...", "info");
+      if (typeof openLiveEditModal === "function") {
+        openLiveEditModal();
+      }
+      break;
+    }
+
+    case "open_preview": {
+      const relPath = window.lastResult ? window.lastResult.relative_path : "";
+      const co = (window.lastResult ? window.lastResult.company : "") || analyzeCompany || "Tailored Resume";
+      const ro = (window.lastResult ? window.lastResult.role : "") || analyzeRole || "Document Preview";
+      if (relPath && typeof openPreviewModal === "function") {
+        openPreviewModal(relPath, co, ro);
+      } else if (typeof openPreviewModal === "function") {
+        openPreviewModal('master_resume', 'Master Resume', 'Master Profile');
+      }
+      break;
+    }
+
+    case "answer_questions": {
+      const q = action.params ? (action.params.questions || action.params.q || "") : "";
+      const qaInput = document.getElementById("qa-copilot-input");
+      if (qaInput && q) qaInput.value = q;
+      if (typeof generateApplicationAnswers === "function") {
+        generateApplicationAnswers();
+      }
+      break;
+    }
+
+    case "audit_ats": {
+      showToast("HollaBuddy running ATS compliance audit...", "info");
+      const atsBtn = document.getElementById("ats-audit-btn");
+      if (atsBtn) {
+        atsBtn.click();
+      }
+      break;
+    }
+
+    case "download_resume": {
+      const fmt = (action.params && action.params.format) ? action.params.format.toLowerCase() : "pdf";
+      if (typeof downloadCurrentResume === "function") {
+        downloadCurrentResume(fmt);
+      }
+      break;
+    }
+
+    default:
+      console.warn("[HollaBuddy] Unknown action type:", action.type);
+  }
+}
+
+/** Execute a 1-click shortcut from HollaBuddy's controller bar */
+function executeHollaBuddyControllerShortcut(shortcut) {
+  switch (shortcut) {
+    case 'tailor':
+      sendHollaBuddyPrompt("Tailor my resume for this active job role now.");
+      break;
+    case 'editor':
+      sendHollaBuddyPrompt("Open the visual studio editor for this application.");
+      break;
+    case 'cover_letter':
+      sendHollaBuddyPrompt("Generate a tailored cover letter for this role.");
+      break;
+    case 'preview':
+      sendHollaBuddyPrompt("Open the live PDF/Word document preview.");
+      break;
+    case 'download':
+      sendHollaBuddyPrompt("Download my tailored resume as PDF.");
+      break;
+    default:
+      sendHollaBuddyPrompt("What pipeline actions can you execute for this job?");
+  }
 }
 
 function appendHollaBuddyMessage(role, text, followups = []) {
@@ -8236,3 +8439,6 @@ window.weaveJDResponsibilities = weaveJDResponsibilities;
 window.openLiveEditModal = openLiveEditModal;
 window.closeLiveEditModal = closeLiveEditModal;
 window.applyLiveEdits = applyLiveEdits;
+window.appendHollaBuddyActionCard = appendHollaBuddyActionCard;
+window.executeHollaBuddyAction = executeHollaBuddyAction;
+window.executeHollaBuddyControllerShortcut = executeHollaBuddyControllerShortcut;
