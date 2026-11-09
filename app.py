@@ -2502,9 +2502,65 @@ def preview_file(filepath):
             matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
             target_path = matches[0].resolve()
 
+    # Priority 1: Check for tailored_resume.json in target folder for direct rich HTML preview
+    if target_path.exists():
+        json_cand = (target_path.parent / "tailored_resume.json") if target_path.is_file() else (target_path / "tailored_resume.json")
+        if json_cand.exists():
+            try:
+                with open(json_cand, "r", encoding="utf-8") as jf:
+                    tailored_dict = json.load(jf)
+                html_view = resume_json_to_html(tailored_dict)
+                return Response(html_view, mimetype="text/html")
+            except Exception as e:
+                print(f"[Preview] Failed reading tailored_resume.json: {e}")
+
+    # Priority 2: Check run logs or DB for latest tailored/refined resume matching this file, company, or folder
+    matched_tailored_json = None
+    folder_part = Path(clean_fp).parent.name if Path(clean_fp).parent.name else Path(clean_fp).stem
+    logs_dir = user_output_dir / "logs"
+    if logs_dir.exists():
+        for lf in sorted(logs_dir.glob("run_*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+            try:
+                with open(lf, "r", encoding="utf-8") as jf:
+                    ldata = json.load(jf)
+                out_f = (ldata.get("output_file") or "").lower()
+                rel_f = (ldata.get("relative_file_path") or ldata.get("relative_path") or "").lower()
+                co = (ldata.get("company") or "").lower()
+                clean_lower = clean_fp.lower()
+                if (clean_lower in out_f or clean_lower in rel_f or (co and co in clean_lower) or (folder_part and folder_part.lower() in out_f)):
+                    t_cand = ldata.get("tailored_resume") or ldata.get("resume_json")
+                    if isinstance(t_cand, dict) and t_cand.get("experience"):
+                        matched_tailored_json = t_cand
+                        break
+            except Exception:
+                continue
+
+    if not matched_tailored_json and db_layer.is_db_available() and current_user.is_authenticated:
+        try:
+            for h in (db_layer.db_get_history(current_user.username) or []):
+                out_f = (h.get("output_file") or "").lower()
+                rel_f = (h.get("relative_file_path") or h.get("relative_path") or "").lower()
+                co = (h.get("company") or "").lower()
+                clean_lower = clean_fp.lower()
+                if (clean_lower in out_f or clean_lower in rel_f or (co and co in clean_lower) or (folder_part and folder_part.lower() in out_f)):
+                    t_cand = h.get("tailored_resume") or h.get("resume_json")
+                    if isinstance(t_cand, str):
+                        try:
+                            t_cand = json.loads(t_cand)
+                        except Exception:
+                            t_cand = None
+                    if isinstance(t_cand, dict) and t_cand.get("experience"):
+                        matched_tailored_json = t_cand
+                        break
+        except Exception:
+            pass
+
+    if matched_tailored_json:
+        html_view = resume_json_to_html(matched_tailored_json)
+        return Response(html_view, mimetype="text/html")
+
     # If file was not found on disk, attempt self-healing from base_resume.json
     if not target_path.exists() and ("resume" in clean_fp.lower() or clean_fp.endswith((".docx", ".pdf"))):
-        folder_part = Path(clean_fp).parent.name
         if folder_part and "_" in folder_part and user_resume_path.exists():
             try:
                 parts = folder_part.split("_", 1)
@@ -4558,20 +4614,36 @@ def refine_resume_api():
 
         base_resume = load_base_resume(str(user_resume_path))
 
-        # 1. Resolve target folder path safely
+        # 1. Resolve target folder path safely (handling file paths and directories)
         target_dir = None
         if folder_path:
-            cand = Path(folder_path)
+            clean_fp_str = folder_path.replace("\\", "/").strip("/")
+            cand = Path(clean_fp_str)
+            if cand.suffix.lower() in (".docx", ".pdf", ".json") or (cand.exists() and cand.is_file()):
+                cand = cand.parent
             if cand.exists() and cand.is_dir():
                 target_dir = cand
             else:
-                cand2 = user_output_dir / folder_path
+                cand2 = user_output_dir / clean_fp_str
+                if cand2.suffix.lower() in (".docx", ".pdf", ".json") or (cand2.exists() and cand2.is_file()):
+                    cand2 = cand2.parent
                 if cand2.exists() and cand2.is_dir():
                     target_dir = cand2
+
+        # Sibling or existing output folder match by company name
+        if not target_dir and company and user_output_dir.exists():
+            co_slug = _safe_slugify(company).lower()
+            for sub in user_output_dir.iterdir():
+                if sub.is_dir() and co_slug and co_slug in sub.name.lower():
+                    target_dir = sub
+                    break
 
         if not target_dir:
             if company and role:
                 target_dir = user_output_dir / f"{slugify(company)}_{slugify(role)}"[:80]
+                target_dir.mkdir(parents=True, exist_ok=True)
+            elif company:
+                target_dir = user_output_dir / slugify(company)[:80]
                 target_dir.mkdir(parents=True, exist_ok=True)
             else:
                 return jsonify({"success": False, "error": "Could not determine application folder."}), 400
@@ -4585,6 +4657,22 @@ def refine_resume_api():
                     current_resume = json.load(f)
             except Exception:
                 pass
+
+        # Check existing run logs in output/logs/ for this company if still not loaded
+        if not current_resume and company:
+            logs_dir = user_output_dir / "logs"
+            if logs_dir.exists():
+                for lf in sorted(logs_dir.glob("run_*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+                    try:
+                        with open(lf, "r", encoding="utf-8") as jf:
+                            ldata = json.load(jf)
+                        if ldata.get("company", "").strip().lower() == company.lower():
+                            t_cand = ldata.get("tailored_resume") or ldata.get("resume_json")
+                            if isinstance(t_cand, dict) and t_cand.get("experience"):
+                                current_resume = t_cand
+                                break
+                    except Exception:
+                        continue
 
         if not current_resume:
             # Fall back to base_resume as starting point
@@ -4692,7 +4780,55 @@ def refine_resume_api():
         rel_doc = os.path.relpath(doc_path, str(user_output_dir)).replace("\\", "/")
         rel_pdf = os.path.relpath(pdf_path, str(user_output_dir)).replace("\\", "/") if pdf_path else ""
 
-        # 8. Persist refined resume in Neon DB so it survives deploys / reloads
+        # 8. Persist refined resume in both local disk logs AND Neon DB so History & Preview stay updated
+        logs_dir = user_output_dir / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        matched_disk_log = None
+        if logs_dir.exists():
+            for lf in sorted(logs_dir.glob("run_*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+                try:
+                    with open(lf, "r", encoding="utf-8") as jf:
+                        ldata = json.load(jf)
+                    out_f = (ldata.get("output_file") or "").lower()
+                    l_co = (ldata.get("company") or "").lower()
+                    if (company and l_co == company.lower()) or (target_dir.name.lower() in out_f):
+                        matched_disk_log = lf
+                        ldata["output_file"] = doc_path
+                        ldata["relative_file_path"] = rel_doc
+                        ldata["relative_path"] = rel_doc
+                        ldata["relative_pdf"] = rel_pdf
+                        ldata["tailored_resume"] = refined_resume
+                        ldata["last_refined_at"] = datetime.now().isoformat()
+                        ldata["change_summary"] = change_summary
+                        with open(lf, "w", encoding="utf-8") as out_jf:
+                            json.dump(ldata, out_jf, indent=2, ensure_ascii=False)
+                        break
+                except Exception as _log_err:
+                    logging.warning(f"[Refine] Disk log update note: {_log_err}")
+
+        if not matched_disk_log:
+            try:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                new_log_path = logs_dir / f"run_{timestamp}.json"
+                new_log_data = {
+                    "timestamp": datetime.now().isoformat(),
+                    "url": url,
+                    "company": company,
+                    "role": effective_role,
+                    "output_file": doc_path,
+                    "relative_file_path": rel_doc,
+                    "relative_path": rel_doc,
+                    "relative_pdf": rel_pdf,
+                    "tailored_resume": refined_resume,
+                    "change_summary": change_summary,
+                    "last_refined_at": datetime.now().isoformat(),
+                }
+                with open(new_log_path, "w", encoding="utf-8") as out_jf:
+                    json.dump(new_log_data, out_jf, indent=2, ensure_ascii=False)
+            except Exception as _new_log_err:
+                logging.warning(f"[Refine] New disk log creation note: {_new_log_err}")
+
+        # Also persist to Neon DB if available
         if db_layer.is_db_available() and user_username:
             try:
                 hist = db_layer.db_get_history(user_username)

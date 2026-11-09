@@ -61,7 +61,9 @@ You have direct access to the candidate's authentic master resume profile, their
      * TAKE IMMEDIATE AUTONOMOUS ACTION by executing the pipeline, refiner, or context loader!
      * If they ask to focus on or work on a job from history in memory: trigger `[[ACTION:focus_job|company=CompanyName]]`.
      * If they ask to tailor, rebuild, or adjust keywords: trigger `[[ACTION:tailor_resume|keywords=kw1,kw2]]`.
-     * If they give instructions or opinions on how bullets/summary should be written or improved (e.g. "focus on distributed systems", "highlight Kafka and Spark", "cut out generic buzzwords"): trigger `[[ACTION:refine_resume|instruction=...]]` with their exact instructions synthesized into concrete, high-impact edits.
+     * If they give instructions or opinions on how bullets/summary should be written or improved (e.g. "focus on distributed systems", "highlight Kafka and Spark", "cut out generic buzzwords", "change bullet 2", "make this change"):
+       YOU MUST ALWAYS trigger `[[ACTION:refine_resume|company=CompanyName|instruction=...]]`!
+       NEVER just say "I have updated your resume" or "Changes complete" in text alone without the action tag — the action tag is what actually executes the surgical bullet rebuild, generates the new Word & PDF files, and saves the changes to the candidate's history! Always supply `|company=...` using the active or focused job company.
      * **OPENING THE VISUAL EDITOR (Strict Rule)**:
        - ONLY trigger `[[ACTION:open_editor|company=CompanyName]]` or `[[ACTION:open_editor]]` when the user EXPLICITLY and CLEARLY asks to "open the visual editor", "launch the editor", "open editor", or "edit in visual editor".
        - NEVER trigger `open_editor` when the user merely wants to focus, chat, discuss, or work on a job inside HollaBuddy!
@@ -320,15 +322,17 @@ def chat_with_hollabuddy(
             raw_params = (action_match.group(2) or "").strip()
             params = {}
             if raw_params:
-                if action_type in ("refine_resume", "generate_cover_letter") and raw_params.startswith("instruction="):
-                    params["instruction"] = raw_params.split("instruction=", 1)[1].strip()
-                else:
-                    for chunk in raw_params.split("|"):
-                        if "=" in chunk:
-                            k, v = chunk.split("=", 1)
-                            params[k.strip()] = v.strip()
-                        else:
-                            params[chunk.strip()] = True
+                # Robust parameter parsing supporting instruction=, company=, role=, etc. in any order
+                parts = re.split(r'\|(?=[a-zA-Z0-9_]+=)', raw_params)
+                for chunk in parts:
+                    if "=" in chunk:
+                        k, v = chunk.split("=", 1)
+                        params[k.strip()] = v.strip()
+                    else:
+                        params[chunk.strip()] = True
+                # Fallback: If only raw instruction text was provided without instruction= key
+                if action_type in ("refine_resume", "generate_cover_letter") and "instruction" not in params and raw_params:
+                    params["instruction"] = raw_params
             action_data = {
                 "type": action_type,
                 "params": params

@@ -4659,7 +4659,7 @@ function applyRefinePreset(text) {
   input.focus();
 }
 
-async function submitResumeRefinement() {
+async function submitResumeRefinement(opts = {}) {
   const input = document.getElementById("refine-instruction-input");
   const btn = document.getElementById("refine-submit-btn");
   const spinner = document.getElementById("refine-btn-spinner");
@@ -4668,7 +4668,7 @@ async function submitResumeRefinement() {
   const statusBox = document.getElementById("refine-status-box");
   const statusText = document.getElementById("refine-status-text");
 
-  const instruction = (input ? input.value : "").trim();
+  const instruction = (opts.instruction || (input ? input.value : "")).trim();
   if (!instruction) {
     showToast("Please describe what you want to change in the resume.", "warning");
     if (input) input.focus();
@@ -4676,11 +4676,14 @@ async function submitResumeRefinement() {
   }
 
   const lastRes = window.lastResult || {};
-  const folderPath = lastRes.folder_path || "";
-  const company = lastRes.company || analyzeCompany || "";
-  const role = lastRes.role || analyzeRole || "";
-  const url = lastRes.url || (document.getElementById("job-url-input") ? document.getElementById("job-url-input").value.trim() : "");
-  const currentResume = lastRes.tailored_resume || null;
+  const company = opts.company || (hollabuddyActiveJob ? hollabuddyActiveJob.company : "") || lastRes.company || analyzeCompany || "";
+  const role = opts.role || (hollabuddyActiveJob ? hollabuddyActiveJob.role : "") || lastRes.role || analyzeRole || "";
+  let folderPath = opts.folderPath || (hollabuddyActiveJob ? (hollabuddyActiveJob.output_file || "") : "") || lastRes.folder_path || lastRes.relative_path || "";
+  if (folderPath && (folderPath.endsWith(".docx") || folderPath.endsWith(".pdf") || folderPath.endsWith(".json"))) {
+    folderPath = folderPath.replace(/[/\\][^/\\]+$/, "");
+  }
+  const url = opts.url || lastRes.url || (hollabuddyActiveJob ? hollabuddyActiveJob.url : "") || (document.getElementById("job-url-input") ? document.getElementById("job-url-input").value.trim() : "");
+  const currentResume = opts.currentResume || lastRes.tailored_resume || null;
 
   if (!folderPath && !company) {
     showToast("No active application found to refine. Please run an application first or pick one from History.", "warning");
@@ -4717,12 +4720,27 @@ async function submitResumeRefinement() {
     }
 
     // Update window.lastResult with rebuilt documents and resume data
-    if (window.lastResult) {
-      window.lastResult.output_file = data.output_file;
-      window.lastResult.relative_path = data.relative_path;
-      window.lastResult.relative_pdf = data.relative_pdf;
-      if (data.updated_resume) {
-        window.lastResult.tailored_resume = data.updated_resume;
+    window.lastResult = window.lastResult || {};
+    window.lastResult.output_file = data.output_file;
+    window.lastResult.relative_path = data.relative_path;
+    window.lastResult.relative_pdf = data.relative_pdf;
+    window.lastResult.company = company || window.lastResult.company;
+    window.lastResult.role = role || window.lastResult.role;
+    if (data.updated_resume) {
+      window.lastResult.tailored_resume = data.updated_resume;
+    }
+    if (typeof syncActiveResultStorage === "function") {
+      syncActiveResultStorage();
+    }
+
+    // Update in-memory allHistoryApplications immediately
+    if (Array.isArray(allHistoryApplications) && allHistoryApplications.length > 0) {
+      const q = (company || "").toLowerCase();
+      const match = allHistoryApplications.find(a => (a.company || '').toLowerCase() === q || q.includes((a.company || '').toLowerCase()));
+      if (match) {
+        match.output_file = data.output_file;
+        match.relative_file_path = data.relative_path;
+        match.tailored_resume = data.updated_resume;
       }
     }
 
@@ -4749,8 +4767,8 @@ async function submitResumeRefinement() {
 
     showToast("Resume revised & documents rebuilt! Textbox cleared for next fix.", "success");
 
-    // Refresh history list silently in background
-    loadHistory();
+    // Refresh history list so preview buttons update immediately
+    await loadHistory();
 
     if (window._openEditorAfterRefine) {
       window._openEditorAfterRefine = false;
@@ -7425,21 +7443,51 @@ async function executeHollaBuddyAction(action) {
         showToast("No revision instruction provided", "warning");
         return;
       }
-      const targetCompany = action.params ? (action.params.company || action.params.job || "") : "";
+      let targetCompany = action.params ? (action.params.company || action.params.job || "") : "";
       const shouldOpenEditor = action.params ? (action.params.open_editor || action.params.editor) : false;
 
-      // If targeting a specific past application from history
-      if (targetCompany && Array.isArray(allHistoryApplications) && allHistoryApplications.length > 0) {
-        const match = allHistoryApplications.find(a => (a.company || '').toLowerCase().includes(targetCompany.toLowerCase()));
-        if (match) {
-          const refineFolderInput = document.getElementById("refine-folder-path");
-          if (refineFolderInput) refineFolderInput.value = match.output_file || match.relative_file_path || "";
+      // Smart Fallbacks to find target company:
+      if (!targetCompany && hollabuddyActiveJob && hollabuddyActiveJob.company) {
+        targetCompany = hollabuddyActiveJob.company;
+      }
+      if (!targetCompany && window.lastResult && window.lastResult.company) {
+        targetCompany = window.lastResult.company;
+      }
+      if (!targetCompany && analyzeCompany) {
+        targetCompany = analyzeCompany;
+      }
+      if (!targetCompany && typeof window._lastHollaBuddyUserMessage === "string") {
+        const userMsgLower = window._lastHollaBuddyUserMessage.toLowerCase();
+        if (Array.isArray(allHistoryApplications)) {
+          for (const app of allHistoryApplications) {
+            if (app.company && userMsgLower.includes(app.company.toLowerCase())) {
+              targetCompany = app.company;
+              break;
+            }
+          }
         }
       }
 
+      let matchedApp = null;
+      if (targetCompany && Array.isArray(allHistoryApplications) && allHistoryApplications.length > 0) {
+        const q = targetCompany.toLowerCase();
+        matchedApp = allHistoryApplications.find(a => (a.company || '').toLowerCase().includes(q) || q.includes((a.company || '').toLowerCase()));
+      }
+
+      const activeCo = (matchedApp ? matchedApp.company : targetCompany) || "";
+      const activeRo = (matchedApp ? matchedApp.role : (hollabuddyActiveJob ? hollabuddyActiveJob.role : (window.lastResult ? window.lastResult.role : ""))) || "";
+      let folderPath = matchedApp ? (matchedApp.output_file || matchedApp.relative_file_path || "") : (hollabuddyActiveJob ? (hollabuddyActiveJob.output_file || "") : (window.lastResult ? (window.lastResult.folder_path || window.lastResult.relative_path || "") : ""));
+
+      if (folderPath && (folderPath.endsWith(".docx") || folderPath.endsWith(".pdf") || folderPath.endsWith(".json"))) {
+        folderPath = folderPath.replace(/[/\\][^/\\]+$/, "");
+      }
+
+      const refineFolderInput = document.getElementById("refine-folder-path");
+      if (refineFolderInput) refineFolderInput.value = folderPath;
+
       if (shouldOpenEditor) {
         window._openEditorAfterRefine = true;
-        window._openEditorTargetCompany = targetCompany;
+        window._openEditorTargetCompany = activeCo;
       }
 
       const refineInput = document.getElementById("refine-instruction-input");
@@ -7449,7 +7497,13 @@ async function executeHollaBuddyAction(action) {
       createHollaBuddyPipelineWidget("Surgical Resume Refiner", `Applying revision: "${instruction.slice(0, 45)}..."`, 3, "fa-solid fa-wand-magic-sparkles");
 
       if (typeof submitResumeRefinement === "function") {
-        await submitResumeRefinement();
+        await submitResumeRefinement({
+          instruction,
+          company: activeCo,
+          role: activeRo,
+          folderPath,
+          currentResume: (matchedApp ? (matchedApp.tailored_resume || matchedApp.resume_json) : null) || (window.lastResult ? window.lastResult.tailored_resume : null)
+        });
       }
       break;
     }
