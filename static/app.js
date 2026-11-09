@@ -1451,13 +1451,47 @@ async function loadHistory() {
   }
 }
 
+/**
+ * Accurately formats timestamps adjusted to the user's computer's local time & timezone.
+ */
+function formatClientTimestamp(raw) {
+  if (!raw) return "Recent Application";
+  let d = null;
+  if (typeof raw === "number") {
+    d = new Date(raw > 1e11 ? raw : raw * 1000);
+  } else if (typeof raw === "string") {
+    let clean = raw.trim();
+    const m = clean.match(/run_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/);
+    if (m) {
+      d = new Date(Date.UTC(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10), parseInt(m[4], 10), parseInt(m[5], 10), parseInt(m[6], 10)));
+    } else {
+      // If ISO timestamp without Z or offset (e.g. "2026-09-09T15:46:19.656780"), append Z so browser parses as UTC and shifts to user's computer time
+      if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(clean) && !/[Z+-]\d{2}(:?\d{2})?$/.test(clean)) {
+        clean = clean + "Z";
+      }
+      d = new Date(clean);
+    }
+  }
+  if (!d || isNaN(d.getTime())) {
+    d = new Date();
+  }
+  return d.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true
+  });
+}
+
 function filterApplicationsList(apps, query) {
   if (!query) return apps;
   const q = query.toLowerCase();
   return apps.filter(app => {
     const company = (app.company || "").toLowerCase();
     const role = (app.role || "").toLowerCase();
-    const dateStr = new Date(app.timestamp).toLocaleString().toLowerCase();
+    const dateStr = formatClientTimestamp(app.timestamp || app.created_at || app.log_file_name).toLowerCase();
     const engine = (app.engine_mode || "").toLowerCase();
     const keywords = (app.matching_keywords || []).concat(app.missing_keywords || []).join(" ").toLowerCase();
     const score = `${app.match_score_after || 0}%`;
@@ -1504,7 +1538,7 @@ function renderHistoryCards(apps, query = "") {
 
   grid.innerHTML = "";
   apps.forEach(app => {
-    const dateStr = new Date(app.timestamp).toLocaleString();
+    const dateStr = formatClientTimestamp(app.timestamp || app.created_at || app.log_file_name);
     const beforeScore = app.score_before != null ? app.score_before : (app.match_score_before != null ? app.match_score_before : (app.simplify_score_before != null ? app.simplify_score_before : 0));
     const afterScore = app.score_after != null ? app.score_after : (app.match_score_after != null ? app.match_score_after : 0);
     const deltaScore = app.score_delta != null ? app.score_delta : (app.match_score_delta != null ? app.match_score_delta : Math.max(0, afterScore - beforeScore));
@@ -4156,12 +4190,41 @@ function focusHollaBuddyOnHistory(company, role, relPath) {
   // 1. Find matching application from allHistoryApplications in memory
   let matchedApp = null;
   if (Array.isArray(allHistoryApplications) && allHistoryApplications.length > 0) {
-    const q = (company || "").toLowerCase();
-    matchedApp = allHistoryApplications.find(a => (a.company || "").toLowerCase() === q || (a.company || "").toLowerCase().includes(q) || q.includes((a.company || "").toLowerCase()));
+    if (relPath) {
+      const cleanRel = String(relPath).replace(/\\/g, "/").toLowerCase();
+      matchedApp = allHistoryApplications.find(a => {
+        const aRel = String(a.relative_file_path || a.output_file || a.log_file_name || "").replace(/\\/g, "/").toLowerCase();
+        return aRel && (aRel === cleanRel || aRel.endsWith(cleanRel) || cleanRel.endsWith(aRel));
+      });
+    }
+    if (!matchedApp && company && company !== "Application" && company !== "Target Company" && company.toLowerCase() !== "alt") {
+      const q = company.trim().toLowerCase();
+      // Exact company match
+      matchedApp = allHistoryApplications.find(a => (a.company || "").trim().toLowerCase() === q);
+      // Starts with match
+      if (!matchedApp) {
+        matchedApp = allHistoryApplications.find(a => {
+          const co = (a.company || "").trim().toLowerCase();
+          return co && (co.startsWith(q) || q.startsWith(co));
+        });
+      }
+      // Substring match only if length >= 4 to avoid 3-letter false positives like "Alt"
+      if (!matchedApp && q.length >= 4) {
+        matchedApp = allHistoryApplications.find(a => {
+          const co = (a.company || "").trim().toLowerCase();
+          return co.length >= 4 && (co.includes(q) || q.includes(co));
+        });
+      }
+    }
   }
 
-  const activeCo = (matchedApp ? matchedApp.company : company) || "Application";
-  const activeRo = (matchedApp ? matchedApp.role : role) || "Target Role";
+  // The clicked card's company & role take absolute precedence over any fallback
+  const activeCo = (company && company.trim() && company !== "Application" && company !== "Target Company")
+    ? company.trim()
+    : (matchedApp ? matchedApp.company : "Application");
+  const activeRo = (role && role.trim() && role !== "Target Role")
+    ? role.trim()
+    : (matchedApp ? matchedApp.role : "Target Role");
 
   // 2. Pre-seed active job context
   hollabuddyActiveJob = {
@@ -7588,12 +7651,24 @@ async function executeHollaBuddyAction(action) {
       }
 
       let matchedApp = null;
-      if (targetCompany && Array.isArray(allHistoryApplications) && allHistoryApplications.length > 0) {
-        const q = targetCompany.toLowerCase();
-        matchedApp = allHistoryApplications.find(a => (a.company || '').toLowerCase().includes(q) || q.includes((a.company || '').toLowerCase()));
+      if (targetCompany && targetCompany.toLowerCase() !== "alt" && Array.isArray(allHistoryApplications) && allHistoryApplications.length > 0) {
+        const q = targetCompany.trim().toLowerCase();
+        matchedApp = allHistoryApplications.find(a => (a.company || "").trim().toLowerCase() === q);
+        if (!matchedApp) {
+          matchedApp = allHistoryApplications.find(a => {
+            const co = (a.company || "").trim().toLowerCase();
+            return co && (co.startsWith(q) || q.startsWith(co));
+          });
+        }
+        if (!matchedApp && q.length >= 4) {
+          matchedApp = allHistoryApplications.find(a => {
+            const co = (a.company || "").trim().toLowerCase();
+            return co.length >= 4 && (co.includes(q) || q.includes(co));
+          });
+        }
       }
 
-      const activeCo = (matchedApp ? matchedApp.company : targetCompany) || "";
+      const activeCo = (targetCompany && targetCompany.trim() && targetCompany !== "Application") ? targetCompany.trim() : (matchedApp ? matchedApp.company : "");
       const activeRo = (matchedApp ? matchedApp.role : (hollabuddyActiveJob ? hollabuddyActiveJob.role : (window.lastResult ? window.lastResult.role : ""))) || "";
       let folderPath = matchedApp ? (matchedApp.output_file || matchedApp.relative_file_path || "") : (hollabuddyActiveJob ? (hollabuddyActiveJob.output_file || "") : (window.lastResult ? (window.lastResult.folder_path || window.lastResult.relative_path || "") : ""));
 
@@ -7666,20 +7741,29 @@ async function executeHollaBuddyAction(action) {
 
       let matchedApp = null;
       if (Array.isArray(allHistoryApplications) && allHistoryApplications.length > 0) {
-        if (targetCompany) {
-          const q = targetCompany.toLowerCase();
-          matchedApp = allHistoryApplications.find(a => {
-            const co = (a.company || '').toLowerCase();
-            return co.includes(q) || q.includes(co);
-          });
-        }
-        if (!matchedApp && allHistoryApplications.length > 0) {
-          matchedApp = allHistoryApplications[0];
+        if (targetCompany && targetCompany.toLowerCase() !== "alt") {
+          const q = targetCompany.trim().toLowerCase();
+          // 1. Exact match
+          matchedApp = allHistoryApplications.find(a => (a.company || "").trim().toLowerCase() === q);
+          // 2. Starts-with match
+          if (!matchedApp) {
+            matchedApp = allHistoryApplications.find(a => {
+              const co = (a.company || "").trim().toLowerCase();
+              return co && (co.startsWith(q) || q.startsWith(co));
+            });
+          }
+          // 3. Substring match only if length >= 4 to avoid 3-letter false positives like "Alt"
+          if (!matchedApp && q.length >= 4) {
+            matchedApp = allHistoryApplications.find(a => {
+              const co = (a.company || "").trim().toLowerCase();
+              return co.length >= 4 && (co.includes(q) || q.includes(co));
+            });
+          }
         }
       }
 
-      const activeCo = (matchedApp ? matchedApp.company : targetCompany) || "Target Application";
-      const activeRo = (matchedApp ? matchedApp.role : targetRole) || "Tailored Role";
+      const activeCo = (targetCompany && targetCompany.trim()) ? targetCompany.trim() : (matchedApp ? matchedApp.company : "Target Application");
+      const activeRo = (targetRole && targetRole.trim()) ? targetRole.trim() : (matchedApp ? matchedApp.role : "Tailored Role");
 
       // 1. Set HollaBuddy active job context in memory
       hollabuddyActiveJob = {
@@ -7831,10 +7915,13 @@ function appendHollaBuddyMessage(role, text, followups = []) {
   const msgDiv = document.createElement("div");
   msgDiv.className = `hollabuddy-msg hollabuddy-msg-${role === "user" ? "user" : "bot"}`;
 
+  const timeStr = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+
   if (role === "user") {
     msgDiv.innerHTML = `
       <div class="hollabuddy-bubble hollabuddy-bubble-user">
         <p>${escapeHtml(text)}</p>
+        <span class="hollabuddy-msg-time" style="font-size:10px; opacity:0.75; display:block; text-align:right; margin-top:3px;">${timeStr}</span>
       </div>
       <div class="hollabuddy-msg-avatar hollabuddy-user-avatar">
         <i class="fa-solid fa-user"></i>
@@ -7860,6 +7947,7 @@ function appendHollaBuddyMessage(role, text, followups = []) {
       <div class="hollabuddy-bubble hollabuddy-bubble-bot">
         <div class="hollabuddy-bubble-content">${formattedHtml}</div>
         <div class="hollabuddy-bubble-actions">
+          <span class="hollabuddy-msg-time" style="font-size:10.5px; opacity:0.65; margin-right:auto;">${timeStr}</span>
           <button type="button" class="hollabuddy-humanize-btn" title="Refine with Dani's Human Voice engine to maximize burstiness and remove all AI tells">
             <i class="fa-solid fa-wand-magic-sparkles"></i> Humanize
           </button>

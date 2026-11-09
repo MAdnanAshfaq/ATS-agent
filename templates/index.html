@@ -118,16 +118,16 @@
           <i class="fa-solid fa-folder-closed"></i> History <span class="tab-badge" id="history-count">0</span>
         </button>
         <button class="nav-tab" data-tab="setup">
-          <i class="fa-solid fa-sliders"></i> Prerequisites & Setup
+          <i class="fa-solid fa-sliders"></i> <span class="nav-tab-label">Setup</span>
         </button>
         <button class="nav-tab" data-tab="resume">
-          <i class="fa-solid fa-file-user"></i> Master Resume
+          <i class="fa-solid fa-file-user"></i> <span class="nav-tab-label">Master Resume</span>
         </button>
         <a href="/editor/master" class="nav-tab nav-tab-studio" style="background: linear-gradient(135deg, rgba(37,99,235,0.25), rgba(124,58,237,0.25)); border: 1px solid rgba(59,130,246,0.5); color: #93c5fd; text-decoration: none; display: inline-flex; align-items: center; gap: 7px; font-weight: 700; box-shadow: 0 0 12px rgba(37,99,235,0.2);" title="Open Canva-Grade Visual PDF Resume Editor Studio">
-          <i class="fa-solid fa-wand-magic-sparkles" style="color:#60a5fa;"></i> Visual Studio Editor
+          <i class="fa-solid fa-wand-magic-sparkles" style="color:#60a5fa;"></i> <span class="nav-tab-label">Studio</span>
         </a>
         <button class="nav-tab" data-tab="ai-lab">
-          <i class="fa-solid fa-flask-vial"></i> AI Lab <span class="tab-badge tab-badge-hf">HF</span>
+          <i class="fa-solid fa-flask-vial"></i> <span class="nav-tab-label">AI Lab</span> <span class="tab-badge tab-badge-hf">HF</span>
         </button>
       </nav>
 
@@ -510,10 +510,10 @@
             </div>
             <div class="matrix-cell-jd">
               <div class="matrix-job-card">
-                <div class="matrix-company-avatar" id="matrix-company-avatar">ALT</div>
+                <div class="matrix-company-avatar" id="matrix-company-avatar">JOB</div>
                 <div style="flex:1; min-width:0;">
                   <div style="display:flex; align-items:center; gap:6px;">
-                    <input type="text" id="matrix-company-name" class="matrix-company-name" value="Alt" placeholder="Company Name" oninput="onCompanyEdited(this.value)" title="Click to edit Company Name" />
+                    <input type="text" id="matrix-company-name" class="matrix-company-name" value="" placeholder="Company Name" oninput="onCompanyEdited(this.value)" title="Click to edit Company Name" />
                     <i class="fa-solid fa-pen-to-square" style="font-size:11px; color:#94a3b8;" title="Company name is editable"></i>
                   </div>
                   <div style="display:flex; align-items:center; gap:6px; margin-top:2px;">

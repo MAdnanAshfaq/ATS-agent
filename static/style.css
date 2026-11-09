@@ -847,13 +847,15 @@ a:hover { color: #60A5FA; }
 }
 
 .header-container {
-  max-width: 1400px;
+  max-width: 100%;
+  width: 100%;
   margin: 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
   height: 100%;
-  gap: 12px;
+  gap: 8px;
+  min-width: 0;
 }
 
 .brand-logo {
@@ -912,6 +914,13 @@ a:hover { color: #60A5FA; }
   border-radius: var(--r-md);
   border: 1px solid var(--border-base);
   flex-shrink: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.nav-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .nav-tab {
@@ -1097,7 +1106,7 @@ a:hover { color: #60A5FA; }
 
 /* Standalone & Inline Prominent Sign Out Button (Always visible on all screens) */
 .btn-signout-nav {
-  display: inline-flex;
+  display: inline-flex !important;
   align-items: center;
   gap: 5px;
   padding: 4px 9px;
@@ -1110,7 +1119,7 @@ a:hover { color: #60A5FA; }
   text-decoration: none;
   transition: all 0.2s ease;
   white-space: nowrap;
-  flex-shrink: 0;
+  flex-shrink: 0 !important;
   cursor: pointer;
 }
 
@@ -1139,40 +1148,37 @@ a:hover { color: #60A5FA; }
     display: none !important;
   }
   .system-status-pill .status-text {
-    display: none;
+    display: none !important;
   }
   .system-status-pill {
     padding: 5px 8px;
   }
-  .nav-tab {
-    padding: 5px 10px;
-    font-size: 12px;
-    gap: 6px;
-  }
-}
-
-@media (max-width: 1280px) {
-  .user-email-text {
+  .theme-toggle-label {
     display: none !important;
   }
   .header-console-btn span:not(.console-live-dot) {
-    display: none;
+    display: none !important;
   }
-  .header-console-btn {
-    padding: 5px 8px;
-  }
-}
-
-@media (max-width: 1200px) {
-  .brand-sub {
-    display: none;
-  }
-  .user-display-name {
-    max-width: 75px;
+  .user-email-text {
+    display: none !important;
   }
   .nav-tab {
     padding: 5px 8px;
     font-size: 11.5px;
+    gap: 5px;
+  }
+}
+
+@media (max-width: 1250px) {
+  .brand-sub {
+    display: none !important;
+  }
+  .user-display-name {
+    max-width: 70px;
+  }
+  .nav-tab {
+    padding: 5px 7px;
+    font-size: 11px;
     gap: 4px;
   }
 }
