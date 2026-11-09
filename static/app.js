@@ -4739,6 +4739,31 @@ async function submitResumeRefinement(opts = {}) {
   if (icon) icon.classList.add("hidden");
   if (btnText) btnText.textContent = "Revising & Rebuilding (~2s)...";
 
+  // Bring user to main tab so they see pipeline running live on main page
+  if (typeof switchTab === "function") {
+    switchTab("new-app");
+  }
+
+  // Ensure execution container is visible and active on main page
+  const execContainer = document.getElementById("execution-container");
+  if (execContainer) {
+    execContainer.classList.remove("hidden");
+    execContainer.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  const execBadge = document.getElementById("exec-status-badge");
+  if (execBadge) {
+    execBadge.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-cyan"></i> Refining Resume (${escapeHtml(role || 'Target Role')} @ ${escapeHtml(company || 'Target Company')})...`;
+  }
+  resetPipelineVisuals();
+  startTimer();
+  clearTerminal();
+  logTerminal("info", `[Surgical Refiner] Applying instruction: "${instruction}" for ${company || "Target Job"} (${role || "Target Role"})`);
+  updateStepState(1, "success", "Master Profile Loaded");
+  updateStepState(2, "success", "JD Context Synchronized");
+  updateStepState(3, "success", "Target Keywords Selected");
+  updateStepState(4, "working", "Applying Surgical Bullet Rewrites & ATS Formatting...");
+  updateProgressBar(4);
+
   try {
     if (typeof activeHollaBuddyPipelineWidget !== "undefined" && activeHollaBuddyPipelineWidget) {
       activeHollaBuddyPipelineWidget.update(2, 3, "Applying surgical bullet rewrites and ATS alignment...", "Rewriting");
@@ -4762,6 +4787,16 @@ async function submitResumeRefinement(opts = {}) {
       throw new Error(data.error || "Failed to refine resume");
     }
 
+    // Step completion on main page pipeline visualizer
+    updateStepState(4, "success", "Bullets Revised & Rebuilt");
+    updateStepState(5, "success", "ATS Formatting Verified");
+    updateStepState(6, "success", "Coverage & Scoring Complete");
+    updateStepState(7, "success", "DOCX & PDF Documents Built");
+    updateProgressBar(7);
+    stopTimer();
+    stopExecutionState("success");
+    logTerminal("success", `[Refiner Complete] ${data.change_summary || "Documents rebuilt successfully"}`);
+
     // Update window.lastResult with rebuilt documents and resume data
     window.lastResult = window.lastResult || {};
     window.lastResult.output_file = data.output_file;
@@ -4774,6 +4809,16 @@ async function submitResumeRefinement(opts = {}) {
     }
     if (typeof syncActiveResultStorage === "function") {
       syncActiveResultStorage();
+    }
+
+    // Display results immediately on main page so candidate can review the crafted resume
+    if (typeof displayResults === "function") {
+      displayResults(window.lastResult, true);
+    }
+    const dashboard = document.getElementById("results-dashboard");
+    if (dashboard) {
+      dashboard.classList.remove("hidden");
+      dashboard.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
     // Update in-memory allHistoryApplications immediately
@@ -4824,6 +4869,18 @@ async function submitResumeRefinement(opts = {}) {
   } catch (err) {
     console.error("[Refine Error]", err);
     showToast(`Refinement failed: ${err.message}`, "error");
+    if (typeof updateStepState === "function") {
+      updateStepState(4, "error", err.message);
+    }
+    if (typeof stopTimer === "function") {
+      stopTimer();
+    }
+    if (typeof stopExecutionState === "function") {
+      stopExecutionState("failed");
+    }
+    if (typeof logTerminal === "function") {
+      logTerminal("error", `[Refiner Error] ${err.message}`);
+    }
     if (typeof activeHollaBuddyPipelineWidget !== "undefined" && activeHollaBuddyPipelineWidget) {
       activeHollaBuddyPipelineWidget.fail(err.message);
     }
@@ -7195,6 +7252,9 @@ function createHollaBuddyPipelineWidget(title, initialStatus, totalSteps = 7, ic
 
   container.appendChild(widgetEl);
   scrollHollaBuddyToBottom();
+  requestAnimationFrame(() => {
+    widgetEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
 
   const badgeEl = widgetEl.querySelector("#hb-widget-badge");
   const stepTextEl = widgetEl.querySelector("#hb-widget-step-text");
@@ -7470,14 +7530,26 @@ async function executeHollaBuddyAction(action) {
       createHollaBuddyPipelineWidget(title, "Connecting to pipeline engine and job crawler...", 7, "fa-solid fa-rocket");
       showToast("HollaBuddy triggered resume tailoring pipeline!", "info");
 
+      // Bring user to main page tab so they see pipeline running live
+      if (typeof switchTab === "function") {
+        switchTab("new-app");
+      }
+
       // Ensure execution container is visible on the main page for full visual sync
       const execContainer = document.getElementById("execution-container");
       if (execContainer) {
         execContainer.classList.remove("hidden");
+        execContainer.scrollIntoView({ behavior: "smooth", block: "start" });
       }
 
       if (typeof startGeneration === "function") {
-        startGeneration({ customKeywords: customKeywords || undefined });
+        startGeneration({
+          customKeywords: customKeywords || undefined,
+          customCompany: activeCo || undefined,
+          customRole: activeRo || undefined,
+          directJdText: (hollabuddyActiveJob && hollabuddyActiveJob.jd_text) || analyzeJdText || undefined,
+          url: (hollabuddyActiveJob && hollabuddyActiveJob.url) || undefined,
+        });
       } else if (typeof runAgent === "function") {
         runAgent();
       }
@@ -8015,11 +8087,22 @@ function clearHollaBuddyChat() {
   }
 }
 
-function scrollHollaBuddyToBottom() {
+function scrollHollaBuddyToBottom(smooth = false) {
   const container = document.getElementById("hollabuddy-messages");
-  if (container) {
-    container.scrollTop = container.scrollHeight;
-  }
+  if (!container) return;
+  const doScroll = () => {
+    container.scrollTop = container.scrollHeight + 1000;
+    const last = container.lastElementChild;
+    if (last && typeof last.scrollIntoView === "function") {
+      last.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "end" });
+    }
+  };
+  doScroll();
+  requestAnimationFrame(() => {
+    doScroll();
+    setTimeout(doScroll, 40);
+    setTimeout(doScroll, 120);
+  });
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
