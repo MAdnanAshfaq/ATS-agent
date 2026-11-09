@@ -4153,27 +4153,70 @@ async function regenerateCoverLetter(forcedInstruction = null) {
  * enabling deep questions, role comparisons, bullet porting, or cover letter tuning.
  */
 function focusHollaBuddyOnHistory(company, role, relPath) {
-  // Open HollaBuddy drawer or dock
-  if (typeof openHollaBuddyDrawer === "function") {
-    openHollaBuddyDrawer();
-  } else if (typeof toggleHollaBuddyDock === "function") {
-    toggleHollaBuddyDock(true);
+  // 1. Find matching application from allHistoryApplications in memory
+  let matchedApp = null;
+  if (Array.isArray(allHistoryApplications) && allHistoryApplications.length > 0) {
+    const q = (company || "").toLowerCase();
+    matchedApp = allHistoryApplications.find(a => (a.company || "").toLowerCase() === q || (a.company || "").toLowerCase().includes(q) || q.includes((a.company || "").toLowerCase()));
   }
 
-  // Pre-seed active job context
-  window.hollabuddyActiveJob = {
-    company: company,
-    role: role,
-    url: "",
-    jd_text: `Application from history: ${role} at ${company}`
-  };
+  const activeCo = (matchedApp ? matchedApp.company : company) || "Application";
+  const activeRo = (matchedApp ? matchedApp.role : role) || "Target Role";
 
-  const inputEl = document.getElementById("hollabuddy-chat-input") || document.getElementById("hb-input");
+  // 2. Pre-seed active job context
+  hollabuddyActiveJob = {
+    company: activeCo,
+    role: activeRo,
+    url: matchedApp ? (matchedApp.url || matchedApp.job_url || "") : "",
+    jd_text: matchedApp ? (matchedApp.jd_text || `Application from history: ${activeRo} at ${activeCo}`) : `Application from history: ${activeRo} at ${activeCo}`,
+    output_file: matchedApp ? (matchedApp.output_file || matchedApp.relative_file_path || relPath) : relPath
+  };
+  window.hollabuddyActiveJob = hollabuddyActiveJob;
+
+  // 3. Load into window.lastResult & sessionStorage so all tools/refiners/previews reference this job
+  if (matchedApp) {
+    window.lastResult = {
+      company: activeCo,
+      role: activeRo,
+      output_file: matchedApp.output_file || matchedApp.relative_file_path || relPath,
+      relative_path: matchedApp.relative_file_path || relPath,
+      score_after: matchedApp.score_after || matchedApp.score,
+      score_before: matchedApp.score_before || null,
+      matched_keywords: matchedApp.matched_keywords || [],
+      newly_added: matchedApp.newly_added || [],
+      tailored_resume: matchedApp.tailored_resume || matchedApp.resume_json || null,
+      cover_letter_text: matchedApp.cover_letter_text || matchedApp.cover_letter || "",
+      jd_text: matchedApp.jd_text || ""
+    };
+    if (typeof syncActiveResultStorage === "function") {
+      syncActiveResultStorage();
+    }
+  }
+
+  // 4. Open HollaBuddy drawer
+  if (typeof toggleHollaBuddy === "function") {
+    toggleHollaBuddy(true);
+  }
+
+  // 5. Update header badges immediately with focused job
+  updateHollaBuddyJobContext();
+
+  // 6. Pre-fill input
+  const inputEl = document.getElementById("hollabuddy-input");
   if (inputEl) {
-    inputEl.value = `Let's focus on my past application for ${role} at ${company}. How can we adapt its achievements, metrics, or cover letter?`;
+    inputEl.value = `Let's focus on my past application for ${activeRo} at ${activeCo}. How can we adapt its achievements, metrics, or cover letter?`;
+    if (typeof handleHollaBuddyInput === "function") {
+      handleHollaBuddyInput(inputEl);
+    }
     inputEl.focus();
   }
-  showToast(`HollaBuddy focused on ${company} (${role}) from history`, "info");
+
+  // 7. Render focus memory card in chat stream
+  if (typeof appendHollaBuddyFocusCard === "function") {
+    appendHollaBuddyFocusCard(activeCo, activeRo, matchedApp);
+  }
+
+  showToast(`HollaBuddy focused on ${activeCo} (${activeRo}) from history`, "info");
 }
 
 function copyCoverLetterText() {
@@ -6777,12 +6820,11 @@ function updateHollaBuddyJobContext() {
   const badge = document.getElementById("hollabuddy-mode-badge");
   const sub = document.getElementById("hollabuddy-context-sub");
 
-  let activeCo = analyzeCompany;
-  let activeRo = analyzeRole;
-  if (!activeCo && window.lastResult) {
-    activeCo = window.lastResult.company;
-    activeRo = window.lastResult.role;
-  }
+  // Priority 1: Specifically focused job in HollaBuddy (from History or focus_job action)
+  // Priority 2: Currently analyzed job on Apply tab
+  // Priority 3: Active pipeline run result
+  let activeCo = (hollabuddyActiveJob && hollabuddyActiveJob.company) ? hollabuddyActiveJob.company : (analyzeCompany || (window.lastResult ? window.lastResult.company : ""));
+  let activeRo = (hollabuddyActiveJob && hollabuddyActiveJob.role) ? hollabuddyActiveJob.role : (analyzeRole || (window.lastResult ? window.lastResult.role : ""));
 
   // Check if a tailored / drafted resume is active
   let hasDraftedResume = false;
@@ -6799,12 +6841,17 @@ function updateHollaBuddyJobContext() {
   }
 
   if (activeCo && activeRo) {
-    hollabuddyActiveJob = {
-      company: activeCo,
-      role: activeRo,
-      url: document.getElementById("job-url-input") ? document.getElementById("job-url-input").value : "",
-      jd_text: analyzeJdText || "",
-    };
+    if (!hollabuddyActiveJob) {
+      hollabuddyActiveJob = {
+        company: activeCo,
+        role: activeRo,
+        url: document.getElementById("job-url-input") ? document.getElementById("job-url-input").value : "",
+        jd_text: analyzeJdText || "",
+      };
+    } else {
+      hollabuddyActiveJob.company = activeCo;
+      hollabuddyActiveJob.role = activeRo;
+    }
     if (badge) {
       badge.innerHTML = `<i class="fa-solid fa-crosshairs text-cyan"></i> Active Target: <strong>${escapeHtml(activeRo)}</strong> @ ${escapeHtml(activeCo)}`;
     }
