@@ -38,10 +38,12 @@ def generate_cover_letter(
     missing_keywords: list = None,
     output_dir: str = None,
     ats_profile: Any = None,
+    custom_instruction: str = "",
 ) -> dict:
     """
     Generate a high-impact, job-specific cover letter using Gemini,
     with platform awareness for cover-letter scored ATS systems.
+    Accepts optional custom_instruction which is strictly prioritized.
 
     Returns:
         dict with keys: {
@@ -71,14 +73,23 @@ def generate_cover_letter(
     if profile.platform_id == "taleo":
         platform_notes = f"\nTALEO QUIRK NOTICE: Taleo concatenates the cover letter directly into the resume text corpus for keyword parsing. Keep this letter keyword-light and focused on qualitative stories so the composite document does not breach the 1.5% keyword density ceiling."
 
+    user_command_block = ""
+    if custom_instruction and custom_instruction.strip():
+        user_command_block = f"""
+### USER'S DIRECT COVER LETTER COMMAND (HIGHEST PRIORITY):
+The candidate provided the following explicit instructions for this cover letter. You MUST prioritize and fulfill these instructions over default formatting and stylistic preferences:
+\"\"\"{custom_instruction.strip()}\"\"\"
+"""
+
     prompt = f"""You are the expert Cover Letter Writer adhering to Dani's Human-Voice Rules (from ResumeHQ cover-letter.md).
 Write a brief, punchy, persuasive 1-page Cover Letter for {candidate_name} applying for the {role} position at {company}.
 {platform_notes}
-
+{user_command_block}
 PRIORITY ORDER:
-1. Authenticity: Only reference facts, tools, and achievements from the candidate's real profile.
-2. Human Voice: Brief, varied sentence rhythm, plain conversational engineering language.
-3. Proof Match: Connect candidate's verified wins to the company's stated problems.
+1. User's Direct Command (if provided above, prioritize this above all else).
+2. Authenticity: Only reference facts, tools, and achievements from the candidate's real profile.
+3. Human Voice: Brief, varied sentence rhythm, plain conversational engineering language.
+4. Proof Match: Connect candidate's verified wins to the company's stated problems.
 
 CANDIDATE PROFILE:
 Name: {candidate_name}

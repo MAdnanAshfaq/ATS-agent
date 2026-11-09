@@ -1567,6 +1567,9 @@ function renderHistoryCards(apps, query = "") {
         <button class="btn btn-purple-sm" onclick="generateOrViewHistoryCoverLetter('${escapeHtml(app.company)}', '${escapeHtml(app.role)}', '${escapeHtml(app.relative_file_path)}', '${escapeHtml(jobUrl)}')">
           <i class="fa-solid fa-envelope"></i> Cover Letter
         </button>
+        <button class="btn btn-secondary btn-sm" onclick="focusHollaBuddyOnHistory('${escapeHtml(app.company)}', '${escapeHtml(app.role)}', '${escapeHtml(app.relative_file_path)}')" title="Ask questions or adapt achievements from this past application">
+          <i class="fa-solid fa-comments text-cyan"></i> Ask Buddy
+        </button>
         <button class="btn btn-secondary btn-sm" onclick="openEditHistoryModal('${escapeHtml(app.log_file_name)}', '${escapeHtml(app.company)}', '${escapeHtml(app.role)}', '${escapeHtml(jobUrl)}')" title="Edit company name, role or job link">
           <i class="fa-solid fa-pen-to-square"></i> Edit
         </button>
@@ -3939,7 +3942,7 @@ function toggleCustomBulletsDrawer() {
 }
 
 /* ── Cover Letter Modal Handlers ────────────────────────────────────────── */
-async function openCurrentCoverLetter() {
+async function openCurrentCoverLetter(customInstruction = "") {
   if (!window.lastResult) {
     showToast("Please run an application first to view its Cover Letter", "warning");
     return;
@@ -3954,9 +3957,21 @@ async function openCurrentCoverLetter() {
   const modal = document.getElementById("cover-letter-modal");
   modal.classList.remove("hidden");
 
+  const cmdInput = document.getElementById("cl-custom-command");
+  if (customInstruction && cmdInput) {
+    cmdInput.value = customInstruction;
+  }
+  const effectiveInstruction = cmdInput ? cmdInput.value.trim() : (customInstruction || "");
+
   const textarea = document.getElementById("cl-modal-textarea");
   const url = document.getElementById("job-url") ? document.getElementById("job-url").value.trim() : "";
-  window.currentCoverLetterParams = { company, role, keywords: window.lastResult.newly_added || [], url };
+  window.currentCoverLetterParams = { 
+    company, 
+    role, 
+    keywords: window.lastResult.newly_added || [], 
+    url,
+    custom_instruction: effectiveInstruction
+  };
 
   function _getCoverLetterRelPath(baseRel) {
     if (!baseRel) return "";
@@ -3970,7 +3985,8 @@ async function openCurrentCoverLetter() {
     return clean.replace(/\.(docx|pdf|json)$/i, "_Cover_Letter.docx");
   }
 
-  if (window.lastResult.cover_letter_text) {
+  // If already loaded and no new custom instruction requested, display directly
+  if (window.lastResult.cover_letter_text && !effectiveInstruction) {
     textarea.value = window.lastResult.cover_letter_text;
     const downloadDocx = document.getElementById("cl-modal-docx-download");
     const coverLetterRel = _getCoverLetterRelPath(relPath);
@@ -3978,7 +3994,10 @@ async function openCurrentCoverLetter() {
     return;
   }
 
-  textarea.value = "Generating high-impact recruiter cover letter with Gemini...";
+  textarea.value = effectiveInstruction 
+    ? `Applying custom instructions: "${effectiveInstruction.slice(0, 45)}..." and generating cover letter...`
+    : "Generating high-impact recruiter cover letter with Gemini...";
+
   try {
     const res = await fetch("/api/cover-letter", {
       method: "POST",
@@ -3998,14 +4017,23 @@ async function openCurrentCoverLetter() {
   }
 }
 
-async function generateOrViewHistoryCoverLetter(company, role, relativePath, url = "") {
+async function generateOrViewHistoryCoverLetter(company, role, relativePath, url = "", customInstruction = "") {
   const modal = document.getElementById("cover-letter-modal");
   modal.classList.remove("hidden");
 
   document.getElementById("cl-modal-title").innerText = `${role} Cover Letter`;
   document.getElementById("cl-modal-subtitle").innerText = `Tailored for ${company}`;
+
+  const cmdInput = document.getElementById("cl-custom-command");
+  if (customInstruction && cmdInput) {
+    cmdInput.value = customInstruction;
+  }
+  const effectiveInstruction = cmdInput ? cmdInput.value.trim() : (customInstruction || "");
+
   const textarea = document.getElementById("cl-modal-textarea");
-  textarea.value = "Generating recruiter-targeting AI cover letter...";
+  textarea.value = effectiveInstruction 
+    ? `Applying custom instructions: "${effectiveInstruction.slice(0, 45)}..." to ${company} cover letter...`
+    : "Loading or generating recruiter-targeting AI cover letter...";
 
   function _getCoverLetterRelPath(baseRel) {
     if (!baseRel) return "";
@@ -4022,7 +4050,15 @@ async function generateOrViewHistoryCoverLetter(company, role, relativePath, url
   const coverLetterRel = _getCoverLetterRelPath(relativePath);
   document.getElementById("cl-modal-docx-download").href = `/api/download/${coverLetterRel}`;
 
-  window.currentCoverLetterParams = { company, role, keywords: [], url, isHistory: true };
+  window.currentCoverLetterParams = { 
+    company, 
+    role, 
+    keywords: [], 
+    url, 
+    isHistory: true,
+    custom_instruction: effectiveInstruction,
+    regenerate: Boolean(effectiveInstruction)
+  };
 
   try {
     const res = await fetch("/api/cover-letter", {
@@ -4042,11 +4078,23 @@ async function generateOrViewHistoryCoverLetter(company, role, relativePath, url
   }
 }
 
-async function regenerateCoverLetter() {
+async function regenerateCoverLetter(forcedInstruction = null) {
   if (!window.currentCoverLetterParams) return;
 
+  const cmdInput = document.getElementById("cl-custom-command");
+  if (forcedInstruction !== null && cmdInput) {
+    cmdInput.value = forcedInstruction;
+  }
+  const customCmd = cmdInput ? cmdInput.value.trim() : (forcedInstruction || "");
+
+  window.currentCoverLetterParams.custom_instruction = customCmd;
+  window.currentCoverLetterParams.regenerate = true;
+
   const textarea = document.getElementById("cl-modal-textarea");
-  textarea.value = "Regenerating high-impact recruiter cover letter with Gemini...";
+  textarea.value = customCmd 
+    ? `Regenerating with top-priority instruction: "${customCmd.slice(0, 45)}..."`
+    : "Regenerating high-impact recruiter cover letter with Gemini...";
+
   const btn = document.querySelector("#cover-letter-modal .btn-primary");
   if (btn) btn.disabled = true;
 
@@ -4059,11 +4107,13 @@ async function regenerateCoverLetter() {
     const data = await res.json();
     if (data.success) {
       textarea.value = data.cover_letter_text;
-      document.getElementById("cl-modal-docx-download").href = `/api/download/${data.relative_docx}`;
+      if (data.relative_docx) {
+        document.getElementById("cl-modal-docx-download").href = `/api/download/${data.relative_docx}`;
+      }
       if (window.lastResult && !window.currentCoverLetterParams.isHistory) {
         window.lastResult.cover_letter_text = data.cover_letter_text;
       }
-      showToast("Cover letter regenerated successfully!", "success");
+      showToast(customCmd ? "Cover letter regenerated with your custom instructions!" : "Cover letter regenerated successfully!", "success");
     } else {
       textarea.value = `Failed to regenerate cover letter: ${data.error}`;
     }
@@ -4072,6 +4122,34 @@ async function regenerateCoverLetter() {
   } finally {
     if (btn) btn.disabled = false;
   }
+}
+
+/**
+ * Focuses HollaBuddy on a specific past application from History,
+ * enabling deep questions, role comparisons, bullet porting, or cover letter tuning.
+ */
+function focusHollaBuddyOnHistory(company, role, relPath) {
+  // Open HollaBuddy drawer or dock
+  if (typeof openHollaBuddyDrawer === "function") {
+    openHollaBuddyDrawer();
+  } else if (typeof toggleHollaBuddyDock === "function") {
+    toggleHollaBuddyDock(true);
+  }
+
+  // Pre-seed active job context
+  window.hollabuddyActiveJob = {
+    company: company,
+    role: role,
+    url: "",
+    jd_text: `Application from history: ${role} at ${company}`
+  };
+
+  const inputEl = document.getElementById("hollabuddy-chat-input") || document.getElementById("hb-input");
+  if (inputEl) {
+    inputEl.value = `Let's focus on my past application for ${role} at ${company}. How can we adapt its achievements, metrics, or cover letter?`;
+    inputEl.focus();
+  }
+  showToast(`HollaBuddy focused on ${company} (${role}) from history`, "info");
 }
 
 function copyCoverLetterText() {
@@ -4639,6 +4717,14 @@ async function submitResumeRefinement() {
 
     // Refresh history list silently in background
     loadHistory();
+
+    if (window._openEditorAfterRefine) {
+      window._openEditorAfterRefine = false;
+      const target = window._openEditorTargetCompany || (window.lastResult ? window.lastResult.relative_path : "");
+      setTimeout(() => {
+        openLiveEditModal(target);
+      }, 500);
+    }
 
   } catch (err) {
     console.error("[Refine Error]", err);
@@ -6789,6 +6875,7 @@ async function sendHollaBuddyMessage() {
   const message = input.value.trim();
   if (!message) return;
 
+  window._lastHollaBuddyUserMessage = message;
   input.value = "";
   input.classList.remove("expanded");
   input.style.height = "auto";
@@ -7035,11 +7122,28 @@ async function executeHollaBuddyAction(action) {
     }
 
     case "refine_resume": {
-      const instruction = action.params ? action.params.instruction : "";
+      const instruction = action.params ? (action.params.instruction || action.params.prompt || "") : "";
       if (!instruction) {
         showToast("No revision instruction provided", "warning");
         return;
       }
+      const targetCompany = action.params ? (action.params.company || action.params.job || "") : "";
+      const shouldOpenEditor = action.params ? (action.params.open_editor || action.params.editor) : false;
+
+      // If targeting a specific past application from history
+      if (targetCompany && Array.isArray(allHistoryApplications) && allHistoryApplications.length > 0) {
+        const match = allHistoryApplications.find(a => (a.company || '').toLowerCase().includes(targetCompany.toLowerCase()));
+        if (match) {
+          const refineFolderInput = document.getElementById("refine-folder-path");
+          if (refineFolderInput) refineFolderInput.value = match.output_file || match.relative_file_path || "";
+        }
+      }
+
+      if (shouldOpenEditor) {
+        window._openEditorAfterRefine = true;
+        window._openEditorTargetCompany = targetCompany;
+      }
+
       const refineInput = document.getElementById("refine-instruction-input");
       if (refineInput) refineInput.value = instruction;
       showToast(`HollaBuddy refining resume: "${instruction.slice(0, 45)}..."`, "info");
@@ -7050,19 +7154,42 @@ async function executeHollaBuddyAction(action) {
     }
 
     case "generate_cover_letter": {
-      showToast("HollaBuddy generating cover letter...", "info");
+      const instruction = action.params && action.params.instruction ? action.params.instruction : "";
+      const clCmdInput = document.getElementById("cl-custom-command");
+      if (clCmdInput && instruction) clCmdInput.value = instruction;
+      showToast(instruction ? `HollaBuddy drafting cover letter: "${instruction.slice(0, 45)}..."` : "HollaBuddy generating cover letter...", "info");
       if (typeof openCurrentCoverLetter === "function") {
-        openCurrentCoverLetter();
+        openCurrentCoverLetter(instruction);
       } else if (typeof regenerateCoverLetter === "function") {
-        regenerateCoverLetter();
+        regenerateCoverLetter(instruction);
       }
       break;
     }
 
     case "open_editor": {
-      showToast("Opening Visual Studio Editor...", "info");
+      let targetCompany = action.params ? (action.params.company || action.params.job || action.params.target || '') : '';
+      let explicitPath = action.params ? (action.params.path || action.params.file || '') : '';
+
+      // Smart Autonomous Fallback: If no company in tag params, inspect last user chat input
+      if (!targetCompany && !explicitPath && typeof window._lastHollaBuddyUserMessage === 'string') {
+        const userMsgLower = window._lastHollaBuddyUserMessage.toLowerCase();
+        if (Array.isArray(allHistoryApplications) && allHistoryApplications.length > 0) {
+          for (const app of allHistoryApplications) {
+            if (app.company && userMsgLower.includes(app.company.toLowerCase())) {
+              targetCompany = app.company;
+              break;
+            }
+          }
+        }
+        if (!targetCompany && userMsgLower.includes("beehiiv")) {
+          targetCompany = "Beehiiv";
+        }
+      }
+
+      showToast(targetCompany ? `Opening Visual Editor for ${targetCompany}...` : "Opening Visual Studio Editor...", "info");
+      
       if (typeof openLiveEditModal === "function") {
-        openLiveEditModal();
+        openLiveEditModal(explicitPath || targetCompany);
       }
       break;
     }
@@ -8182,12 +8309,47 @@ async function weaveJDResponsibilities() {
 
 /* ── LIVE EDIT MODAL ───────────────────────────────────────────────────────── */
 
-function openLiveEditModal() {
+function openLiveEditModal(targetParam = null) {
+  // 1. If an explicit target parameter was supplied (e.g. "Beehiiv" or a file path)
+  if (targetParam && typeof targetParam === 'string' && targetParam.trim()) {
+    const cleanTarget = targetParam.trim();
+    // Check if it's already a full file path
+    if (cleanTarget.includes('/') || cleanTarget.includes('\\') || cleanTarget.endsWith('.docx') || cleanTarget.endsWith('.json') || cleanTarget.endsWith('.pdf')) {
+      const cleanPath = cleanTarget.replace(/\\/g, '/');
+      window.location.href = `/editor/${encodeURIComponent(cleanPath).replace(/%2F/g, '/')}`;
+      return;
+    }
+
+    // It's a company name or role keyword (e.g. "Beehiiv")!
+    // Search allHistoryApplications in memory
+    if (Array.isArray(allHistoryApplications) && allHistoryApplications.length > 0) {
+      const q = cleanTarget.toLowerCase();
+      const match = allHistoryApplications.find(a => {
+        const co = (a.company || '').toLowerCase();
+        const ro = (a.role || '').toLowerCase();
+        return co.includes(q) || q.includes(co) || ro.includes(q);
+      });
+      if (match) {
+        const targetDoc = match.output_file || match.relative_file_path || match.log_file_name || `${match.company}_${match.role}`;
+        const cleanPath = targetDoc.replace(/\\/g, '/');
+        window.location.href = `/editor/${encodeURIComponent(cleanPath).replace(/%2F/g, '/')}`;
+        return;
+      }
+    }
+
+    // Direct routing with clean target company so app.py resolves it from NeonDB or output directory
+    window.location.href = `/editor/${encodeURIComponent(cleanTarget)}`;
+    return;
+  }
+
+  // 2. Default: active application result
   if (window.lastResult && window.lastResult.relative_path) {
     const cleanPath = (window.lastResult.relative_path || '').replace(/\\/g, '/');
     window.location.href = `/editor/${encodeURIComponent(cleanPath).replace(/%2F/g, '/')}`;
     return;
   }
+
+  // 3. Fallback to master resume
   window.location.href = "/editor/master";
 }
 

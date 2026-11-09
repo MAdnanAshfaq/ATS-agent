@@ -654,9 +654,18 @@ def resume_json_to_html(
 
     # Target role cleaning
     from scraper import clean_role_title
-    raw_role = resume.get("target_role") or role or ""
+    raw_role = (
+        resume.get("target_role") or 
+        resume.get("target_title") or 
+        resume.get("role") or 
+        resume.get("title") or 
+        role or 
+        ""
+    ).strip()
+    if raw_role.upper() in ("TARGET ROLE / PROFESSIONAL TITLE", "TARGET ROLE", "PROFESSIONAL TITLE", "UNKNOWN", "NONE"):
+        raw_role = role or (resume.get("experience", [{}])[0].get("title") if (isinstance(resume.get("experience"), list) and len(resume.get("experience")) > 0 and isinstance(resume["experience"][0], dict)) else "") or ""
     clean_role = clean_role_title(raw_role)
-    if clean_role.upper() in ("UNKNOWN", "NONE"):
+    if clean_role.upper() in ("UNKNOWN", "NONE", "TARGET ROLE / PROFESSIONAL TITLE", "TARGET ROLE", "PROFESSIONAL TITLE"):
         clean_role = ""
 
     body_parts = []

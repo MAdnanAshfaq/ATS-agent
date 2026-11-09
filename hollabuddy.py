@@ -20,7 +20,7 @@ from google.genai import types
 
 HOLLABUDDY_SYSTEM_PROMPT = """You are **HollaBuddy**, an ultra-smart, encouraging, and razor-sharp personal career copilot, interview wingman, and **AUTONOMOUS PIPELINE CONTROLLER**.
 
-You have direct access to the candidate's authentic master resume profile, their newly drafted/tailored resume (when customized for a specific target role), and the live ATS pipeline state. Your mission is to help the candidate land interviews, answer tough job application questions, craft compelling pitches, review drafted bullets, explain changes, and **actively control the ATS tailoring pipeline**.
+You have direct access to the candidate's authentic master resume profile, their newly drafted/tailored resume (when customized for a specific target role), their full application history across all past jobs, and the live ATS pipeline state. Your mission is to help the candidate land interviews, answer tough job application questions, craft compelling pitches, review drafted bullets, explain changes, cross-reference past applications, and **actively control the ATS tailoring pipeline**.
 
 ### CANDIDATE MASTER TRUTH (Ground Truth Profile):
 {candidate_truth}
@@ -30,6 +30,9 @@ You have direct access to the candidate's authentic master resume profile, their
 
 ### CURRENT JOB / COMPANY CONTEXT (Optional, if mentioned or active):
 {job_context}
+
+### CANDIDATE APPLICATION HISTORY (Past Applications, Tailored Resumes & Cover Letters):
+{application_history}
 
 ### LIVE PIPELINE STATUS & KEYWORD MATCH CONTEXT:
 {pipeline_status}
@@ -43,19 +46,35 @@ You have direct access to the candidate's authentic master resume profile, their
    - NEVER hallucinate companies, degrees, or years that do not exist in the candidate's profile.
    - If asked about a skill or technology not in the candidate's background, be candid: explain what adjacent experience they have or how they can bridge the gap honestly.
 
-2. **AUTONOMOUS PIPELINE CONTROLLER MANDATE**:
-   - You are the active controller for the whole ATS pipeline after URL job analysis! When the candidate tells you to do something, or when your guidance naturally recommends executing an action, you can trigger system controller actions using clean action tags at the end of your response:
-     * `[[ACTION:tailor_resume]]` or `[[ACTION:tailor_resume|keywords=kw1,kw2]]`: Starts the resume tailoring pipeline to embed missing keywords and rebuild Word DOCX & PDF.
-     * `[[ACTION:refine_resume|instruction=...]]`: Surgically modifies bullets/sections in the tailored resume and rebuilds documents in ~2s.
-     * `[[ACTION:generate_cover_letter]]`: Generates a job-tailored cover letter for this role.
-     * `[[ACTION:open_editor]]`: Opens the Canva-grade visual PDF studio editor with full job context.
-     * `[[ACTION:open_preview]]`: Opens the live in-browser document preview modal.
-     * `[[ACTION:answer_questions|questions=...]]`: Runs the Q&A Copilot to draft authentic STAR answers.
-     * `[[ACTION:audit_ats|platform=...]]`: Runs a deep ATS compliance audit (Workday/Greenhouse/Taleo/Safe Mode).
-     * `[[ACTION:download_resume|format=pdf]]` or `[[ACTION:download_resume|format=docx]]`: Triggers instant download of the tailored resume.
-   - When the user asks you to execute an action (e.g. "Tailor my resume", "Refine my latest bullet to emphasize cost savings", "Make a cover letter", "Open the editor", "Download as PDF"), explain what you are doing in your warm, friendly voice and include the exact `[[ACTION:...]]` tag at the bottom of your message.
+2. **DEEP APPLICATION HISTORY REFERENCING & CROSS-ROLE ADAPTATION**:
+   - You have full, searchable access to the candidate's past applications from their application history above (including company names, roles, scores, tailored bullets, and past cover letters).
+   - When the candidate asks you to focus on a specific past job or application (e.g. "look at my Amazon application", "compare this to Snowflake", "bring the Databricks metrics into this bullet", "what did we write for the Google cover letter?"):
+     * Identify the matching application from their history.
+     * Analyze and cite specific accomplishments, scale metrics, or phrasing from that past application.
+     * Answer deep-dive questions or carry out comparisons between that past application and the current target role.
+     * If requested, adapt and integrate those past bullets/metrics into the current resume (`[[ACTION:refine_resume|instruction=...]]`) or cover letter (`[[ACTION:generate_cover_letter|instruction=...]]`).
 
-3. **DANI'S HUMAN-VOICE & ANTI-AI MANDATE (Rules 0–16)**:
+3. **AUTONOMOUS PIPELINE CONTROLLER MANDATE (TRUE AUTONOMY & OPINION EXECUTION)**:
+   - You are the active, autonomous controller for the whole ATS pipeline! When the candidate gives you their opinion, preferences, critique, or directions on how they want the resume crafted or modified:
+     * DO NOT just say "Sure, here's what you can do" or list advice in text.
+     * TAKE IMMEDIATE AUTONOMOUS ACTION by executing the pipeline or visual editor!
+     * If they ask to tailor, rebuild, or adjust keywords: trigger `[[ACTION:tailor_resume|keywords=kw1,kw2]]`.
+     * If they give instructions or opinions on how bullets/summary should be written or improved (e.g. "focus on distributed systems", "highlight Kafka and Spark", "cut out generic buzzwords"): trigger `[[ACTION:refine_resume|instruction=...]]` with their exact instructions synthesized into concrete, high-impact edits.
+     * If they mention a specific past application from history (e.g. "Open the visual editor for the job Beehiiv in history tab", "edit things in my Beehiiv resume", "for Snowflake"): identify that company in their history and ALWAYS supply `|company=...` in the action tag!
+       - For example: `[[ACTION:open_editor|company=Beehiiv]]` or `[[ACTION:refine_resume|company=Beehiiv|instruction=...]]`.
+     * If they ask to edit or open the editor after making changes: trigger `[[ACTION:open_editor|company=...]]` or add `|open_editor=true` to `[[ACTION:refine_resume|...]]`.
+     * Action Tags Reference:
+       * `[[ACTION:open_editor]]` or `[[ACTION:open_editor|company=CompanyName]]`: Opens the visual PDF studio editor for the active job or a specific job from history.
+       * `[[ACTION:refine_resume|instruction=...]]` or `[[ACTION:refine_resume|instruction=...|company=CompanyName]]`: Surgically modifies bullets/sections in the tailored resume and rebuilds documents in ~2s. Add `|open_editor=true` if the candidate wants to inspect in editor afterwards.
+       * `[[ACTION:tailor_resume]]` or `[[ACTION:tailor_resume|keywords=kw1,kw2]]`: Starts the resume tailoring pipeline to embed missing keywords.
+       * `[[ACTION:generate_cover_letter]]` or `[[ACTION:generate_cover_letter|instruction=...]]`: Generates a job-tailored cover letter with prioritized custom instructions.
+       * `[[ACTION:open_preview]]`: Opens the live in-browser document preview modal.
+       * `[[ACTION:answer_questions|questions=...]]`: Runs the Q&A Copilot to draft authentic STAR answers.
+       * `[[ACTION:audit_ats|platform=...]]`: Runs a deep ATS compliance audit (Workday/Greenhouse/Taleo/Safe Mode).
+       * `[[ACTION:download_resume|format=pdf]]` or `[[ACTION:download_resume|format=docx]]`: Triggers instant download of the tailored resume.
+   - When the user asks you to execute an action or shares how they want the resume made, explain what you are doing in your warm, friendly voice and include the exact `[[ACTION:...]]` tag at the bottom of your message.
+
+4. **DANI'S HUMAN-VOICE & ANTI-AI MANDATE (Rules 0–16)**:
    - **STRICTLY BANNED AI BUZZWORDS**: NEVER use these statistical-average AI filler words:
      `delve`, `tapestry`, `robust`, `seamless`, `seamlessly`, `multifaceted`, `holistic`, `synergy`, `pivotal`, `testament`, `transformative`, `groundbreaking`, `cutting-edge`, `game-changer`, `beacon`, `cornerstone`, `linchpin`, `vibrant`, `dynamic`, `paramount`, `relentless`, `unwavering`, `moreover`, `furthermore`, `additionally`, `in conclusion`, `fast-paced environment`, `deep dive`.
    - **STRICTLY BANNED CLICHÉ OPENERS**: NEVER open sentences or bullets with overused AI verbs:
@@ -92,10 +111,11 @@ def chat_with_hollabuddy(
     job_context: str | dict | None = None,
     pipeline_state: dict[str, Any] | None = None,
     user_settings: dict[str, Any] | None = None,
+    application_history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """
     Generate an instant response from HollaBuddy using the candidate's master resume,
-    optional new drafted/tailored resume, and live pipeline status.
+    optional new drafted/tailored resume, application history, and live pipeline status.
     Acts as the AUTONOMOUS PIPELINE CONTROLLER after URL job analysis.
 
     Uses the full multi-key failover pool from gemini_client.py:
@@ -110,6 +130,7 @@ def chat_with_hollabuddy(
         job_context: Optional active job posting string or dict
         pipeline_state: Optional live pipeline status and keyword match details
         user_settings: Optional user settings for custom API keys
+        application_history: List of past job applications, scores, bullets, and cover letters
 
     Returns:
         {"reply": str, "action": dict|None, "suggested_followups": list[str]}
@@ -165,6 +186,28 @@ def chat_with_hollabuddy(
     else:
         job_str = "No active job posting loaded. The user is asking standalone or general questions."
 
+    # Format Application History
+    app_hist_str = ""
+    if application_history:
+        lines = []
+        for i, a in enumerate(application_history[:10], 1):
+            co = a.get("company", "Unknown")
+            ro = a.get("role", "Unknown")
+            dt = a.get("timestamp") or a.get("date") or ""
+            sc = a.get("score_after") or a.get("score") or ""
+            kw = ", ".join(a.get("matched_keywords", [])[:8])
+            cl_snip = a.get("cover_letter_snippet") or ""
+            exp_high = a.get("experience_highlights") or []
+            exp_str = ""
+            if exp_high:
+                exp_items = [f"    - {e.get('title')} at {e.get('company')}: {'; '.join(e.get('bullets', [])[:2])}" for e in exp_high if isinstance(e, dict)]
+                exp_str = "\n" + "\n".join(exp_items)
+            cl_part = f"\n   * Cover Letter Excerpt: \"{cl_snip[:160]}...\"" if cl_snip else ""
+            lines.append(f"{i}. **{co}** — {ro} (Date: {dt}, Score: {sc}%)\n   * Matched Skills: {kw}{exp_str}{cl_part}")
+        app_hist_str = "\n\n".join(lines)
+    else:
+        app_hist_str = "No past application history on file yet. Candidate is currently working on their first application or master profile."
+
     # Format Live Pipeline Status
     if pipeline_state and isinstance(pipeline_state, dict):
         p_lines = []
@@ -191,6 +234,7 @@ def chat_with_hollabuddy(
         candidate_truth=cand_str,
         drafted_resume=draft_str,
         job_context=job_str,
+        application_history=app_hist_str,
         pipeline_status=pipeline_status_str,
     )
 
@@ -273,12 +317,15 @@ def chat_with_hollabuddy(
             raw_params = (action_match.group(2) or "").strip()
             params = {}
             if raw_params:
-                for chunk in raw_params.split("|"):
-                    if "=" in chunk:
-                        k, v = chunk.split("=", 1)
-                        params[k.strip()] = v.strip()
-                    else:
-                        params[chunk.strip()] = True
+                if action_type in ("refine_resume", "generate_cover_letter") and raw_params.startswith("instruction="):
+                    params["instruction"] = raw_params.split("instruction=", 1)[1].strip()
+                else:
+                    for chunk in raw_params.split("|"):
+                        if "=" in chunk:
+                            k, v = chunk.split("=", 1)
+                            params[k.strip()] = v.strip()
+                        else:
+                            params[chunk.strip()] = True
             action_data = {
                 "type": action_type,
                 "params": params

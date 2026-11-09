@@ -344,12 +344,30 @@
       headerDiv.className = 'resume-header';
 
       const name = resume.name || 'CANDIDATE NAME';
-      const role = resume.target_role || '';
+      let role = (
+        resume.target_role || 
+        resume.target_title || 
+        resume.role || 
+        resume.title || 
+        (window.jobContext && window.jobContext.role && window.jobContext.role !== 'Resume' ? window.jobContext.role : '') || 
+        (resume.experience && resume.experience[0] && (resume.experience[0].title || resume.experience[0].role)) || 
+        ''
+      ).trim();
+
+      // Clean out accidental placeholder string
+      if (role.toUpperCase() === 'TARGET ROLE / PROFESSIONAL TITLE' || role.toUpperCase() === 'TARGET ROLE' || role.toUpperCase() === 'PROFESSIONAL TITLE') {
+        role = (window.jobContext && window.jobContext.role && window.jobContext.role !== 'Resume') 
+          ? window.jobContext.role 
+          : ((resume.experience && resume.experience[0] && (resume.experience[0].title || resume.experience[0].role)) || '');
+      }
+
       const contact = resume.contact || {};
 
       let html = `<div class="candidate-name" contenteditable="true" data-edit="name">${BlockRenderer.escapeHtml(name.toUpperCase())}</div>`;
-      if (role || role === '') {
-        html += `<div class="target-role" contenteditable="true" data-edit="target_role">${BlockRenderer.escapeHtml(role || 'Target Role / Professional Title')}</div>`;
+      if (role) {
+        html += `<div class="target-role" contenteditable="true" data-edit="target_role">${BlockRenderer.escapeHtml(role)}</div>`;
+      } else {
+        html += `<div class="target-role" contenteditable="true" data-edit="target_role" data-placeholder="Professional Title"></div>`;
       }
 
       const parts = [];
@@ -1031,7 +1049,13 @@
       if (name) r.name = name;
 
       const role = getTxt('.target-role');
-      if (role !== undefined) r.target_role = role;
+      if (role !== undefined) {
+        if (role.toUpperCase() === 'TARGET ROLE / PROFESSIONAL TITLE' || role.toUpperCase() === 'PROFESSIONAL TITLE' || role.toUpperCase() === 'TARGET ROLE') {
+          r.target_role = '';
+        } else {
+          r.target_role = role;
+        }
+      }
 
       if (!r.contact) r.contact = {};
       const em = getTxt('[data-edit="contact-email"]');
@@ -2724,16 +2748,17 @@
     static isSaving = false;
 
     static init() {
-      // Auto-save every 5 seconds if dirty
+      // Auto-save every 4 seconds if dirty
       setInterval(() => {
         if (store.state.isDirty && !AutoSaver.isSaving) {
           AutoSaver.saveNow();
         }
-      }, 5000);
+      }, 4000);
     }
 
     static trigger() {
       store.state.isDirty = true;
+      PdfExporter.cachedBlob = null; // Invalidate cached pre-built PDF on new edit
       const statusEl = document.getElementById('saveStatus');
       if (statusEl) {
         statusEl.innerHTML = '<span class="dot" style="background:#f59e0b"></span><span>Saving...</span>';
@@ -2742,7 +2767,7 @@
       clearTimeout(AutoSaver.timer);
       AutoSaver.timer = setTimeout(() => {
         AutoSaver.saveNow();
-      }, 1500);
+      }, 900); // Fast 900ms auto-save debounce
     }
 
     static async saveNow() {
@@ -2785,6 +2810,9 @@
           if (statusEl) {
             statusEl.innerHTML = '<span class="dot" style="background:#10b981"></span><span>Saved</span>';
           }
+
+          // Eagerly pre-generate PDF in the background right after saving so download is 0s instant!
+          PdfExporter.preGenerate();
         }
       } catch (err) {
         console.warn('[AutoSaver] Save failed:', err);
@@ -2796,10 +2824,15 @@
 
 
   // ═══════════════════════════════════════════════════════════════════
-  // 15. PDF EXPORTER (1:1 Exact Client DOM Playwright Export)
+  // 15. PDF EXPORTER (Instant 0-Second Download with Eager Background Pre-Generation)
   // ═══════════════════════════════════════════════════════════════════
 
   class PdfExporter {
+    static cachedBlob = null;
+    static cachedFilename = null;
+    static isPreGenerating = false;
+    static preGeneratePromise = null;
+
     static init() {
       const btnDownload = document.getElementById('btnDownloadPdf');
       const btnPrint = document.getElementById('btnPrintNative');
@@ -2812,14 +2845,64 @@
         });
       }
 
+      // Initial eager pre-generation 2 seconds after editor load
+      setTimeout(() => {
+        if (!PdfExporter.cachedBlob && !store.state.isDirty) {
+          PdfExporter.preGenerate();
+        }
+      }, 2000);
+
       if (!btnDownload) return;
 
-      // 2. Playwright Headless Chromium Vector PDF (Fast 2-3s server render)
+      // 2. Instant PDF Download
       btnDownload.addEventListener('click', async () => {
         InlineEditor.hideFloatingToolbar();
+
+        // FAST PATH: If fresh pre-generated PDF is already cached and document not dirty -> INSTANT 0s DOWNLOAD!
+        if (PdfExporter.cachedBlob && !store.state.isDirty) {
+          console.log('[PdfExporter] Serving pre-generated PDF instantly (0s delay)');
+          const downloadUrl = window.URL.createObjectURL(PdfExporter.cachedBlob);
+          const a = document.createElement('a');
+          a.style.display = 'none';
+          a.href = downloadUrl;
+          a.download = PdfExporter.cachedFilename || 'Resume.pdf';
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(downloadUrl);
+          a.remove();
+          return;
+        }
+
+        // IN-FLIGHT PATH: If eager pre-generation is already finishing in background, await it
+        if (PdfExporter.isPreGenerating && PdfExporter.preGeneratePromise) {
+          const origHtml = btnDownload.innerHTML;
+          btnDownload.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Preparing Instant Download...';
+          btnDownload.disabled = true;
+          try {
+            await PdfExporter.preGeneratePromise;
+            if (PdfExporter.cachedBlob) {
+              const downloadUrl = window.URL.createObjectURL(PdfExporter.cachedBlob);
+              const a = document.createElement('a');
+              a.style.display = 'none';
+              a.href = downloadUrl;
+              a.download = PdfExporter.cachedFilename || 'Resume.pdf';
+              document.body.appendChild(a);
+              a.click();
+              window.URL.revokeObjectURL(downloadUrl);
+              a.remove();
+              return;
+            }
+          } catch (waitErr) {
+            console.warn('[PdfExporter] Background pre-generation wait notice:', waitErr);
+          } finally {
+            btnDownload.innerHTML = origHtml;
+            btnDownload.disabled = false;
+          }
+        }
+
+        // FRESH PATH: Build on-demand with live visual editor DOM
         InlineEditor.syncDomToResumeJson();
 
-        // Clone #resumeContent and strip editor chrome before sending HTML
         const contentEl = document.getElementById('resumeContent');
         let rawHtml = '';
         if (contentEl) {
@@ -2868,6 +2951,9 @@
           const candidateName = store.state.resume.name || 'Candidate';
           const filename = `${candidateName.replace(/[^a-zA-Z0-9_\-]/g, '_')}_Resume.pdf`;
 
+          PdfExporter.cachedBlob = blob;
+          PdfExporter.cachedFilename = filename;
+
           const downloadUrl = window.URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.style.display = 'none';
@@ -2889,6 +2975,54 @@
           btnDownload.disabled = false;
         }
       });
+    }
+
+    /**
+     * Eagerly pre-generates and caches PDF blob in the background
+     * so user clicking "Download PDF" experiences instant 0s download.
+     */
+    static preGenerate() {
+      if (PdfExporter.isPreGenerating) return;
+      PdfExporter.isPreGenerating = true;
+
+      const config = window.EDITOR_CONFIG || {};
+      const payload = {
+        resume_path: config.resumePath || 'tailored_resume.json',
+        resume: store.state.resume,
+        editor_styles: store.state.styles,
+      };
+
+      PdfExporter.preGeneratePromise = (async () => {
+        try {
+          const resp = await fetch(config.exportPdfUrl || '/api/editor/export-pdf', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          if (resp.ok) {
+            const blob = await resp.blob();
+            const candidateName = store.state.resume.name || 'Candidate';
+            PdfExporter.cachedFilename = `${candidateName.replace(/[^a-zA-Z0-9_\-]/g, '_')}_Resume.pdf`;
+            PdfExporter.cachedBlob = blob;
+            console.log('[PdfExporter] Eager PDF background pre-generation ready');
+
+            // Indicate PDF readiness visually on download button
+            const btnDownload = document.getElementById('btnDownloadPdf');
+            if (btnDownload && !btnDownload.querySelector('.pdf-ready-dot')) {
+              const dot = document.createElement('span');
+              dot.className = 'pdf-ready-dot';
+              dot.style.cssText = 'display:inline-block; width:7px; height:7px; border-radius:50%; background:#10b981; margin-left:6px; box-shadow:0 0 6px #10b981;';
+              dot.title = 'Instant PDF pre-generated & ready';
+              btnDownload.appendChild(dot);
+            }
+          }
+        } catch (e) {
+          console.debug('[PdfExporter] Background pre-generation note:', e);
+        } finally {
+          PdfExporter.isPreGenerating = false;
+        }
+      })();
     }
   }
 

@@ -2663,14 +2663,77 @@ def visual_editor_page(filepath):
             if not resume_data:
                 matches = list(user_output_dir.rglob("tailored_resume.json"))
                 if matches:
-                    folder_name = Path(clean_fp).stem.split(".")[0]
+                    folder_name = Path(clean_fp).stem.split(".")[0].strip()
                     matched = [m for m in matches if folder_name.lower() in str(m).lower()]
-                    pick = matched[0] if matched else matches[0]
-                    try:
-                        with open(pick, "r", encoding="utf-8") as f:
-                            resume_data = json.load(f)
-                    except Exception as e:
-                        logger.error(f"[Editor] Subfolder match load error: {e}")
+                    if matched:
+                        try:
+                            with open(matched[0], "r", encoding="utf-8") as f:
+                                resume_data = json.load(f)
+                            target_dir = matched[0].parent
+                        except Exception as e:
+                            logger.error(f"[Editor] Subfolder match load error: {e}")
+
+            # Case C: Search NeonDB History for matching company name, role, or run_id
+            if not resume_data and db_layer.is_db_available() and current_user.is_authenticated:
+                try:
+                    all_hist = db_layer.db_get_history(current_user.username)
+                    query_term = clean_fp.lower().strip()
+                    for h in all_hist:
+                        h_co = (h.get("company") or "").lower()
+                        h_ro = (h.get("role") or "").lower()
+                        h_rid = (h.get("_db_run_id") or h.get("run_id") or "").lower()
+                        h_out = (h.get("output_file") or "").lower()
+                        if query_term in h_co or h_co in query_term or \
+                           query_term in h_ro or \
+                           (h_rid and query_term in h_rid) or \
+                           (query_term in h_out):
+                            t_cand = h.get("tailored_resume") or h.get("resume_json") or h.get("output_data")
+                            if isinstance(t_cand, str):
+                                try:
+                                    t_cand = json.loads(t_cand)
+                                except Exception:
+                                    t_cand = None
+                            if isinstance(t_cand, dict) and t_cand.get("experience"):
+                                resume_data = t_cand
+                                c_slug = _safe_slugify(h.get("company", "Company"))
+                                r_slug = _safe_slugify(h.get("role", "Resume"))
+                                target_dir = user_output_dir / f"{c_slug}_{r_slug}"
+                                target_dir.mkdir(parents=True, exist_ok=True)
+                                with open(target_dir / "tailored_resume.json", "w", encoding="utf-8") as f:
+                                    json.dump(resume_data, f, indent=2, ensure_ascii=False)
+                                logger.info(f"[Editor] Loaded tailored resume for {h.get('company')} from NeonDB history")
+                                break
+                except Exception as hist_err:
+                    logger.debug(f"[Editor] Error searching NeonDB history for {clean_fp}: {hist_err}")
+
+            # Case D: Search user local logs
+            if not resume_data and user_output_dir:
+                try:
+                    logs_dir = user_output_dir / "logs"
+                    if logs_dir.exists():
+                        query_term = clean_fp.lower().strip()
+                        for lf in sorted(logs_dir.glob("run_*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+                            try:
+                                with open(lf, "r", encoding="utf-8") as lff:
+                                    ldata = json.load(lff)
+                                l_co = (ldata.get("company") or "").lower()
+                                l_ro = (ldata.get("role") or "").lower()
+                                if query_term in l_co or l_co in query_term or query_term in l_ro:
+                                    t_cand = ldata.get("tailored_resume") or ldata.get("resume_json")
+                                    if isinstance(t_cand, dict) and t_cand.get("experience"):
+                                        resume_data = t_cand
+                                        c_slug = _safe_slugify(ldata.get("company", "Company"))
+                                        r_slug = _safe_slugify(ldata.get("role", "Resume"))
+                                        target_dir = user_output_dir / f"{c_slug}_{r_slug}"
+                                        target_dir.mkdir(parents=True, exist_ok=True)
+                                        with open(target_dir / "tailored_resume.json", "w", encoding="utf-8") as f:
+                                            json.dump(resume_data, f, indent=2, ensure_ascii=False)
+                                        logger.info(f"[Editor] Loaded tailored resume for {ldata.get('company')} from local log")
+                                        break
+                            except Exception:
+                                pass
+                except Exception as log_srch_err:
+                    logger.debug(f"[Editor] Error searching local logs for {clean_fp}: {log_srch_err}")
 
     # Fallback to master if still not found
     if not resume_data and user_resume_path.exists():
@@ -2728,9 +2791,24 @@ def visual_editor_page(filepath):
             target_dir = cand
         elif cand.parent.is_dir() and cand.parent != user_output_dir:
             target_dir = cand.parent
+        elif not cand.exists():
+            # Check for folder matching company name e.g. Beehiiv
+            for sub_d in user_output_dir.iterdir():
+                if sub_d.is_dir() and clean_fp.lower() in sub_d.name.lower():
+                    target_dir = sub_d
+                    break
 
     company = ""
-    role = resume_data.get("target_role") or ""
+    raw_role = (
+        resume_data.get("target_role") or 
+        resume_data.get("target_title") or 
+        resume_data.get("role") or 
+        resume_data.get("title") or 
+        ""
+    ).strip()
+    if raw_role.upper() in ("TARGET ROLE / PROFESSIONAL TITLE", "TARGET ROLE", "PROFESSIONAL TITLE", "UNKNOWN", "NONE"):
+        raw_role = ""
+    role = raw_role
     url = ""
     jd_text = ""
     missing_keywords = []
@@ -2754,6 +2832,18 @@ def visual_editor_page(filepath):
             company = folder_parts[0].replace("-", " ")
             if not role:
                 role = folder_parts[1].replace("-", " ")
+
+    # Fallback to experience[0] title if role is still empty
+    if not role and isinstance(resume_data.get("experience"), list) and len(resume_data["experience"]) > 0:
+        first_exp = resume_data["experience"][0]
+        if isinstance(first_exp, dict):
+            role = (first_exp.get("title") or first_exp.get("role") or "").strip()
+
+    # Ensure clean title is placed on resume_data without any placeholder
+    if role:
+        resume_data["target_role"] = role
+    elif "target_role" in resume_data and resume_data["target_role"] in ("Target Role / Professional Title", "Target Role", "Professional Title"):
+        resume_data["target_role"] = ""
 
     # Search NeonDB history for rich job metadata
     if db_layer.is_db_available() and current_user.is_authenticated:
@@ -2852,6 +2942,10 @@ def api_editor_save():
         if editor_styles and isinstance(editor_styles, dict):
             resume_obj["editor_styles"] = editor_styles
 
+        # Guard: clean accidental placeholder text from target_role before saving
+        if resume_obj.get("target_role") in ("Target Role / Professional Title", "Target Role", "Professional Title"):
+            resume_obj["target_role"] = ""
+
         user_output_dir = get_user_output_dir()
         user_resume_path = get_user_resume_path()
         user_data_dir = current_user.data_dir if (current_user and current_user.is_authenticated) else (user_resume_path.parent if user_resume_path else BASE_DIR)
@@ -2876,8 +2970,6 @@ def api_editor_save():
                 matched = [m for m in matches if folder_stem.lower() in str(m).lower()]
                 if matched:
                     target_json = matched[0]
-                elif matches:
-                    target_json = matches[0]
                 else:
                     folder_name = _safe_slugify(clean_fp.replace('/', '_')) or "tailored_resume"
                     target_json = user_output_dir / folder_name / "tailored_resume.json"
@@ -2968,16 +3060,43 @@ def api_editor_save():
         except Exception as log_err:
             logger.warning(f"[Editor Save] Local log sync warning: {log_err}")
 
-        # ── Document Disk Sync (.docx) ─────────────────────────────────────────
+        # ── Document Disk Sync (.docx) & Eager PDF Pre-Generation ──────────────
         try:
             from resume_builder import build_resume_docx
             if is_master:
                 build_resume_docx(resume_obj, "Master", "Profile", output_dir=str(user_data_dir))
+                dest_dir_for_pdf = user_data_dir
             else:
                 target_dir = target_json.parent
                 comp = resume_obj.get("target_company") or (target_dir.name.split("_")[0] if "_" in target_dir.name else "Company")
                 rol = resume_obj.get("target_role") or (target_dir.name.split("_", 1)[1] if "_" in target_dir.name else "Resume")
                 build_resume_docx(resume_obj, comp, rol, output_dir=str(target_dir))
+                dest_dir_for_pdf = target_dir
+
+            # Launch eager asynchronous background PDF pre-generation so file is ready BEFORE user clicks download
+            import threading
+            def _async_prebuild_pdf(r_obj, st_styles, dest_dir):
+                try:
+                    from resume_html import resume_json_to_html, generate_pdf_from_html
+                    cand_name = r_obj.get("name", "Candidate")
+                    clean_cand = re.sub(r'[^a-zA-Z0-9_\-]', '_', cand_name).strip('_') or "Candidate"
+                    out_pdf = Path(dest_dir) / f"{clean_cand}_Resume.pdf"
+                    html_c = resume_json_to_html(r_obj, editor_styles=st_styles)
+                    generate_pdf_from_html(
+                        html_content=html_c,
+                        output_pdf_path=str(out_pdf),
+                        candidate_name=cand_name,
+                        role=r_obj.get("target_role", "")
+                    )
+                    logger.info(f"[Editor Save] Eager PDF prebuilt in background: {out_pdf.name}")
+                except Exception as e_pdf:
+                    logger.debug(f"[Editor Save] Eager PDF background prebuild note: {e_pdf}")
+
+            threading.Thread(
+                target=_async_prebuild_pdf,
+                args=(dict(resume_obj), dict(editor_styles), dest_dir_for_pdf),
+                daemon=True
+            ).start()
         except Exception as rebuild_err:
             logger.warning(f"[Editor Save] Document rebuild warning: {rebuild_err}")
 
@@ -2985,7 +3104,8 @@ def api_editor_save():
             "success": True,
             "saved_to": str(target_json.name),
             "db_synced": bool(matched_run_id) if not is_master else True,
-            "job_reference": matched_run_id if not is_master else "master"
+            "job_reference": matched_run_id if not is_master else "master",
+            "pdf_pregenerating": True
         })
     except Exception as e:
         logger.error(f"[Editor] Save failed: {e}")
@@ -3013,6 +3133,33 @@ def api_editor_export_pdf():
         from resume_html import resume_json_to_html, generate_pdf_from_html, _get_base_html_template
         name = resume_obj.get("name", "Candidate")
 
+        # Check if eager pre-generated PDF already exists in destination folder
+        clean_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', name).strip('_') or "Candidate"
+        pdf_filename = f"{clean_name}_Resume.pdf"
+        target_folder = None
+        clean_fp = rel_path.replace("\\", "/").strip("/")
+        user_data_dir = current_user.data_dir if current_user.is_authenticated else BASE_DIR
+        if clean_fp and clean_fp not in ("master", "master_resume", "master.docx", "master.json"):
+            target_folder = (user_output_dir / clean_fp).resolve()
+            if not target_folder.is_dir():
+                target_folder = target_folder.parent
+        else:
+            target_folder = user_data_dir
+
+        # Fast Instant-Download Cache Hit
+        if target_folder and target_folder.exists() and not data.get("force_refresh") and not raw_html:
+            existing_pdf = target_folder / pdf_filename
+            if existing_pdf.exists() and existing_pdf.stat().st_size > 1500:
+                logger.info(f"[Export PDF] Instant serving pre-generated PDF: {existing_pdf.name}")
+                if data.get("pregenerate"):
+                    return jsonify({"success": True, "pregenerated": True, "cached": True, "download_name": pdf_filename})
+                return send_file(
+                    str(existing_pdf),
+                    as_attachment=True,
+                    download_name=pdf_filename,
+                    mimetype="application/pdf"
+                )
+
         # If the visual editor sent the exact rendered DOM, wrap it for 1:1 fidelity
         raw_html = data.get("html")
         if raw_html and isinstance(raw_html, str) and raw_html.strip():
@@ -3022,10 +3169,8 @@ def api_editor_export_pdf():
             html_content = resume_json_to_html(resume_obj, editor_styles=editor_styles)
 
         user_output_dir = get_user_output_dir()
-        clean_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', name).strip('_') or "Candidate"
         tmp_pdf_dir = user_output_dir / ".temp_exports"
         tmp_pdf_dir.mkdir(parents=True, exist_ok=True)
-        pdf_filename = f"{clean_name}_Resume.pdf"
         output_pdf_path = tmp_pdf_dir / f"{uuid.uuid4().hex[:8]}_{pdf_filename}"
 
         success = generate_pdf_from_html(
@@ -3066,6 +3211,13 @@ def api_editor_export_pdf():
                     shutil.copy2(output_pdf_path, dest_pdf)
         except Exception as pdf_copy_err:
             logger.warning(f"[Export PDF] Copy to job folder note: {pdf_copy_err}")
+
+        if data.get("pregenerate"):
+            return jsonify({
+                "success": True,
+                "pregenerated": True,
+                "download_name": pdf_filename,
+            })
 
         return send_file(
             str(output_pdf_path),
@@ -3414,6 +3566,51 @@ def hollabuddy_chat():
         if "has_tailored_resume" not in pipeline_state:
             pipeline_state["has_tailored_resume"] = bool(drafted_resume)
 
+    # Load full application history for deep cross-referencing and historical focus
+    application_history = []
+    if current_user.is_authenticated:
+        try:
+            raw_hist = []
+            if db_layer.is_db_available():
+                raw_hist = db_layer.db_get_history(current_user.username) or []
+            if not raw_hist and hasattr(current_user, 'output_dir'):
+                logs_dir = Path(current_user.output_dir) / "logs"
+                if logs_dir.exists():
+                    for lf in sorted(logs_dir.glob("run_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:12]:
+                        try:
+                            with open(lf, "r", encoding="utf-8") as f:
+                                raw_hist.append(json.load(f))
+                        except Exception:
+                            pass
+            for h in raw_hist[:12]:
+                t_cand = h.get("tailored_resume") or h.get("resume_json") or h.get("output_data")
+                if isinstance(t_cand, str):
+                    try:
+                        t_cand = json.loads(t_cand)
+                    except Exception:
+                        t_cand = None
+                exp_sample = []
+                if isinstance(t_cand, dict) and t_cand.get("experience"):
+                    for e in t_cand.get("experience", [])[:2]:
+                        if isinstance(e, dict):
+                            exp_sample.append({
+                                "title": e.get("title") or e.get("role") or "",
+                                "company": e.get("company") or "",
+                                "bullets": (e.get("bullets") or e.get("responsibilities") or [])[:3]
+                            })
+                application_history.append({
+                    "run_id": h.get("_db_run_id") or h.get("run_id") or h.get("log_file_name"),
+                    "company": h.get("company") or "",
+                    "role": h.get("role") or "",
+                    "score_after": h.get("score_after") or h.get("score"),
+                    "timestamp": h.get("timestamp") or "",
+                    "matched_keywords": (h.get("matched_keywords") or [])[:8],
+                    "cover_letter_snippet": (h.get("cover_letter_text") or h.get("cover_letter") or "")[:200],
+                    "experience_highlights": exp_sample,
+                })
+        except Exception as hist_err:
+            logging.debug(f"[HollaBuddy] Error loading history: {hist_err}")
+
     from hollabuddy import chat_with_hollabuddy
     user_settings = get_user_settings() if hasattr(current_user, 'data_dir') else None
     res = chat_with_hollabuddy(
@@ -3424,6 +3621,7 @@ def hollabuddy_chat():
         job_context=job_context,
         pipeline_state=pipeline_state,
         user_settings=user_settings,
+        application_history=application_history,
     )
     return jsonify({"success": True, **res})
 
@@ -4056,8 +4254,11 @@ def generate_cover_letter_api():
         folder_name = f"{slugify(company)}_{slugify(role)}"[:80]
         target_dir = user_output_dir / folder_name
 
-        # 1. Fast-path: Check if an existing cover letter already exists on disk
-        if target_dir.exists():
+        custom_instruction = (data.get("custom_instruction") or data.get("instruction") or "").strip()
+        force_regenerate = data.get("regenerate", False) or bool(custom_instruction)
+
+        # 1. Fast-path: Check if an existing cover letter already exists on disk (only if not regenerating with custom instructions)
+        if not force_regenerate and target_dir.exists():
             txt_files = sorted(list(target_dir.glob("*Cover_Letter*.txt")) or list(target_dir.glob("*.txt")), key=lambda p: p.stat().st_mtime, reverse=True)
             docx_files = sorted(list(target_dir.glob("*Cover_Letter*.docx")) or list(target_dir.glob("*.docx")), key=lambda p: p.stat().st_mtime, reverse=True)
             if txt_files and docx_files:
@@ -4077,8 +4278,8 @@ def generate_cover_letter_api():
                 except Exception:
                     pass
 
-        # 2. Check NeonDB for saved cover letter text in job_history
-        if db_layer.is_db_available() and current_user.is_authenticated:
+        # 2. Check NeonDB for saved cover letter text in job_history (only if not regenerating with custom instructions)
+        if not force_regenerate and db_layer.is_db_available() and current_user.is_authenticated:
             try:
                 hist = db_layer.db_get_history(current_user.username)
                 for h in hist:
@@ -4146,9 +4347,24 @@ def generate_cover_letter_api():
             role=role,
             missing_keywords=custom_keywords,
             output_dir=str(target_dir),
+            custom_instruction=custom_instruction,
         )
 
         rel_docx = os.path.relpath(res["file_path_docx"], str(user_output_dir)).replace("\\", "/") if res.get("file_path_docx") else ""
+
+        # Sync generated/updated cover letter back into NeonDB history
+        if db_layer.is_db_available() and current_user.is_authenticated and res.get("cover_letter_text"):
+            try:
+                hist = db_layer.db_get_history(current_user.username)
+                for h in hist:
+                    h_co = (h.get("company") or "").strip().lower()
+                    h_ro = (h.get("role") or "").strip().lower()
+                    rid = h.get("_db_run_id") or h.get("run_id")
+                    if rid and (company.lower() in h_co or h_co in company.lower()):
+                        db_layer.db_update_history_cover_letter(rid, res["cover_letter_text"])
+                        break
+            except Exception as cl_sync_err:
+                logger.debug(f"[Cover Letter] History sync note: {cl_sync_err}")
 
         return jsonify({
             "success": True,
@@ -4157,6 +4373,7 @@ def generate_cover_letter_api():
             "relative_docx": rel_docx,
             "company": company,
             "role": role,
+            "custom_instruction": custom_instruction
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500

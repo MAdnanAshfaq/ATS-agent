@@ -786,6 +786,34 @@ def db_update_history_tailored_resume(run_id: str, tailored_resume: dict, url: s
         release_conn(conn)
 
 
+def db_update_history_cover_letter(run_id: str, cover_letter_text: str) -> bool:
+    """Update the cover letter text inside run_data for a specific job run."""
+    conn = get_conn()
+    if not conn:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT run_data FROM job_history WHERE run_id = %s", (run_id,))
+            row = cur.fetchone()
+            if not row:
+                return False
+            data = json.loads(row[0]) if row[0] else {}
+            data["cover_letter_text"] = cover_letter_text
+            data["cover_letter"] = cover_letter_text
+            cur.execute(
+                "UPDATE job_history SET run_data = %s WHERE run_id = %s",
+                (json.dumps(data, ensure_ascii=False), run_id)
+            )
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"[DB] update_history_cover_letter error: {e}")
+        return False
+    finally:
+        release_conn(conn)
+
+
 
 def db_delete_history_item(run_id: str, username: str = None) -> bool:
     """Hard delete a single history row by run_id, and prune any orphan clones for that application."""

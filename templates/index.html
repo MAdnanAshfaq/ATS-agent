@@ -1693,7 +1693,24 @@
         <button type="button" class="btn-icon" onclick="closeCoverLetterModal()"><i class="fa-solid fa-xmark"></i></button>
       </div>
 
-      <div class="modal-body">
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
+        <!-- Custom Command / Priority Instructions -->
+        <div class="cl-instruction-bar" style="background: var(--surface-inset, #131722); border: 1px solid var(--border-base, #2a2e3d); border-radius: var(--r-md, 8px); padding: 10px 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label for="cl-custom-command" style="font-size: 12px; font-weight: 600; color: var(--t1, #cbd5e1); margin: 0; display: flex; align-items: center; gap: 6px;">
+              <i class="fa-solid fa-wand-magic-sparkles text-purple"></i>
+              <span>Custom Command / Focus Instructions <span style="font-weight: 400; color: var(--t2, #94a3b8);">(Optional)</span></span>
+            </label>
+            <span class="badge" style="font-size: 10px; font-weight: 700; background: rgba(168, 85, 247, 0.18); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.35); padding: 1px 7px; border-radius: 4px;">TOP PRIORITY</span>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="cl-custom-command" class="form-input" style="flex: 1; font-size: 12.5px; padding: 7px 12px; border-radius: 6px; background: var(--surface-card, #1c2130); border: 1px solid var(--border-base, #333a4d); color: var(--t0, #fff);" placeholder="e.g. Focus on distributed systems and cut intro short, emphasize Databricks scaling wins...">
+            <button type="button" class="btn btn-primary btn-sm" onclick="regenerateCoverLetter()" style="white-space: nowrap; display: inline-flex; align-items: center; gap: 5px;">
+              <i class="fa-solid fa-bolt"></i> Apply & Generate
+            </button>
+          </div>
+        </div>
+
         <textarea id="cl-modal-textarea" class="cover-letter-textarea" placeholder="Generating recruiter-targeting cover letter..."></textarea>
       </div>
 

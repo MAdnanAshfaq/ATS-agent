@@ -1497,6 +1497,19 @@
   margin-bottom: 2.5px;
 }
 
+.editor-resume-content .target-role:empty::before {
+  content: attr(data-placeholder);
+  color: rgba(156, 163, 175, 0.45);
+  font-style: italic;
+  pointer-events: none;
+}
+
+@media print {
+  .editor-resume-content .target-role:empty {
+    display: none !important;
+  }
+}
+
 .editor-resume-content .contact-line {
   font-size: 9pt;
   color: #2b2f38;
