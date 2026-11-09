@@ -1142,6 +1142,9 @@ function listenToEventStream(runId) {
         updateStepState(data.step, data.status, data.message);
         logTerminal(data.status, `[Step ${data.step} - ${data.stage}] ${data.message}`);
         updateProgressBar(data.step);
+        if (typeof activeHollaBuddyPipelineWidget !== "undefined" && activeHollaBuddyPipelineWidget) {
+          activeHollaBuddyPipelineWidget.update(data.step, 7, data.message, data.stage);
+        }
       } else if (data.type === "complete") {
         eventSource.close();
         stopTimer();
@@ -1150,12 +1153,18 @@ function listenToEventStream(runId) {
         displayResults(data.result);
         stopExecutionState("success");
         showToast("Resume tailored and Word document created successfully!", "success");
+        if (typeof activeHollaBuddyPipelineWidget !== "undefined" && activeHollaBuddyPipelineWidget) {
+          activeHollaBuddyPipelineWidget.complete(data.result);
+        }
       } else if (data.type === "error") {
         eventSource.close();
         stopTimer();
         logTerminal("error", `[FAILED] ${data.message}`);
         stopExecutionState("failed");
         showToast(`Pipeline Failed: ${data.message}`, "error");
+        if (typeof activeHollaBuddyPipelineWidget !== "undefined" && activeHollaBuddyPipelineWidget) {
+          activeHollaBuddyPipelineWidget.fail(data.message);
+        }
 
         const isBotBlock = data.error_type === "bot_block" || 
                            (data.message && (data.message.includes("bot-block") || data.message.includes("JD validation failed") || data.message.includes("captcha")));
@@ -3999,6 +4008,9 @@ async function openCurrentCoverLetter(customInstruction = "") {
     : "Generating high-impact recruiter cover letter with Gemini...";
 
   try {
+    if (typeof activeHollaBuddyPipelineWidget !== "undefined" && activeHollaBuddyPipelineWidget) {
+      activeHollaBuddyPipelineWidget.update(2, 3, "Drafting recruiter-tailored cover letter with Gemini...", "Generating");
+    }
     const res = await fetch("/api/cover-letter", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -4009,11 +4021,23 @@ async function openCurrentCoverLetter(customInstruction = "") {
       textarea.value = data.cover_letter_text;
       window.lastResult.cover_letter_text = data.cover_letter_text;
       document.getElementById("cl-modal-docx-download").href = `/api/download/${data.relative_docx || _getCoverLetterRelPath(relPath)}`;
+      if (typeof activeHollaBuddyPipelineWidget !== "undefined" && activeHollaBuddyPipelineWidget) {
+        activeHollaBuddyPipelineWidget.complete(
+          { relative_path: relPath, company, role },
+          `Cover letter generated and tailored for ${company}!`
+        );
+      }
     } else {
       textarea.value = `Failed to generate cover letter: ${data.error}`;
+      if (typeof activeHollaBuddyPipelineWidget !== "undefined" && activeHollaBuddyPipelineWidget) {
+        activeHollaBuddyPipelineWidget.fail(data.error);
+      }
     }
   } catch (err) {
     textarea.value = `Error generating cover letter: ${err.message}`;
+    if (typeof activeHollaBuddyPipelineWidget !== "undefined" && activeHollaBuddyPipelineWidget) {
+      activeHollaBuddyPipelineWidget.fail(err.message);
+    }
   }
 }
 
@@ -4670,6 +4694,9 @@ async function submitResumeRefinement() {
   if (btnText) btnText.textContent = "Revising & Rebuilding (~2s)...";
 
   try {
+    if (typeof activeHollaBuddyPipelineWidget !== "undefined" && activeHollaBuddyPipelineWidget) {
+      activeHollaBuddyPipelineWidget.update(2, 3, "Applying surgical bullet rewrites and ATS alignment...", "Rewriting");
+    }
     const res = await fetch("/api/refine-resume", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -4697,6 +4724,13 @@ async function submitResumeRefinement() {
       if (data.updated_resume) {
         window.lastResult.tailored_resume = data.updated_resume;
       }
+    }
+
+    if (typeof activeHollaBuddyPipelineWidget !== "undefined" && activeHollaBuddyPipelineWidget) {
+      activeHollaBuddyPipelineWidget.complete(
+        { relative_path: data.relative_path, company, role },
+        `Revisions applied! ${data.change_summary || "Word (.docx) & PDF documents rebuilt."}`
+      );
     }
 
     // Show change summary in UI
@@ -4729,6 +4763,9 @@ async function submitResumeRefinement() {
   } catch (err) {
     console.error("[Refine Error]", err);
     showToast(`Refinement failed: ${err.message}`, "error");
+    if (typeof activeHollaBuddyPipelineWidget !== "undefined" && activeHollaBuddyPipelineWidget) {
+      activeHollaBuddyPipelineWidget.fail(err.message);
+    }
   } finally {
     if (btn) btn.disabled = false;
     if (spinner) spinner.classList.add("hidden");
@@ -7045,10 +7082,214 @@ function appendHollaBuddyQuotaBanner(replyMarkdown, keyCount, followups = []) {
   scrollHollaBuddyToBottom();
 }
 
+let activeHollaBuddyPipelineWidget = null;
+
+/**
+ * Creates and renders a rich live pipeline runner widget inside HollaBuddy's chat stream.
+ * Returns an object with controls to update progress, log messages, complete, and fail.
+ */
+function createHollaBuddyPipelineWidget(title, initialStatus, totalSteps = 7, iconClass = "fa-solid fa-bolt") {
+  const container = document.getElementById("hollabuddy-messages");
+  if (!container) return null;
+
+  const widgetEl = document.createElement("div");
+  widgetEl.className = "hb-pipeline-widget running";
+
+  widgetEl.innerHTML = `
+    <div class="hb-pipeline-header">
+      <div class="hb-pipeline-title-group">
+        <div class="hb-pipeline-icon">
+          <i class="${escapeHtml(iconClass)}"></i>
+        </div>
+        <div>
+          <div class="hb-pipeline-title">${escapeHtml(title)}</div>
+        </div>
+      </div>
+      <div class="hb-pipeline-status-badge running" id="hb-widget-badge">
+        <i class="fa-solid fa-spinner fa-spin"></i> RUNNING
+      </div>
+    </div>
+    <div class="hb-pipeline-progress-wrap">
+      <div class="hb-pipeline-progress-meta">
+        <span id="hb-widget-step-text">Step 1 of ${totalSteps}</span>
+        <span id="hb-widget-pct-text">5%</span>
+      </div>
+      <div class="hb-pipeline-progress-track">
+        <div class="hb-pipeline-progress-bar" id="hb-widget-progress-bar" style="width: 5%;"></div>
+      </div>
+    </div>
+    <div class="hb-pipeline-stage-msg" id="hb-widget-stage-msg">
+      <i class="fa-solid fa-circle-notch fa-spin text-cyan"></i>
+      <span id="hb-widget-status-text">${escapeHtml(initialStatus || "Starting execution pipeline...")}</span>
+    </div>
+    <div class="hb-pipeline-terminal-box" id="hb-widget-terminal">
+      <div class="hb-pipeline-terminal-line active">[Init] ${escapeHtml(initialStatus || "Pipeline execution starting...")}</div>
+    </div>
+    <div class="hb-pipeline-actions hidden" id="hb-widget-actions"></div>
+  `;
+
+  container.appendChild(widgetEl);
+  scrollHollaBuddyToBottom();
+
+  const badgeEl = widgetEl.querySelector("#hb-widget-badge");
+  const stepTextEl = widgetEl.querySelector("#hb-widget-step-text");
+  const pctTextEl = widgetEl.querySelector("#hb-widget-pct-text");
+  const progressBarEl = widgetEl.querySelector("#hb-widget-progress-bar");
+  const stageMsgEl = widgetEl.querySelector("#hb-widget-stage-msg");
+  const statusTextEl = widgetEl.querySelector("#hb-widget-status-text");
+  const terminalEl = widgetEl.querySelector("#hb-widget-terminal");
+  const actionsEl = widgetEl.querySelector("#hb-widget-actions");
+
+  const widget = {
+    element: widgetEl,
+    update: function(step, total, msg, stage) {
+      const currentTotal = total || totalSteps;
+      const pct = Math.min(Math.round((step / currentTotal) * 100), 98);
+      if (stepTextEl) stepTextEl.textContent = `Step ${step} of ${currentTotal}${stage ? ` · ${stage}` : ''}`;
+      if (pctTextEl) pctTextEl.textContent = `${pct}%`;
+      if (progressBarEl) progressBarEl.style.width = `${pct}%`;
+      if (statusTextEl && msg) statusTextEl.textContent = msg;
+
+      if (terminalEl && msg) {
+        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const line = document.createElement("div");
+        line.className = "hb-pipeline-terminal-line";
+        line.textContent = `[${timeStr}] [Step ${step}${stage ? ` - ${stage}` : ''}] ${msg}`;
+        terminalEl.appendChild(line);
+        terminalEl.scrollTop = terminalEl.scrollHeight;
+      }
+      scrollHollaBuddyToBottom();
+    },
+    log: function(msg, isHighlight = false) {
+      if (!terminalEl || !msg) return;
+      const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const line = document.createElement("div");
+      line.className = `hb-pipeline-terminal-line${isHighlight ? ' active' : ''}`;
+      line.textContent = `[${timeStr}] ${msg}`;
+      terminalEl.appendChild(line);
+      terminalEl.scrollTop = terminalEl.scrollHeight;
+    },
+    complete: function(resultData = {}, customSummary = "") {
+      widgetEl.classList.remove("running");
+      widgetEl.classList.add("completed");
+      if (badgeEl) {
+        badgeEl.className = "hb-pipeline-status-badge completed";
+        badgeEl.innerHTML = `<i class="fa-solid fa-circle-check"></i> COMPLETED`;
+      }
+      if (stepTextEl) stepTextEl.textContent = `All ${totalSteps} Steps Complete`;
+      if (pctTextEl) pctTextEl.textContent = `100%`;
+      if (progressBarEl) progressBarEl.style.width = `100%`;
+
+      const scoreAfter = resultData.score_after || (window.lastResult ? window.lastResult.score_after : null);
+      const scoreBefore = resultData.score_before || (window.lastResult ? window.lastResult.score_before : null);
+      const scoreDelta = (scoreAfter && scoreBefore) ? ` (+${Math.max(0, scoreAfter - scoreBefore)}%)` : "";
+      const addedKws = resultData.added_keywords || resultData.newly_added || (window.lastResult ? window.lastResult.newly_added : []);
+      const kwCount = Array.isArray(addedKws) ? addedKws.length : 0;
+
+      let summary = customSummary;
+      if (!summary) {
+        summary = `Resume successfully tailored! ${scoreAfter ? `ATS Score: <strong>${scoreAfter}%</strong>${scoreDelta} · ` : ''}${kwCount > 0 ? `<strong>${kwCount} missing keywords</strong> embedded.` : 'ATS match optimized.'}`;
+      }
+
+      if (stageMsgEl) {
+        stageMsgEl.innerHTML = `<i class="fa-solid fa-circle-check text-emerald"></i> <span>${summary}</span>`;
+      }
+
+      if (actionsEl) {
+        actionsEl.innerHTML = "";
+        actionsEl.classList.remove("hidden");
+
+        const targetCompany = resultData.company || (window.lastResult ? window.lastResult.company : "") || analyzeCompany || "";
+        const targetPath = resultData.relative_path || (window.lastResult ? window.lastResult.relative_path : "") || "";
+
+        // Button 1: Open in Visual Studio Editor
+        const editBtn = document.createElement("button");
+        editBtn.type = "button";
+        editBtn.className = "hb-action-btn hb-action-btn-primary";
+        editBtn.innerHTML = `<i class="fa-solid fa-palette"></i> Open in Studio Editor`;
+        editBtn.onclick = () => {
+          if (typeof openLiveEditModal === "function") {
+            openLiveEditModal(targetPath || targetCompany);
+          }
+        };
+        actionsEl.appendChild(editBtn);
+
+        // Button 2: View Cover Letter
+        const clBtn = document.createElement("button");
+        clBtn.type = "button";
+        clBtn.className = "hb-action-btn hb-action-btn-subtle";
+        clBtn.innerHTML = `<i class="fa-solid fa-envelope-open-text"></i> View Cover Letter`;
+        clBtn.onclick = () => {
+          if (typeof openCurrentCoverLetter === "function") {
+            openCurrentCoverLetter();
+          }
+        };
+        actionsEl.appendChild(clBtn);
+
+        // Button 3: Download PDF
+        const pdfBtn = document.createElement("button");
+        pdfBtn.type = "button";
+        pdfBtn.className = "hb-action-btn hb-action-btn-subtle";
+        pdfBtn.innerHTML = `<i class="fa-solid fa-file-pdf text-rose"></i> Download PDF`;
+        pdfBtn.onclick = () => {
+          if (typeof downloadCurrentResume === "function") {
+            downloadCurrentResume("pdf");
+          }
+        };
+        actionsEl.appendChild(pdfBtn);
+
+        // Button 4: Download DOCX
+        const docxBtn = document.createElement("button");
+        docxBtn.type = "button";
+        docxBtn.className = "hb-action-btn hb-action-btn-subtle";
+        docxBtn.innerHTML = `<i class="fa-solid fa-file-word text-cyan"></i> Word DOCX`;
+        docxBtn.onclick = () => {
+          if (typeof downloadCurrentResume === "function") {
+            downloadCurrentResume("docx");
+          }
+        };
+        actionsEl.appendChild(docxBtn);
+      }
+
+      scrollHollaBuddyToBottom();
+      activeHollaBuddyPipelineWidget = null;
+    },
+    fail: function(errMsg) {
+      widgetEl.classList.remove("running");
+      widgetEl.classList.add("failed");
+      if (badgeEl) {
+        badgeEl.className = "hb-pipeline-status-badge failed";
+        badgeEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> FAILED`;
+      }
+      if (stageMsgEl) {
+        stageMsgEl.innerHTML = `<i class="fa-solid fa-circle-xmark text-rose"></i> <span>${escapeHtml(errMsg || "Pipeline encountered an error")}</span>`;
+      }
+      if (actionsEl) {
+        actionsEl.innerHTML = `
+          <button type="button" class="hb-action-btn hb-action-btn-primary" onclick="if(typeof startGeneration==='function') startGeneration();">
+            <i class="fa-solid fa-rotate-right"></i> Retry Pipeline
+          </button>
+        `;
+        actionsEl.classList.remove("hidden");
+      }
+      scrollHollaBuddyToBottom();
+      activeHollaBuddyPipelineWidget = null;
+    }
+  };
+
+  activeHollaBuddyPipelineWidget = widget;
+  return widget;
+}
+
 /** Render an Action Controller pill inside the HollaBuddy message thread */
 function appendHollaBuddyActionCard(action) {
   const container = document.getElementById("hollabuddy-messages");
   if (!container || !action) return;
+
+  // For pipeline executions, the dedicated live interactive widget is rendered directly by executeHollaBuddyAction
+  if (action.type === "tailor_resume" || action.type === "refine_resume" || action.type === "generate_cover_letter") {
+    return;
+  }
 
   const card = document.createElement("div");
   card.className = "hollabuddy-msg hollabuddy-msg-bot hollabuddy-action-msg";
@@ -7107,15 +7348,30 @@ async function executeHollaBuddyAction(action) {
 
   switch (action.type) {
     case "tailor_resume": {
+      let customKeywords = "";
       if (action.params && action.params.keywords) {
-        const kws = String(action.params.keywords).split(",").map(k => k.trim()).filter(Boolean);
+        customKeywords = String(action.params.keywords).trim();
+        const kws = customKeywords.split(",").map(k => k.trim()).filter(Boolean);
         kws.forEach(k => selectedMissingKeywords.add(k));
         if (typeof renderMissingKeywords === "function") {
           renderMissingKeywords(analyzedMissingKeywords);
         }
       }
-      showToast("HollaBuddy triggered resume tailoring!", "info");
-      if (typeof runAgent === "function") {
+      const activeCo = (hollabuddyActiveJob && hollabuddyActiveJob.company) || analyzeCompany || "";
+      const activeRo = (hollabuddyActiveJob && hollabuddyActiveJob.role) || analyzeRole || "";
+      const title = (activeCo && activeRo) ? `Tailor Resume: ${activeRo} @ ${activeCo}` : "Resume Tailoring Pipeline";
+      createHollaBuddyPipelineWidget(title, "Connecting to pipeline engine and job crawler...", 7, "fa-solid fa-rocket");
+      showToast("HollaBuddy triggered resume tailoring pipeline!", "info");
+
+      // Ensure execution container is visible on the main page for full visual sync
+      const execContainer = document.getElementById("execution-container");
+      if (execContainer) {
+        execContainer.classList.remove("hidden");
+      }
+
+      if (typeof startGeneration === "function") {
+        startGeneration({ customKeywords: customKeywords || undefined });
+      } else if (typeof runAgent === "function") {
         runAgent();
       }
       break;
@@ -7147,6 +7403,9 @@ async function executeHollaBuddyAction(action) {
       const refineInput = document.getElementById("refine-instruction-input");
       if (refineInput) refineInput.value = instruction;
       showToast(`HollaBuddy refining resume: "${instruction.slice(0, 45)}..."`, "info");
+
+      createHollaBuddyPipelineWidget("Surgical Resume Refiner", `Applying revision: "${instruction.slice(0, 45)}..."`, 3, "fa-solid fa-wand-magic-sparkles");
+
       if (typeof submitResumeRefinement === "function") {
         await submitResumeRefinement();
       }
@@ -7158,6 +7417,10 @@ async function executeHollaBuddyAction(action) {
       const clCmdInput = document.getElementById("cl-custom-command");
       if (clCmdInput && instruction) clCmdInput.value = instruction;
       showToast(instruction ? `HollaBuddy drafting cover letter: "${instruction.slice(0, 45)}..."` : "HollaBuddy generating cover letter...", "info");
+
+      const activeCo = (window.lastResult && window.lastResult.company) || (hollabuddyActiveJob && hollabuddyActiveJob.company) || analyzeCompany || "Job Application";
+      createHollaBuddyPipelineWidget(`Cover Letter Generator — ${activeCo}`, instruction ? `Targeting: "${instruction.slice(0, 40)}..."` : "Synthesizing authentic STAR accomplishments...", 3, "fa-solid fa-envelope-open-text");
+
       if (typeof openCurrentCoverLetter === "function") {
         openCurrentCoverLetter(instruction);
       } else if (typeof regenerateCoverLetter === "function") {
