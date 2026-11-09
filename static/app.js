@@ -7281,13 +7281,55 @@ function createHollaBuddyPipelineWidget(title, initialStatus, totalSteps = 7, ic
   return widget;
 }
 
+/** Render an informative focused memory card inside HollaBuddy */
+function appendHollaBuddyFocusCard(company, role, appData = null) {
+  const container = document.getElementById("hollabuddy-messages");
+  if (!container) return;
+
+  const card = document.createElement("div");
+  card.className = "hollabuddy-msg hollabuddy-msg-bot";
+  card.style.marginTop = "6px";
+  card.style.marginBottom = "8px";
+
+  const scoreText = (appData && (appData.score_after || appData.score)) ? ` · ATS Score: <strong>${appData.score_after || appData.score}%</strong>` : "";
+  const kwCount = (appData && appData.matched_keywords && appData.matched_keywords.length) ? ` · ${appData.matched_keywords.length} matched keywords` : "";
+
+  card.innerHTML = `
+    <div class="hollabuddy-msg-avatar" style="background:rgba(56,189,248,0.2); border:1px solid rgba(56,189,248,0.5); color:#38bdf8;">
+      <i class="fa-solid fa-bullseye"></i>
+    </div>
+    <div class="hollabuddy-bubble hollabuddy-bubble-bot hb-focus-card">
+      <div class="hb-focus-header">
+        <span style="width:7px; height:7px; border-radius:50%; background:#10b981; box-shadow:0 0 6px #10b981; display:inline-block;"></span>
+        Memory Context Loaded
+      </div>
+      <div class="hb-focus-title">
+        ${escapeHtml(role || 'Target Role')} @ <strong style="color:var(--cyan);">${escapeHtml(company || 'Target Job')}</strong>
+      </div>
+      <div class="hb-focus-details">
+        Loaded into working memory${scoreText}${kwCount}. Master resume + tailored draft + job description are active. You can now chat, analyze bullets, request revisions, or ask questions for this specific application.
+      </div>
+      <div class="hb-focus-actions">
+        <button type="button" class="hb-action-btn hb-action-btn-subtle" onclick="openCurrentCoverLetter();">
+          <i class="fa-solid fa-envelope"></i> Cover Letter
+        </button>
+        <button type="button" class="hb-action-btn hb-action-btn-subtle" onclick="openLiveEditModal('${escapeHtml(company)}');">
+          <i class="fa-solid fa-palette"></i> Open Studio Editor
+        </button>
+      </div>
+    </div>
+  `;
+  container.appendChild(card);
+  scrollHollaBuddyToBottom();
+}
+
 /** Render an Action Controller pill inside the HollaBuddy message thread */
 function appendHollaBuddyActionCard(action) {
   const container = document.getElementById("hollabuddy-messages");
   if (!container || !action) return;
 
-  // For pipeline executions, the dedicated live interactive widget is rendered directly by executeHollaBuddyAction
-  if (action.type === "tailor_resume" || action.type === "refine_resume" || action.type === "generate_cover_letter") {
+  // For pipeline executions & memory focus, dedicated interactive cards are rendered directly
+  if (action.type === "tailor_resume" || action.type === "refine_resume" || action.type === "generate_cover_letter" || action.type === "focus_job") {
     return;
   }
 
@@ -7429,9 +7471,94 @@ async function executeHollaBuddyAction(action) {
       break;
     }
 
+    case "focus_job": {
+      let targetCompany = action.params ? (action.params.company || action.params.job || action.params.target || '') : '';
+      let targetRole = action.params ? (action.params.role || '') : '';
+
+      // Fallback: If no company in tag params, inspect last user chat input
+      if (!targetCompany && typeof window._lastHollaBuddyUserMessage === 'string') {
+        const userMsgLower = window._lastHollaBuddyUserMessage.toLowerCase();
+        if (Array.isArray(allHistoryApplications) && allHistoryApplications.length > 0) {
+          for (const app of allHistoryApplications) {
+            if (app.company && userMsgLower.includes(app.company.toLowerCase())) {
+              targetCompany = app.company;
+              break;
+            }
+          }
+        }
+        if (!targetCompany && userMsgLower.includes("beehiiv")) {
+          targetCompany = "Beehiiv";
+        }
+      }
+
+      let matchedApp = null;
+      if (Array.isArray(allHistoryApplications) && allHistoryApplications.length > 0) {
+        if (targetCompany) {
+          const q = targetCompany.toLowerCase();
+          matchedApp = allHistoryApplications.find(a => {
+            const co = (a.company || '').toLowerCase();
+            return co.includes(q) || q.includes(co);
+          });
+        }
+        if (!matchedApp && allHistoryApplications.length > 0) {
+          matchedApp = allHistoryApplications[0];
+        }
+      }
+
+      const activeCo = (matchedApp ? matchedApp.company : targetCompany) || "Target Application";
+      const activeRo = (matchedApp ? matchedApp.role : targetRole) || "Tailored Role";
+
+      // 1. Set HollaBuddy active job context in memory
+      hollabuddyActiveJob = {
+        company: activeCo,
+        role: activeRo,
+        url: matchedApp ? (matchedApp.job_url || matchedApp.url || "") : "",
+        jd_text: matchedApp ? (matchedApp.jd_text || "") : "",
+        output_file: matchedApp ? (matchedApp.output_file || matchedApp.relative_file_path || "") : ""
+      };
+
+      // 2. Load into window.lastResult and sessionStorage so all tools reference this job
+      if (matchedApp) {
+        window.lastResult = {
+          company: activeCo,
+          role: activeRo,
+          relative_path: matchedApp.output_file || matchedApp.relative_file_path || "",
+          score_after: matchedApp.score_after || matchedApp.score,
+          score_before: matchedApp.score_before || null,
+          matched_keywords: matchedApp.matched_keywords || [],
+          newly_added: matchedApp.newly_added || [],
+          tailored_resume: matchedApp.tailored_resume || matchedApp.resume_json || null,
+          cover_letter_text: matchedApp.cover_letter_text || matchedApp.cover_letter || "",
+          jd_text: matchedApp.jd_text || ""
+        };
+        syncActiveResultStorage();
+      }
+
+      // 3. Update HollaBuddy UI context header & badges
+      updateHollaBuddyJobContext();
+
+      // 4. Render sleek in-chat memory confirmation card (DOES NOT open the visual editor modal)
+      appendHollaBuddyFocusCard(activeCo, activeRo, matchedApp);
+
+      showToast(`Loaded ${activeCo} into HollaBuddy memory!`, "success");
+      break;
+    }
+
     case "open_editor": {
       let targetCompany = action.params ? (action.params.company || action.params.job || action.params.target || '') : '';
       let explicitPath = action.params ? (action.params.path || action.params.file || '') : '';
+
+      // Safety guard: If the user was just asking to focus, load in memory, select, or chat about the job
+      // WITHOUT explicitly asking to open the editor, redirect action to focus_job!
+      if (typeof window._lastHollaBuddyUserMessage === 'string') {
+        const msg = window._lastHollaBuddyUserMessage.toLowerCase();
+        const wantsOpenEditor = /\b(open|launch|show|enter|view)\b.*\b(editor|visual|studio|canvas)\b|\b(editor|visual editor)\b/i.test(msg);
+        const justWantsFocus = /\b(focus|load|switch|select|look at|talk about|chat about|in memory|work on|context)\b/i.test(msg);
+        if (justWantsFocus && !wantsOpenEditor) {
+          executeHollaBuddyAction({ type: "focus_job", params: action.params });
+          break;
+        }
+      }
 
       // Smart Autonomous Fallback: If no company in tag params, inspect last user chat input
       if (!targetCompany && !explicitPath && typeof window._lastHollaBuddyUserMessage === 'string') {

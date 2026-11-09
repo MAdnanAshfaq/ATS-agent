@@ -3512,6 +3512,18 @@ def hollabuddy_chat():
                                 matched_item = h
                                 break
                     if not matched_item:
+                        # Check if user's chat message references a specific company in history!
+                        msg_lower = message.lower()
+                        for h in all_hist:
+                            h_co = (h.get("company") or "").strip()
+                            if h_co and len(h_co) >= 3 and h_co.lower() in msg_lower:
+                                matched_item = h
+                                if not company:
+                                    company = h_co
+                                if not role:
+                                    role = h.get("role") or ""
+                                break
+                    if not matched_item:
                         matched_item = all_hist[0]
                     t_cand = matched_item.get("tailored_resume") or matched_item.get("resume_json") or matched_item.get("output_data")
                     if isinstance(t_cand, str):
@@ -3521,6 +3533,11 @@ def hollabuddy_chat():
                             pass
                     if isinstance(t_cand, dict) and t_cand.get("experience"):
                         drafted_resume = t_cand
+                    if matched_item:
+                        company = company or matched_item.get("company") or ""
+                        role = role or matched_item.get("role") or ""
+                        url = url or matched_item.get("url") or matched_item.get("job_url") or ""
+                        jd_text = jd_text or matched_item.get("jd_text") or ""
         except Exception as e:
             logging.debug(f"[HollaBuddy] Could not load fallback drafted resume from DB: {e}")
 

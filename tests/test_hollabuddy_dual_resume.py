@@ -208,6 +208,65 @@ class TestHollaBuddyDualResume(unittest.TestCase):
         self.assertIn("Workday", captured_system_instruction)
         self.assertIn("AUTONOMOUS PIPELINE CONTROLLER MANDATE", captured_system_instruction)
 
+    @patch("hollabuddy.get_all_gemini_keys", return_value=["test_gemini_key_123"])
+    @patch("hollabuddy.execute_with_failover")
+    def test_hollabuddy_focus_job_action_parsing(self, mock_exec, mock_keys):
+        def fake_execute(call_fn):
+            mock_client = MagicMock()
+            mock_response = MagicMock()
+            mock_response.text = "I've loaded your Beehiiv application into working memory! [[ACTION:focus_job|company=Beehiiv]]"
+            mock_response.candidates = [MagicMock(finish_reason="STOP")]
+            mock_client.models.generate_content.return_value = mock_response
+            return call_fn(mock_client)
+
+        mock_exec.side_effect = fake_execute
+
+        res = chat_with_hollabuddy(
+            message="focus on the Beehiiv job in history in your context to chat further",
+            base_resume=self.base_resume,
+            application_history=[{"company": "Beehiiv", "role": "Senior Engineer"}]
+        )
+
+        self.assertIn("action", res)
+        self.assertIsNotNone(res["action"])
+        self.assertEqual(res["action"]["type"], "focus_job")
+        self.assertEqual(res["action"]["params"].get("company"), "Beehiiv")
+        # Ensure tag is stripped from user reply
+        self.assertNotIn("[[ACTION:", res["reply"])
+        self.assertIn("Beehiiv", res["reply"])
+
+    @patch("hollabuddy.get_all_gemini_keys", return_value=["test_gemini_key_123"])
+    @patch("hollabuddy.execute_with_failover")
+    def test_hollabuddy_prompt_differentiates_focus_from_open_editor(self, mock_exec, mock_keys):
+        captured_system_instruction = None
+
+        def fake_execute(call_fn):
+            nonlocal captured_system_instruction
+            mock_client = MagicMock()
+            mock_response = MagicMock()
+            mock_response.text = "Sure thing!"
+            mock_response.candidates = [MagicMock(finish_reason="STOP")]
+
+            def fake_generate_content(model, contents, config):
+                nonlocal captured_system_instruction
+                captured_system_instruction = config.system_instruction
+                return mock_response
+
+            mock_client.models.generate_content.side_effect = fake_generate_content
+            return call_fn(mock_client)
+
+        mock_exec.side_effect = fake_execute
+
+        chat_with_hollabuddy(
+            message="focus on Beehiiv",
+            base_resume=self.base_resume,
+            application_history=[{"company": "Beehiiv", "role": "Senior Engineer"}]
+        )
+
+        self.assertIsNotNone(captured_system_instruction)
+        self.assertIn("ACTION:focus_job|company=CompanyName", captured_system_instruction)
+        self.assertIn("CRITICAL**: DO NOT output `[[ACTION:open_editor]]` when the candidate just wants to focus", captured_system_instruction)
+
 
 if __name__ == "__main__":
     unittest.main()
