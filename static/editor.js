@@ -2774,6 +2774,15 @@
       if (AutoSaver.isSaving) return;
       AutoSaver.isSaving = true;
 
+      // Ensure all DOM elements are synced to JSON state before save
+      if (typeof InlineEditor !== 'undefined' && typeof InlineEditor.syncDomToResumeJson === 'function') {
+        InlineEditor.syncDomToResumeJson();
+      }
+
+      // Invalidate cached blob
+      PdfExporter.cachedBlob = null;
+      PdfExporter.cachedFilename = null;
+
       const config = window.EDITOR_CONFIG || {};
       const payload = {
         resume_path: config.resumePath || 'tailored_resume.json',
@@ -2811,8 +2820,10 @@
             statusEl.innerHTML = '<span class="dot" style="background:#10b981"></span><span>Saved</span>';
           }
 
-          // Eagerly pre-generate PDF in the background right after saving so download is 0s instant!
-          PdfExporter.preGenerate();
+          // Clear stale cached blob and trigger fresh preGenerate with force_refresh
+          PdfExporter.cachedBlob = null;
+          PdfExporter.cachedFilename = null;
+          PdfExporter.preGenerate(true);
         }
       } catch (err) {
         console.warn('[AutoSaver] Save failed:', err);
@@ -2836,6 +2847,7 @@
     static init() {
       const btnDownload = document.getElementById('btnDownloadPdf');
       const btnPrint = document.getElementById('btnPrintNative');
+      const btnDownloadDocx = document.getElementById('btnDownloadDocx');
 
       // 1. Instant Print / Save as PDF (0 seconds, uses native browser print dialog)
       if (btnPrint) {
@@ -2845,10 +2857,31 @@
         });
       }
 
+      // Download .docx button
+      if (btnDownloadDocx) {
+        btnDownloadDocx.addEventListener('click', async () => {
+          InlineEditor.hideFloatingToolbar();
+          if (store.state.isDirty) {
+            await AutoSaver.saveNow();
+          }
+          const config = window.EDITOR_CONFIG || {};
+          let cleanFp = (config.resumePath || 'tailored_resume.json').replace(/\\/g, '/');
+          cleanFp = cleanFp.replace(/\.json$/i, '.docx');
+          const downloadUrl = `/api/download/${cleanFp}?t=${Date.now()}`;
+          const a = document.createElement('a');
+          a.style.display = 'none';
+          a.href = downloadUrl;
+          a.download = '';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        });
+      }
+
       // Initial eager pre-generation 2 seconds after editor load
       setTimeout(() => {
         if (!PdfExporter.cachedBlob && !store.state.isDirty) {
-          PdfExporter.preGenerate();
+          PdfExporter.preGenerate(false);
         }
       }, 2000);
 
@@ -2857,6 +2890,12 @@
       // 2. Instant PDF Download
       btnDownload.addEventListener('click', async () => {
         InlineEditor.hideFloatingToolbar();
+
+        // If dirty or unsaved edits exist, save first
+        if (store.state.isDirty) {
+          PdfExporter.cachedBlob = null;
+          await AutoSaver.saveNow();
+        }
 
         // FAST PATH: If fresh pre-generated PDF is already cached and document not dirty -> INSTANT 0s DOWNLOAD!
         if (PdfExporter.cachedBlob && !store.state.isDirty) {
@@ -2928,7 +2967,8 @@
           resume_path: config.resumePath || 'tailored_resume.json',
           resume: store.state.resume,
           editor_styles: store.state.styles,
-          html: rawHtml
+          html: rawHtml,
+          force_refresh: true
         };
 
         try {
@@ -2981,15 +3021,30 @@
      * Eagerly pre-generates and caches PDF blob in the background
      * so user clicking "Download PDF" experiences instant 0s download.
      */
-    static preGenerate() {
+    static preGenerate(forceRefresh = false) {
       if (PdfExporter.isPreGenerating) return;
       PdfExporter.isPreGenerating = true;
+
+      if (typeof InlineEditor !== 'undefined' && typeof InlineEditor.syncDomToResumeJson === 'function') {
+        InlineEditor.syncDomToResumeJson();
+      }
+
+      const contentEl = document.getElementById('resumeContent');
+      let rawHtml = '';
+      if (contentEl) {
+        const clone = contentEl.cloneNode(true);
+        clone.querySelectorAll('.block-actions-bar, .block-drag-handle, .block-drop-indicator').forEach(el => el.remove());
+        clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
+        rawHtml = clone.innerHTML;
+      }
 
       const config = window.EDITOR_CONFIG || {};
       const payload = {
         resume_path: config.resumePath || 'tailored_resume.json',
         resume: store.state.resume,
         editor_styles: store.state.styles,
+        force_refresh: forceRefresh,
+        html: rawHtml
       };
 
       PdfExporter.preGeneratePromise = (async () => {
@@ -3001,20 +3056,25 @@
           });
 
           if (resp.ok) {
-            const blob = await resp.blob();
-            const candidateName = store.state.resume.name || 'Candidate';
-            PdfExporter.cachedFilename = `${candidateName.replace(/[^a-zA-Z0-9_\-]/g, '_')}_Resume.pdf`;
-            PdfExporter.cachedBlob = blob;
-            console.log('[PdfExporter] Eager PDF background pre-generation ready');
+            const contentType = resp.headers.get('content-type') || '';
+            if (contentType.includes('application/pdf') || resp.status === 200) {
+              const blob = await resp.blob();
+              if (blob && blob.size > 1000) {
+                const candidateName = store.state.resume.name || 'Candidate';
+                PdfExporter.cachedFilename = `${candidateName.replace(/[^a-zA-Z0-9_\-]/g, '_')}_Resume.pdf`;
+                PdfExporter.cachedBlob = blob;
+                console.log('[PdfExporter] Eager PDF background pre-generation ready');
 
-            // Indicate PDF readiness visually on download button
-            const btnDownload = document.getElementById('btnDownloadPdf');
-            if (btnDownload && !btnDownload.querySelector('.pdf-ready-dot')) {
-              const dot = document.createElement('span');
-              dot.className = 'pdf-ready-dot';
-              dot.style.cssText = 'display:inline-block; width:7px; height:7px; border-radius:50%; background:#10b981; margin-left:6px; box-shadow:0 0 6px #10b981;';
-              dot.title = 'Instant PDF pre-generated & ready';
-              btnDownload.appendChild(dot);
+                // Indicate PDF readiness visually on download button
+                const btnDownload = document.getElementById('btnDownloadPdf');
+                if (btnDownload && !btnDownload.querySelector('.pdf-ready-dot')) {
+                  const dot = document.createElement('span');
+                  dot.className = 'pdf-ready-dot';
+                  dot.style.cssText = 'display:inline-block; width:7px; height:7px; border-radius:50%; background:#10b981; margin-left:6px; box-shadow:0 0 6px #10b981;';
+                  dot.title = 'Instant PDF pre-generated & ready';
+                  btnDownload.appendChild(dot);
+                }
+              }
             }
           }
         } catch (e) {

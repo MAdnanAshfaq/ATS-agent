@@ -3018,16 +3018,16 @@ def api_editor_save():
             elif candidate.suffix.lower() != ".json":
                 candidate = candidate.parent / "tailored_resume.json"
 
-            if candidate.exists():
+            if candidate.exists() or candidate.parent.exists():
                 target_json = candidate
             else:
-                folder_stem = Path(clean_fp).stem.split(".")[0]
+                folder_stem = Path(clean_fp).parent.name if ("/" in clean_fp or "\\" in clean_fp) else Path(clean_fp).stem.split(".")[0]
                 matches = list(user_output_dir.rglob("tailored_resume.json")) if user_output_dir.exists() else []
                 matched = [m for m in matches if folder_stem.lower() in str(m).lower()]
                 if matched:
                     target_json = matched[0]
                 else:
-                    folder_name = _safe_slugify(clean_fp.replace('/', '_')) or "tailored_resume"
+                    folder_name = _safe_slugify(Path(clean_fp).parts[0]) if Path(clean_fp).parts else "tailored_resume"
                     target_json = user_output_dir / folder_name / "tailored_resume.json"
 
         # Guard: never wipe existing experience/education on master resume with an empty skeleton
@@ -3118,15 +3118,42 @@ def api_editor_save():
 
         # ── Document Disk Sync (.docx) & Eager PDF Pre-Generation ──────────────
         try:
-            from resume_builder import build_resume_docx
+            from resume_builder import build_resume_docx, sanitize_text, slugify
+            user_data_dir = current_user.data_dir if current_user.is_authenticated else BASE_DIR
+            user_output_dir = get_user_output_dir()
             if is_master:
-                build_resume_docx(resume_obj, "Master", "Profile", output_dir=str(user_data_dir))
+                built_docx = build_resume_docx(resume_obj, "Master", "Profile", output_dir=str(user_data_dir))
                 dest_dir_for_pdf = user_data_dir
             else:
                 target_dir = target_json.parent
                 comp = resume_obj.get("target_company") or (target_dir.name.split("_")[0] if "_" in target_dir.name else "Company")
                 rol = resume_obj.get("target_role") or (target_dir.name.split("_", 1)[1] if "_" in target_dir.name else "Resume")
-                build_resume_docx(resume_obj, comp, rol, output_dir=str(target_dir))
+                base_out = str(target_dir.parent) if target_dir.parent.exists() else str(user_output_dir)
+                built_docx = build_resume_docx(resume_obj, comp, rol, output_dir=base_out)
+                cand_name = sanitize_text(resume_obj.get("name", "Candidate"))
+                clean_name = slugify(cand_name) or "Candidate"
+                target_docx = target_dir / f"{clean_name}_Resume.docx"
+                if built_docx and os.path.exists(built_docx):
+                    built_p = Path(built_docx)
+                    if built_p.parent.resolve() != target_dir.resolve():
+                        import shutil
+                        shutil.copy2(built_docx, target_docx)
+                        if built_p.parent.parent.resolve() == target_dir.resolve():
+                            try:
+                                shutil.rmtree(built_p.parent, ignore_errors=True)
+                            except Exception:
+                                pass
+                    elif built_p.name != target_docx.name:
+                        import shutil
+                        shutil.copy2(built_docx, target_docx)
+                # Ensure all other matching *Resume*.docx in target_dir are updated to this latest version
+                for existing_docx in target_dir.glob("*Resume*.docx"):
+                    if existing_docx.name != target_docx.name and target_docx.exists():
+                        try:
+                            import shutil
+                            shutil.copy2(target_docx, existing_docx)
+                        except Exception:
+                            pass
                 dest_dir_for_pdf = target_dir
 
             # Launch eager asynchronous background PDF pre-generation so file is ready BEFORE user clicks download
@@ -3138,12 +3165,31 @@ def api_editor_save():
                     clean_cand = re.sub(r'[^a-zA-Z0-9_\-]', '_', cand_name).strip('_') or "Candidate"
                     out_pdf = Path(dest_dir) / f"{clean_cand}_Resume.pdf"
                     html_c = resume_json_to_html(r_obj, editor_styles=st_styles)
-                    generate_pdf_from_html(
+                    success_pdf = generate_pdf_from_html(
                         html_content=html_c,
                         output_pdf_path=str(out_pdf),
                         candidate_name=cand_name,
                         role=r_obj.get("target_role", "")
                     )
+                    # If HTML-to-PDF failed or Playwright not installed, convert freshly built docx
+                    if (not success_pdf or not out_pdf.exists() or out_pdf.stat().st_size < 1000) and dest_dir:
+                        from resume_builder import convert_to_pdf
+                        docx_matches = list(Path(dest_dir).glob("*Resume*.docx"))
+                        if docx_matches:
+                            c_pdf = convert_to_pdf(str(docx_matches[0]))
+                            if c_pdf and os.path.exists(c_pdf):
+                                if Path(c_pdf).resolve() != out_pdf.resolve():
+                                    import shutil
+                                    shutil.copy2(c_pdf, out_pdf)
+                    # Overwrite any other matching PDF in dest_dir
+                    if out_pdf.exists() and out_pdf.stat().st_size > 1000:
+                        for existing_pdf in Path(dest_dir).glob("*Resume*.pdf"):
+                            if existing_pdf.name != out_pdf.name:
+                                try:
+                                    import shutil
+                                    shutil.copy2(out_pdf, existing_pdf)
+                                except Exception:
+                                    pass
                     logger.info(f"[Editor Save] Eager PDF prebuilt in background: {out_pdf.name}")
                 except Exception as e_pdf:
                     logger.debug(f"[Editor Save] Eager PDF background prebuild note: {e_pdf}")
@@ -3189,12 +3235,15 @@ def api_editor_export_pdf():
         from resume_html import resume_json_to_html, generate_pdf_from_html, _get_base_html_template
         name = resume_obj.get("name", "Candidate")
 
-        # Check if eager pre-generated PDF already exists in destination folder
+        # Explicitly initialize directories at the top to eliminate any UnboundLocalError
+        user_output_dir = get_user_output_dir()
+        user_data_dir = current_user.data_dir if current_user.is_authenticated else BASE_DIR
+
+        # Determine target destination folder
         clean_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', name).strip('_') or "Candidate"
         pdf_filename = f"{clean_name}_Resume.pdf"
         target_folder = None
         clean_fp = rel_path.replace("\\", "/").strip("/")
-        user_data_dir = current_user.data_dir if current_user.is_authenticated else BASE_DIR
         if clean_fp and clean_fp not in ("master", "master_resume", "master.docx", "master.json"):
             target_folder = (user_output_dir / clean_fp).resolve()
             if not target_folder.is_dir():
@@ -3202,29 +3251,41 @@ def api_editor_export_pdf():
         else:
             target_folder = user_data_dir
 
+        raw_html = data.get("html")
+        force_refresh = bool(data.get("force_refresh", False))
+
+        # Check latest modified time of target_json vs existing PDF
+        target_json = None
+        if target_folder and clean_fp and clean_fp not in ("master", "master_resume", "master.docx", "master.json"):
+            candidate_json = target_folder / "tailored_resume.json"
+            if candidate_json.exists():
+                target_json = candidate_json
+
         # Fast Instant-Download Cache Hit
-        if target_folder and target_folder.exists() and not data.get("force_refresh") and not raw_html:
+        # Only serve existing PDF if force_refresh is false, no custom raw_html provided,
+        # AND existing PDF is strictly fresher than the saved resume JSON
+        if target_folder and target_folder.exists() and not force_refresh and not raw_html:
             existing_pdf = target_folder / pdf_filename
             if existing_pdf.exists() and existing_pdf.stat().st_size > 1500:
-                logger.info(f"[Export PDF] Instant serving pre-generated PDF: {existing_pdf.name}")
-                if data.get("pregenerate"):
-                    return jsonify({"success": True, "pregenerated": True, "cached": True, "download_name": pdf_filename})
-                return send_file(
-                    str(existing_pdf),
-                    as_attachment=True,
-                    download_name=pdf_filename,
-                    mimetype="application/pdf"
-                )
+                is_fresh = True
+                if target_json and target_json.exists():
+                    is_fresh = existing_pdf.stat().st_mtime >= target_json.stat().st_mtime
+                if is_fresh:
+                    logger.info(f"[Export PDF] Instant serving pre-generated PDF: {existing_pdf.name}")
+                    return send_file(
+                        str(existing_pdf),
+                        as_attachment=True,
+                        download_name=pdf_filename,
+                        mimetype="application/pdf"
+                    )
 
         # If the visual editor sent the exact rendered DOM, wrap it for 1:1 fidelity
-        raw_html = data.get("html")
         if raw_html and isinstance(raw_html, str) and raw_html.strip():
             html_content = _get_base_html_template(raw_html, title=f"{name} - Resume", editor_styles=editor_styles)
         else:
             # Fallback to generating HTML from JSON data
             html_content = resume_json_to_html(resume_obj, editor_styles=editor_styles)
 
-        user_output_dir = get_user_output_dir()
         tmp_pdf_dir = user_output_dir / ".temp_exports"
         tmp_pdf_dir.mkdir(parents=True, exist_ok=True)
         output_pdf_path = tmp_pdf_dir / f"{uuid.uuid4().hex[:8]}_{pdf_filename}"
@@ -3236,8 +3297,8 @@ def api_editor_export_pdf():
             role=resume_obj.get("target_role", "")
         )
 
-        # Fallback if Playwright failed on Render/container environment
-        if not success or not output_pdf_path.exists():
+        # Fallback 1: build docx and convert via convert_to_pdf (LibreOffice / docx2pdf)
+        if not success or not output_pdf_path.exists() or output_pdf_path.stat().st_size < 1000:
             try:
                 from resume_builder import build_resume_docx, convert_to_pdf
                 comp = resume_obj.get("target_company") or "Company"
@@ -3251,29 +3312,35 @@ def api_editor_export_pdf():
             except Exception as fb_err:
                 logger.warning(f"[Export PDF] Fallback document generator warning: {fb_err}")
 
-        if not success or not output_pdf_path.exists():
-            return jsonify({"error": "PDF generation failed. Please use 'Instant Print' (Ctrl+P) to save as high-definition PDF directly from your browser."}), 500
+        # Fallback 2: convert existing .docx in target_folder
+        if not success or not output_pdf_path.exists() or output_pdf_path.stat().st_size < 1000:
+            if target_folder and target_folder.exists():
+                try:
+                    from resume_builder import convert_to_pdf
+                    for docx_match in target_folder.glob("*Resume*.docx"):
+                        c_pdf = convert_to_pdf(str(docx_match))
+                        if c_pdf and os.path.exists(c_pdf) and os.path.getsize(c_pdf) > 1000:
+                            output_pdf_path = Path(c_pdf)
+                            success = True
+                            break
+                except Exception as fb2_err:
+                    logger.warning(f"[Export PDF] Fallback 2 convert warning: {fb2_err}")
+
+        if not success or not output_pdf_path.exists() or output_pdf_path.stat().st_size < 1000:
+            return jsonify({"error": "PDF generation failed on server. Please use 'Instant Print' (Ctrl+P) to save as high-definition PDF directly from your browser."}), 500
 
         # Also preserve the generated PDF in the tailored job folder
         try:
-            clean_fp = rel_path.replace("\\", "/").strip("/")
-            if clean_fp and clean_fp not in ("master", "master_resume", "master.docx", "master.json"):
-                target_folder = (user_output_dir / clean_fp).resolve()
-                if not target_folder.is_dir():
-                    target_folder = target_folder.parent
-                if target_folder.exists() and target_folder.is_dir():
-                    import shutil
-                    dest_pdf = target_folder / pdf_filename
-                    shutil.copy2(output_pdf_path, dest_pdf)
+            if target_folder and target_folder.exists() and target_folder.is_dir():
+                import shutil
+                dest_pdf = target_folder / pdf_filename
+                shutil.copy2(output_pdf_path, dest_pdf)
+                # Overwrite any other matching PDF in target_folder
+                for existing_pdf in target_folder.glob("*Resume*.pdf"):
+                    if existing_pdf.name != dest_pdf.name:
+                        shutil.copy2(output_pdf_path, existing_pdf)
         except Exception as pdf_copy_err:
             logger.warning(f"[Export PDF] Copy to job folder note: {pdf_copy_err}")
-
-        if data.get("pregenerate"):
-            return jsonify({
-                "success": True,
-                "pregenerated": True,
-                "download_name": pdf_filename,
-            })
 
         return send_file(
             str(output_pdf_path),
@@ -3282,7 +3349,7 @@ def api_editor_export_pdf():
             mimetype="application/pdf"
         )
     except Exception as e:
-        logger.error(f"[Export PDF] Error: {e}")
+        logger.error(f"[Export PDF] Error: {e}", exc_info=True)
         return jsonify({"error": f"PDF Export error: {str(e)}"}), 500
 
 
@@ -4886,12 +4953,17 @@ def refine_resume_api():
 
 
 def _rebuild_document_and_pdf(target_dir, updated_resume, company="", role="", user_data_dir=None):
-    from resume_builder import build_resume_docx, convert_to_pdf
+    from resume_builder import build_resume_docx, convert_to_pdf, sanitize_text, slugify
+    target_dir = Path(target_dir)
     user_data_dir = user_data_dir or (current_user.data_dir if current_user.is_authenticated else BASE_DIR)
+    user_output_dir = get_user_output_dir()
     user_orig_docx = user_data_dir / "master_resume_original.docx"
     orig_docx_path = user_orig_docx if user_orig_docx.exists() else (BASE_DIR / "master_resume_original.docx")
-    effective_role = updated_resume.get("target_role") or role or "Resume"
-    effective_comp = company or (target_dir.name.split("_")[0] if hasattr(target_dir, 'name') else "Tailored")
+    effective_role = updated_resume.get("target_role") or role or (target_dir.name.split("_", 1)[1] if "_" in target_dir.name else "Resume")
+    effective_comp = company or (target_dir.name.split("_")[0] if hasattr(target_dir, 'name') and "_" in target_dir.name else "Tailored")
+
+    # Pass parent directory as base output directory so builder/patcher writes into target_dir rather than target_dir/nested
+    base_out = str(target_dir.parent) if target_dir.parent.exists() else str(user_output_dir)
 
     doc_path = None
     if orig_docx_path.exists():
@@ -4902,17 +4974,58 @@ def _rebuild_document_and_pdf(target_dir, updated_resume, company="", role="", u
                 rewritten_resume=updated_resume,
                 company=effective_comp,
                 role=effective_role,
-                output_dir=str(target_dir),
+                output_dir=base_out,
             )
         except Exception as pe:
             print(f"[_rebuild_document] Patch error: {pe}, using build_resume_docx")
-            doc_path = build_resume_docx(updated_resume, effective_comp, effective_role, output_dir=str(target_dir))
+            doc_path = build_resume_docx(updated_resume, effective_comp, effective_role, output_dir=base_out)
     else:
-        doc_path = build_resume_docx(updated_resume, effective_comp, effective_role, output_dir=str(target_dir))
+        doc_path = build_resume_docx(updated_resume, effective_comp, effective_role, output_dir=base_out)
+
+    # Ensure document exists directly inside target_dir and not a nested folder
+    cand_name = sanitize_text(updated_resume.get("name", "Candidate"))
+    clean_name = slugify(cand_name) or "Candidate"
+    target_docx = target_dir / f"{clean_name}_Resume.docx"
+    if doc_path and os.path.exists(doc_path):
+        doc_p = Path(doc_path)
+        if doc_p.parent.resolve() != target_dir.resolve():
+            import shutil
+            shutil.copy2(doc_path, target_docx)
+            doc_path = str(target_docx)
+            if doc_p.parent.parent.resolve() == target_dir.resolve():
+                try:
+                    shutil.rmtree(doc_p.parent, ignore_errors=True)
+                except Exception:
+                    pass
+        elif doc_p.name != target_docx.name:
+            import shutil
+            shutil.copy2(doc_path, target_docx)
+
+    # Ensure all other matching *Resume*.docx in target_dir are updated
+    for existing_docx in target_dir.glob("*Resume*.docx"):
+        if existing_docx.name != target_docx.name and target_docx.exists():
+            try:
+                import shutil
+                shutil.copy2(target_docx, existing_docx)
+            except Exception:
+                pass
 
     pdf_path = None
     try:
         pdf_path = convert_to_pdf(doc_path)
+        if pdf_path and os.path.exists(pdf_path):
+            target_pdf = target_dir / f"{clean_name}_Resume.pdf"
+            if Path(pdf_path).resolve() != target_pdf.resolve():
+                import shutil
+                shutil.copy2(pdf_path, target_pdf)
+                pdf_path = str(target_pdf)
+            for existing_pdf in target_dir.glob("*Resume*.pdf"):
+                if existing_pdf.name != target_pdf.name:
+                    try:
+                        import shutil
+                        shutil.copy2(target_pdf, existing_pdf)
+                    except Exception:
+                        pass
     except Exception as pe:
         print(f"[_rebuild_document] PDF conversion error: {pe}")
 
