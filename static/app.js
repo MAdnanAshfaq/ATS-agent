@@ -7501,7 +7501,7 @@ async function sendHollaBuddyMessage() {
     };
 
     const controller = new AbortController();
-    const abortTimeout = setTimeout(() => controller.abort(), 75000);
+    const abortTimeout = setTimeout(() => controller.abort(), 120000);
     let res;
     try {
       res = await fetch("/api/hollabuddy/chat", {
@@ -7512,7 +7512,7 @@ async function sendHollaBuddyMessage() {
       });
     } catch (netErr) {
       if (netErr.name === "AbortError") {
-        throw new Error("Chat request timed out after 75s. Gemini took too long to reply — please try again in a moment.");
+        throw new Error("Chat request timed out after 120s. Gemini took too long to reply — please try again in a moment.");
       }
       throw netErr;
     } finally {

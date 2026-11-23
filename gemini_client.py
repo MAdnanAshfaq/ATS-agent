@@ -118,10 +118,11 @@ def record_key_failure(key: str, error: Exception):
             mark_key_dead(clean, reason="Invalid or Permission Denied")
         elif is_quota_error(error) or "429" in str(error) or "RESOURCE_EXHAUSTED" in str(error).upper():
             delay = extract_retry_delay(error)
-            cool_duration = max(delay, 60.0)
-            _KEY_COOLDOWNS[clean] = now + min(cool_duration, 43200.0)
+            # Cap cooldown to at most 120s so other healthy models on this key can still be utilized
+            cool_duration = min(max(delay, 30.0), 120.0)
+            _KEY_COOLDOWNS[clean] = now + cool_duration
             masked = (clean[:6] + "..." + clean[-4:]) if len(clean) > 10 else "key"
-            print(f"[Key Cooldown] ⚠️ Key {masked} exhausted for {cool_duration/3600.0:.1f} hours. Deprioritizing.")
+            print(f"[Key Cooldown] ⚠️ Key {masked} cooling down for {cool_duration:.0f}s. Deprioritizing.")
 
 
 def record_key_success(key: str):
@@ -138,10 +139,10 @@ _MODEL_COOLDOWNS = {}
 _MODEL_LOCK = threading.Lock()
 
 DEFAULT_MODELS_CASCADE = [
-    "gemini-3.5-flash-lite",  # Blazing fast (<1s), generous quota, universal across accounts
-    "gemini-2.5-flash",       # Standard workhorse model
-    "gemini-flash-lite-latest", # Dynamic resilient alias fallback
-    "gemini-3.8-flash",       # High reasoning fallback
+    "gemini-3.5-flash-lite",    # Primary: ultra-fast (<1s), generous quota (1500 RPD)
+    "gemini-flash-lite-latest", # Immediate resilient fallback (~0.8s), generous quota
+    "gemini-3.8-flash",         # Advanced reasoning fallback
+    "gemini-2.5-flash",         # Legacy fallback
 ]
 
 
@@ -175,8 +176,8 @@ def get_standard_genai_config(
         "top_p": top_p,
         "max_output_tokens": max_output_tokens,
     }
-    # For Gemini 3.x models, use thinking_level="low" if applicable (minimal is not supported on 3.8)
-    if "3." in model_name:
+    # For Gemini 3.x and flash-lite models, use thinking_level="low" to eliminate reasoning delay (<1s response)
+    if "3." in model_name or "flash-lite" in model_name:
         try:
             cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_level="low")
         except Exception:
@@ -379,12 +380,12 @@ def rotate_key(reason: str = "quota") -> str:
     return new_key
 
 
-def get_gemini_client(force_rotate: bool = False, timeout_seconds: float = 35.0) -> genai.Client:
+def get_gemini_client(force_rotate: bool = False, timeout_seconds: float = 20.0) -> genai.Client:
     """Get a GenAI client initialized with active API key, v1beta endpoint, and fast failover retry limits."""
     if force_rotate:
         rotate_key(reason="manual request")
     key = get_active_key()
-    timeout_ms = max(15000, int(timeout_seconds * 1000))
+    timeout_ms = max(12000, int(timeout_seconds * 1000))
     try:
         http_opts = types.HttpOptions(
             api_version="v1beta",

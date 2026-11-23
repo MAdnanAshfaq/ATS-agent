@@ -3804,47 +3804,54 @@ def hollabuddy_chat():
     from agent import load_base_resume
     base_resume = load_base_resume(str(user_resume_path))
 
+    # Load history once and reuse for both drafted_resume fallback and application_history context
+    cached_user_history = None
+    if current_user.is_authenticated and db_layer.is_db_available():
+        try:
+            cached_user_history = db_layer.db_get_history(current_user.username) or []
+        except Exception as e:
+            logging.debug(f"[HollaBuddy] Could not load user history from DB: {e}")
+
     # Fallback: If drafted_resume not passed from client, look up latest from history or local run
     if not drafted_resume and current_user.is_authenticated:
         try:
-            if db_layer.is_db_available():
-                all_hist = db_layer.db_get_history(current_user.username)
-                if all_hist:
-                    matched_item = None
-                    if company:
-                        for h in all_hist:
-                            if h.get("company", "").strip().lower() == company.lower():
-                                matched_item = h
-                                break
-                    if not matched_item:
-                        # Check if user's chat message references a specific company in history!
-                        msg_lower = message.lower()
-                        for h in all_hist:
-                            h_co = (h.get("company") or "").strip()
-                            if h_co and len(h_co) >= 3 and h_co.lower() in msg_lower:
-                                matched_item = h
-                                if not company:
-                                    company = h_co
-                                if not role:
-                                    role = h.get("role") or ""
-                                break
-                    if not matched_item:
-                        matched_item = all_hist[0]
-                    t_cand = matched_item.get("tailored_resume") or matched_item.get("resume_json") or matched_item.get("output_data")
-                    if isinstance(t_cand, str):
-                        try:
-                            t_cand = json.loads(t_cand)
-                        except Exception:
-                            pass
-                    if isinstance(t_cand, dict) and t_cand.get("experience"):
-                        drafted_resume = t_cand
-                    if matched_item:
-                        company = company or matched_item.get("company") or ""
-                        role = role or matched_item.get("role") or ""
-                        url = url or matched_item.get("url") or matched_item.get("job_url") or ""
-                        jd_text = jd_text or matched_item.get("jd_text") or ""
+            all_hist = cached_user_history
+            if all_hist:
+                matched_item = None
+                if company:
+                    for h in all_hist:
+                        if h.get("company", "").strip().lower() == company.lower():
+                            matched_item = h
+                            break
+                if not matched_item:
+                    # Check if user's chat message references a specific company in history!
+                    msg_lower = message.lower()
+                    for h in all_hist:
+                        h_co = (h.get("company") or "").strip()
+                        if h_co and len(h_co) >= 3 and h_co.lower() in msg_lower:
+                            matched_item = h
+                            if not company:
+                                company = h_co
+                            if not role:
+                                role = h.get("role") or ""
+                            break
+                if not matched_item:
+                    matched_item = all_hist[0]
+                t_cand = matched_item.get("tailored_resume") or matched_item.get("resume_json") or matched_item.get("output_data")
+                if isinstance(t_cand, str):
+                    try:
+                        t_cand = json.loads(t_cand)
+                    except Exception:
+                        pass
+                if isinstance(t_cand, dict) and t_cand.get("experience"):
+                    drafted_resume = t_cand
+                if matched_item:
+                    company = company or matched_item.get("company") or ""
+                    role = role or matched_item.get("role") or ""
+                    url = url or matched_item.get("url") or matched_item.get("job_url") or ""
+                    jd_text = jd_text or matched_item.get("jd_text") or ""
         except Exception as e:
-            logging.debug(f"[HollaBuddy] Could not load fallback drafted resume from DB: {e}")
+            logging.debug(f"[HollaBuddy] Could not load fallback drafted resume from history: {e}")
 
     if not drafted_resume and hasattr(current_user, 'output_dir'):
         try:
@@ -3892,9 +3899,9 @@ def hollabuddy_chat():
     application_history = []
     if current_user.is_authenticated:
         try:
-            raw_hist = []
-            if db_layer.is_db_available():
-                raw_hist = db_layer.db_get_history(current_user.username) or []
+            raw_hist = cached_user_history if cached_user_history is not None else (
+                (db_layer.db_get_history(current_user.username) or []) if db_layer.is_db_available() else []
+            )
             if not raw_hist and hasattr(current_user, 'output_dir'):
                 logs_dir = Path(current_user.output_dir) / "logs"
                 if logs_dir.exists():
