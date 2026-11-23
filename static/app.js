@@ -1409,6 +1409,317 @@ function downloadCurrentResume(ext = 'docx') {
 
 const selectedHistoryFiles = new Set();
 let allHistoryApplications = [];
+let currentHistoryMonthFilter = "all";
+
+/**
+ * Parses application timestamp from timestamp, created_at, or run filename into a valid Date.
+ */
+function parseAppDate(app) {
+  if (!app) return new Date();
+  const raw = app.timestamp || app.created_at || app.log_file_name;
+  if (typeof raw === "number") {
+    return new Date(raw > 1e11 ? raw : raw * 1000);
+  }
+  if (typeof raw === "string") {
+    let clean = raw.trim();
+    const m = clean.match(/run_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/);
+    if (m) {
+      return new Date(Date.UTC(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10), parseInt(m[4], 10), parseInt(m[5], 10), parseInt(m[6], 10)));
+    }
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(clean) && !/[Z+-]\d{2}(:?\d{2})?$/.test(clean)) {
+      clean = clean + "Z";
+    }
+    const d = new Date(clean);
+    if (!isNaN(d.getTime())) return d;
+  }
+  return new Date();
+}
+
+/**
+ * Returns "YYYY-MM" string for an application.
+ */
+function getAppMonthKey(app) {
+  const d = parseAppDate(app);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
+
+/**
+ * Returns formatted "Month Year" (e.g., "October 2026") from "YYYY-MM".
+ */
+function formatMonthYearLabel(monthKey) {
+  if (!monthKey || !monthKey.includes("-")) return monthKey;
+  const parts = monthKey.split("-");
+  const y = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  const date = new Date(y, m - 1, 1);
+  return date.toLocaleString(undefined, { month: "long", year: "numeric" });
+}
+
+/**
+ * Checks whether an application was created more than `days` ago.
+ */
+function isAppOlderThanDays(app, days = 30) {
+  const d = parseAppDate(app);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+  return diffDays >= days;
+}
+
+/**
+ * Populates month selector and updates storage hygiene banner & modal stats.
+ */
+function populateHistoryMonthDropdown(apps) {
+  const selectElem = document.getElementById("history-month-select");
+  const banner = document.getElementById("history-old-jobs-banner");
+  const oldCountBadge = document.getElementById("hrb-old-count");
+  const oldBtnCount = document.getElementById("hrb-old-btn-count");
+  const modalOldCount = document.getElementById("modal-hygiene-old-count");
+
+  // Calculate stats
+  let oldCount = 0;
+  const monthCounts = {};
+
+  apps.forEach(app => {
+    if (isAppOlderThanDays(app, 30)) {
+      oldCount++;
+    }
+    const mKey = getAppMonthKey(app);
+    monthCounts[mKey] = (monthCounts[mKey] || 0) + 1;
+  });
+
+  // Update banner counters
+  if (oldCountBadge) oldCountBadge.textContent = oldCount;
+  if (oldBtnCount) oldBtnCount.textContent = oldCount;
+  if (modalOldCount) modalOldCount.textContent = `${oldCount} application${oldCount === 1 ? "" : "s"}`;
+
+  // Check if banner should be displayed
+  if (banner) {
+    if (oldCount > 0) {
+      const snoozedUntil = parseInt(localStorage.getItem("ats_hide_old_jobs_banner_until") || "0", 10);
+      if (Date.now() < snoozedUntil) {
+        banner.style.display = "none";
+      } else {
+        banner.style.display = "flex";
+      }
+    } else {
+      banner.style.display = "none";
+    }
+  }
+
+  // Populate select dropdown
+  if (selectElem) {
+    const prevVal = currentHistoryMonthFilter;
+    const sortedMonths = Object.keys(monthCounts).sort().reverse();
+
+    let html = `<option value="all">📅 All Applications (${apps.length})</option>`;
+    html += `<option value="older_30">⏳ Older than 30 Days (${oldCount})</option>`;
+
+    sortedMonths.forEach(mKey => {
+      const label = formatMonthYearLabel(mKey);
+      html += `<option value="month:${mKey}">🗓️ ${label} (${monthCounts[mKey]})</option>`;
+    });
+
+    selectElem.innerHTML = html;
+
+    // Restore selection if still valid
+    const validValues = ["all", "older_30", ...sortedMonths.map(m => `month:${m}`)];
+    if (validValues.includes(prevVal)) {
+      selectElem.value = prevVal;
+    } else {
+      currentHistoryMonthFilter = "all";
+      selectElem.value = "all";
+    }
+    updateDeleteMonthBtnState();
+  }
+}
+
+/**
+ * Updates the state and text of the "Delete Month" button based on current filter.
+ */
+function updateDeleteMonthBtnState() {
+  const btn = document.getElementById("delete-month-btn");
+  const btnText = document.getElementById("delete-month-btn-text");
+  if (!btn) return;
+
+  if (currentHistoryMonthFilter === "all") {
+    btn.classList.add("hidden");
+  } else if (currentHistoryMonthFilter === "older_30") {
+    btn.classList.remove("hidden");
+    if (btnText) btnText.textContent = "Purge >30d";
+  } else if (currentHistoryMonthFilter.startsWith("month:")) {
+    btn.classList.remove("hidden");
+    const mKey = currentHistoryMonthFilter.replace("month:", "");
+    const label = formatMonthYearLabel(mKey);
+    if (btnText) btnText.textContent = `Delete ${label}`;
+  }
+}
+
+/**
+ * Handler when user changes the month filter dropdown.
+ */
+function onHistoryMonthFilterChange(val) {
+  currentHistoryMonthFilter = val || "all";
+  updateDeleteMonthBtnState();
+  const searchInput = document.getElementById("history-search-input");
+  const query = searchInput ? searchInput.value.trim() : "";
+  applyHistoryFilters(query);
+}
+
+/**
+ * Applies both Month/Age group filtering and text query search.
+ */
+function applyHistoryFilters(query = "") {
+  let list = allHistoryApplications;
+
+  if (currentHistoryMonthFilter === "older_30") {
+    list = list.filter(app => isAppOlderThanDays(app, 30));
+  } else if (currentHistoryMonthFilter.startsWith("month:")) {
+    const mKey = currentHistoryMonthFilter.replace("month:", "");
+    list = list.filter(app => getAppMonthKey(app) === mKey);
+  }
+
+  const filtered = filterApplicationsList(list, query);
+  renderHistoryCards(filtered, query);
+}
+
+/**
+ * Prompts user to clean old applications (> `days` days).
+ */
+async function promptCleanOldJobs(days = 30) {
+  const oldApps = allHistoryApplications.filter(app => isAppOlderThanDays(app, days));
+  const count = oldApps.length;
+
+  if (count === 0) {
+    showToast(`No applications older than ${days} days found in your history!`, "info");
+    return;
+  }
+
+  const confirmed = await showSystemConfirm({
+    title: `Clean ${count} Old Application${count === 1 ? "" : "s"} (> ${days} Days)?`,
+    message: `You are about to permanently delete ${count} application${count === 1 ? "" : "s"} older than ${days} days.\n\nThis frees local disk storage and clears database records from NeonDB.`,
+    note: "🛡️ Safe Guarantee: Your master resume profile and settings remain 100% untouched.",
+    confirmText: `Purge ${count} Applications`,
+    type: "warning",
+    icon: "fa-solid fa-broom"
+  });
+  if (!confirmed) return;
+
+  showToast(`Cleaning ${count} applications older than ${days} days...`, "info");
+
+  try {
+    const res = await fetch("/api/history/delete_older_than", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ days })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message || `Cleaned ${data.deleted_count} old applications cleanly!`, "success");
+      selectedHistoryFiles.clear();
+      updateHistoryToolbarUI();
+      await loadHistory();
+    } else {
+      showToast(data.error || "Failed to clean old applications", "error");
+    }
+  } catch (err) {
+    showToast(`Clean failed: ${err.message}`, "error");
+  }
+}
+
+/**
+ * Deletes all applications belonging to the currently selected month or age filter.
+ */
+async function confirmDeleteFilteredGroup() {
+  if (currentHistoryMonthFilter === "older_30") {
+    return promptCleanOldJobs(30);
+  }
+  if (!currentHistoryMonthFilter.startsWith("month:")) return;
+
+  const mKey = currentHistoryMonthFilter.replace("month:", "");
+  const label = formatMonthYearLabel(mKey);
+  const monthApps = allHistoryApplications.filter(app => getAppMonthKey(app) === mKey);
+  const count = monthApps.length;
+
+  if (count === 0) {
+    showToast(`No applications found for ${label}`, "info");
+    return;
+  }
+
+  const confirmed = await showSystemConfirm({
+    title: `Delete All Applications for ${label}?`,
+    message: `You are about to permanently delete all ${count} application record${count === 1 ? "" : "s"} created in ${label}.\n\nThis removes generated resume DOCX, PDF, and analysis logs from your hard drive and NeonDB.`,
+    note: "🛡️ Safe Guarantee: Your master resume, contact info, and base settings are never touched.",
+    confirmText: `Delete ${count} Apps (${label})`,
+    type: "danger",
+    icon: "fa-solid fa-calendar-xmark"
+  });
+  if (!confirmed) return;
+
+  showToast(`Deleting ${count} applications for ${label}...`, "info");
+
+  try {
+    const res = await fetch("/api/history/delete_month", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ month: mKey })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message || `Deleted ${data.deleted_count} applications for ${label}!`, "success");
+      currentHistoryMonthFilter = "all";
+      const sel = document.getElementById("history-month-select");
+      if (sel) sel.value = "all";
+      updateDeleteMonthBtnState();
+      selectedHistoryFiles.clear();
+      updateHistoryToolbarUI();
+      await loadHistory();
+    } else {
+      showToast(data.error || "Failed to delete month applications", "error");
+    }
+  } catch (err) {
+    showToast(`Month delete failed: ${err.message}`, "error");
+  }
+}
+
+/**
+ * Hygiene modal controls & banner snooze.
+ */
+function openHistoryHygieneModal() {
+  const modal = document.getElementById("history-hygiene-modal");
+  if (modal) {
+    const cb = document.getElementById("modal-hygiene-dismiss-cb");
+    const snoozedUntil = parseInt(localStorage.getItem("ats_hide_old_jobs_banner_until") || "0", 10);
+    if (cb) cb.checked = (Date.now() < snoozedUntil);
+    modal.style.display = "flex";
+  }
+}
+
+function closeHistoryHygieneModal() {
+  const modal = document.getElementById("history-hygiene-modal");
+  if (modal) modal.style.display = "none";
+}
+
+function dismissOldJobsBanner() {
+  const snoozeUntil = Date.now() + (14 * 24 * 60 * 60 * 1000);
+  localStorage.setItem("ats_hide_old_jobs_banner_until", snoozeUntil.toString());
+  const banner = document.getElementById("history-old-jobs-banner");
+  if (banner) banner.style.display = "none";
+  showToast("Hygiene reminder snoozed for 14 days", "info");
+}
+
+function onHygieneModalDismissToggle(isChecked) {
+  if (isChecked) {
+    const snoozeUntil = Date.now() + (14 * 24 * 60 * 60 * 1000);
+    localStorage.setItem("ats_hide_old_jobs_banner_until", snoozeUntil.toString());
+    const banner = document.getElementById("history-old-jobs-banner");
+    if (banner) banner.style.display = "none";
+  } else {
+    localStorage.removeItem("ats_hide_old_jobs_banner_until");
+  }
+}
 
 async function loadHistory() {
   const grid = document.getElementById("history-grid");
@@ -1436,15 +1747,19 @@ async function loadHistory() {
         </div>`;
       if (toolbar) toolbar.classList.add("hidden");
       if (searchContainer) searchContainer.style.display = "none";
+      const banner = document.getElementById("history-old-jobs-banner");
+      if (banner) banner.style.display = "none";
       return;
     }
 
     if (toolbar) toolbar.classList.remove("hidden");
     if (searchContainer) searchContainer.style.display = "flex";
 
+    populateHistoryMonthDropdown(allHistoryApplications);
+
     const searchInput = document.getElementById("history-search-input");
     const currentQuery = searchInput ? searchInput.value.trim() : "";
-    renderHistoryCards(filterApplicationsList(allHistoryApplications, currentQuery), currentQuery);
+    applyHistoryFilters(currentQuery);
 
   } catch (err) {
     grid.innerHTML = `<div class="empty-state">Failed to load history: ${err.message}</div>`;
@@ -1500,8 +1815,7 @@ function filterApplicationsList(apps, query) {
 }
 
 function filterHistoryCards(query) {
-  const filtered = filterApplicationsList(allHistoryApplications, query);
-  renderHistoryCards(filtered, query);
+  applyHistoryFilters(query);
 }
 
 function clearHistorySearch() {
@@ -1509,7 +1823,7 @@ function clearHistorySearch() {
   if (input) input.value = "";
   const clearBtn = document.getElementById("history-search-clear-btn");
   if (clearBtn) clearBtn.style.display = "none";
-  renderHistoryCards(allHistoryApplications, "");
+  applyHistoryFilters("");
 }
 
 function renderHistoryCards(apps, query = "") {
@@ -1545,20 +1859,23 @@ function renderHistoryCards(apps, query = "") {
     const jobUrl = app.url || "";
     const historyDocxRel = (app.relative_file_path || '').replace(/\.(docx|pdf|json)$/i, '.docx');
     const historyPdfRel = (app.relative_file_path || '').replace(/\.(docx|pdf|json)$/i, '.pdf');
+    const isOld = isAppOlderThanDays(app, 30);
+    const isSelected = selectedHistoryFiles.has(app.log_file_name);
 
     const card = document.createElement("div");
-    card.className = "history-card";
+    card.className = `history-card${isSelected ? " is-selected" : ""}`;
     card.id = `history-card-${escapeHtml(app.log_file_name.replace(/[^a-zA-Z0-9_-]/g, '_'))}`;
     card.innerHTML = `
       <div class="history-card-header">
         <div class="flex-align-center gap-sm" style="flex:1; min-width:0;">
-          <input type="checkbox" class="history-item-cb" data-filename="${escapeHtml(app.log_file_name)}" ${selectedHistoryFiles.has(app.log_file_name) ? "checked" : ""} onchange="toggleHistoryItemSelection('${escapeHtml(app.log_file_name)}', this.checked)">
+          <input type="checkbox" class="history-item-cb" data-filename="${escapeHtml(app.log_file_name)}" ${isSelected ? "checked" : ""} onchange="toggleHistoryItemSelection('${escapeHtml(app.log_file_name)}', this.checked)">
           <div style="flex:1; min-width:0;">
             <div class="flex-align-center gap-xs">
               <span class="history-company" id="hist-co-${escapeHtml(app.log_file_name)}">${escapeHtml(app.company)}</span>
               <button class="btn-icon-subtle" title="Edit Company, Role & Link" onclick="openEditHistoryModal('${escapeHtml(app.log_file_name)}', '${escapeHtml(app.company)}', '${escapeHtml(app.role)}', '${escapeHtml(jobUrl)}')">
                 <i class="fa-solid fa-pen"></i>
               </button>
+              ${isOld ? `<span class="history-age-tag history-age-old" title="Application is older than 30 days"><i class="fa-solid fa-clock-rotate-left"></i> &gt;30d</span>` : ''}
             </div>
             <div class="history-role" id="hist-role-${escapeHtml(app.log_file_name)}">${escapeHtml(app.role)}</div>
           </div>
@@ -1635,6 +1952,9 @@ function toggleHistoryItemSelection(filename, isChecked) {
     const selectAllCb = document.getElementById("select-all-history-cb");
     if (selectAllCb) selectAllCb.checked = false;
   }
+  const safeId = `history-card-${escapeHtml(filename.replace(/[^a-zA-Z0-9_-]/g, '_'))}`;
+  const cardElem = document.getElementById(safeId);
+  if (cardElem) cardElem.classList.toggle("is-selected", isChecked);
   updateHistoryToolbarUI();
 }
 
@@ -1646,6 +1966,7 @@ function toggleSelectAllHistory(isChecked) {
       selectedHistoryFiles.add(cb.dataset.filename);
     }
   });
+  document.querySelectorAll(".history-card").forEach(c => c.classList.toggle("is-selected", isChecked));
   const selectAllCb = document.getElementById("select-all-history-cb");
   if (selectAllCb) selectAllCb.checked = isChecked;
   updateHistoryToolbarUI();
@@ -1656,6 +1977,7 @@ function deselectAllHistory() {
   document.querySelectorAll(".history-item-cb").forEach(cb => {
     cb.checked = false;
   });
+  document.querySelectorAll(".history-card").forEach(c => c.classList.remove("is-selected"));
   const selectAllCb = document.getElementById("select-all-history-cb");
   if (selectAllCb) selectAllCb.checked = false;
   updateHistoryToolbarUI();

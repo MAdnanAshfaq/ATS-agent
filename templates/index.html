@@ -1046,13 +1046,39 @@
 
     <!-- ── TAB 2: APPLICATIONS HISTORY ──────────────────────────────────── -->
     <section class="tab-content" id="tab-history">
-      <div class="section-header-row" style="flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+      <div class="section-header-row" style="flex-wrap:wrap; gap:12px; margin-bottom:14px;">
         <div>
           <h2>Generated Application Resumes</h2>
           <p>All previously generated ATS Word documents, PDFs, and match score logs.</p>
         </div>
-        <div class="history-toolbar-actions hidden" id="history-toolbar" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-          <label class="checkbox-label flex-align-center margin-right-sm" style="margin-bottom:0;">
+        <div class="history-toolbar-actions hidden" id="history-toolbar" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          <!-- Month Filter Selector -->
+          <div class="history-filter-pill-container" style="display:inline-flex; align-items:center; gap:6px; background:var(--surface-inset); border:1px solid var(--border-base); border-radius:8px; padding:3px 8px;">
+            <label for="history-month-select" style="font-size:11.5px; font-weight:600; color:var(--t2); margin:0; display:flex; align-items:center; gap:5px; cursor:pointer;">
+              <i class="fa-solid fa-calendar-days text-cyan"></i> Month:
+            </label>
+            <select id="history-month-select" onchange="onHistoryMonthFilterChange(this.value)" style="border:none; outline:none; background:transparent; font-size:12px; font-weight:600; color:var(--t0); cursor:pointer; padding:2px 4px;">
+              <option value="all">📅 All Applications (0)</option>
+              <option value="older_30">⏳ Older than 30 Days (0)</option>
+            </select>
+          </div>
+
+          <!-- Dynamic Delete Month Button (Shows when a specific month or older_30 is selected) -->
+          <button class="btn btn-danger-sm hidden" id="delete-month-btn" onclick="confirmDeleteFilteredGroup()" style="border-radius:8px;" title="Delete all applications in the currently filtered month or age group">
+            <i class="fa-solid fa-calendar-xmark"></i> <span id="delete-month-btn-text">Delete Month</span>
+          </button>
+
+          <!-- Quick Action: Clean >30d Old Jobs -->
+          <button class="btn btn-warning-sm" id="quick-clean-old-btn" onclick="promptCleanOldJobs(30)" title="Delete applications older than 30 days to free disk space and clean database" style="border-radius:8px; font-size:12px; font-weight:600;">
+            <i class="fa-solid fa-broom"></i> Clean Old (>30d)
+          </button>
+
+          <!-- Database Hygiene Info Button -->
+          <button type="button" class="btn btn-ghost-sm" id="history-tips-btn" onclick="openHistoryHygieneModal()" title="View database hygiene and storage tips" style="border-radius:8px; font-size:12px;">
+            <i class="fa-solid fa-circle-info text-cyan"></i> Tips
+          </button>
+
+          <label class="checkbox-label flex-align-center margin-right-sm" style="margin-bottom:0; font-size:12px;">
             <input type="checkbox" id="select-all-history-cb" onchange="toggleSelectAllHistory(this.checked)">
             <span><strong>Select All</strong></span>
           </label>
@@ -1061,6 +1087,35 @@
           </button>
           <button class="btn btn-danger-sm" id="clear-all-history-btn" onclick="confirmClearAllHistory()" style="background:#ef4444; border-color:#dc2626; border-radius:8px;">
             <i class="fa-solid fa-dumpster-fire"></i> Delete All
+          </button>
+        </div>
+      </div>
+
+      <!-- ── Database & Storage Hygiene Tip Banner ── -->
+      <div class="history-reminder-banner" id="history-old-jobs-banner" style="display:none; margin-bottom:16px;">
+        <div class="hrb-main">
+          <div class="hrb-icon">
+            <i class="fa-solid fa-broom text-amber"></i>
+          </div>
+          <div class="hrb-text">
+            <div class="hrb-title">
+              <strong>Database & Storage Hygiene Tip</strong>
+              <span class="badge badge-amber-subtle" id="hrb-old-badge"><span id="hrb-old-count">0</span> Old Applications (>30 Days)</span>
+            </div>
+            <p class="hrb-desc">
+              Applications from a month ago are typically closed or inactive. Deleting stale records frees disk storage, reduces NeonDB quota usage, and keeps your search and previews lightning fast.
+            </p>
+          </div>
+        </div>
+        <div class="hrb-actions">
+          <button type="button" class="btn btn-warning-sm" id="hrb-purge-btn" onclick="promptCleanOldJobs(30)">
+            <i class="fa-solid fa-trash-can"></i> Purge 30+ Day Jobs (<span id="hrb-old-btn-count">0</span>)
+          </button>
+          <button type="button" class="btn btn-ghost-sm" onclick="openHistoryHygieneModal()" title="View database hygiene guide">
+            <i class="fa-solid fa-circle-question"></i> Why Clean?
+          </button>
+          <button type="button" class="btn-icon-subtle hrb-dismiss-btn" onclick="dismissOldJobsBanner()" title="Dismiss reminder for 14 days">
+            <i class="fa-solid fa-xmark"></i>
           </button>
         </div>
       </div>
@@ -1909,6 +1964,78 @@
         <button type="button" id="save-edit-history-btn" class="btn btn-primary btn-sm" onclick="saveEditHistory()">
           <i class="fa-solid fa-floppy-disk"></i> Save Changes
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- History Database Hygiene Modal -->
+  <div id="history-hygiene-modal" class="modal-backdrop" style="display:none; position: fixed; inset: 0; background: rgba(5,7,12,0.85); backdrop-filter: blur(8px); z-index: 9999; align-items: center; justify-content: center;">
+    <div class="modal-card" style="background: var(--surface-card); border: 1px solid var(--border-base); border-radius: var(--r-lg); width: 92%; max-width: 600px; box-shadow: var(--shadow-xl); overflow: hidden; animation: modalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);">
+      <div class="modal-header" style="border-bottom: 1px solid var(--border-base); padding: 16px 22px; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="width: 38px; height: 38px; border-radius: var(--r-md); background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.35); display: flex; align-items: center; justify-content: center; color: #f59e0b; font-size: 17px;">
+            <i class="fa-solid fa-database"></i>
+          </div>
+          <div>
+            <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: var(--t0);">Database &amp; Storage Hygiene</h3>
+            <p style="margin: 2px 0 0; font-size: 12px; color: var(--t2);">Optimize your database and keep your history clean</p>
+          </div>
+        </div>
+        <button type="button" class="btn-icon-subtle" onclick="closeHistoryHygieneModal()" style="font-size: 16px;">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="modal-body" style="padding: 20px 22px; display: flex; flex-direction: column; gap: 16px; max-height: 75vh; overflow-y: auto;">
+        <!-- Why Clean Section -->
+        <div style="background: var(--surface-inset); border: 1px solid var(--border-base); border-radius: 10px; padding: 14px 16px;">
+          <div style="font-size: 13px; font-weight: 700; color: var(--t0); margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-lightbulb" style="color:#f59e0b;"></i> Why prune old job applications?
+          </div>
+          <ul style="margin: 0; padding-left: 20px; font-size: 12.5px; color: var(--t1); line-height: 1.6;">
+            <li><strong>Jobs from a month ago are typically closed:</strong> Postings older than 30–45 days rarely advance to interviews and clutter your pipeline.</li>
+            <li><strong>Reclaim disk &amp; database storage:</strong> Each application generates DOCX, PDF, and ATS evaluation JSON files. Deleting old records clears server space and keeps your NeonDB database lean and snappy.</li>
+            <li><strong>Lightning-fast search &amp; load times:</strong> A tidy history loads instantaneously and makes active applications effortless to find.</li>
+          </ul>
+        </div>
+
+        <!-- Safe Guarantee -->
+        <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 10px; padding: 12px 16px; display: flex; gap: 12px; align-items: flex-start;">
+          <i class="fa-solid fa-shield-halved" style="color: #10b981; font-size: 18px; margin-top: 2px;"></i>
+          <div style="font-size: 12px; color: var(--t1); line-height: 1.5;">
+            <strong style="color: var(--t0);">Your Master Resume is 100% Safe:</strong> Cleaning history only deletes targeted resume outputs and run logs. Your base resume profile, master career history, and settings are never modified or removed.
+          </div>
+        </div>
+
+        <!-- How Month-Wise Deletion Works -->
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <div style="font-size: 13px; font-weight: 700; color: var(--t0); display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-calendar-days text-cyan"></i> Month-by-Month Control
+          </div>
+          <div style="font-size: 12.5px; color: var(--t2); line-height: 1.5;">
+            Use the <strong>Month</strong> dropdown in the toolbar to filter applications by any specific calendar month (e.g. <em>October 2026</em>). Once selected, click the <strong>&quot;Delete Month&quot;</strong> button to purge only that month&#39;s applications in one step.
+          </div>
+        </div>
+
+        <!-- Current Status -->
+        <div style="background: var(--surface-card); border: 1px solid var(--border-base); border-radius: 10px; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--t2); font-weight: 600;">Old Applications Found</div>
+            <div style="font-size: 18px; font-weight: 800; color: #f59e0b; margin-top: 2px;" id="modal-hygiene-old-count">0 applications</div>
+            <div style="font-size: 11px; color: var(--t2); margin-top: 2px;">Older than 30 days</div>
+          </div>
+          <button type="button" class="btn btn-warning-sm" id="modal-clean-30d-btn" onclick="closeHistoryHygieneModal(); promptCleanOldJobs(30);" style="padding: 8px 14px; font-size: 12px; font-weight: 600;">
+            <i class="fa-solid fa-broom"></i> Clean &gt;30d Jobs Now
+          </button>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="border-top: 1px solid var(--border-base); padding: 14px 22px; display: flex; justify-content: space-between; align-items: center;">
+        <label class="checkbox-label" style="margin-bottom:0; font-size:12px; color:var(--t2); cursor:pointer;">
+          <input type="checkbox" id="modal-hygiene-dismiss-cb" onchange="onHygieneModalDismissToggle(this.checked)">
+          <span>Don&#39;t show banner reminder for 14 days</span>
+        </label>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="closeHistoryHygieneModal()">Got it, Close</button>
       </div>
     </div>
   </div>

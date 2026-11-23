@@ -14,7 +14,7 @@ import subprocess
 import sys
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from flask import Flask, Response, jsonify, render_template, request, send_from_directory, send_file, redirect, url_for, flash
@@ -1660,6 +1660,181 @@ def delete_history_batch():
             "success": True,
             "message": f"Successfully deleted {deleted_count} history entries.",
             "deleted_count": deleted_count
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+def _extract_entry_datetime(data):
+    """Helper to extract a normalized UTC datetime from an application history log or dict."""
+    if not data or not isinstance(data, dict):
+        return None
+    raw = data.get("timestamp") or data.get("created_at") or data.get("date")
+    if isinstance(raw, datetime):
+        return raw.replace(tzinfo=timezone.utc) if raw.tzinfo is None else raw
+    if isinstance(raw, (int, float)):
+        ts = raw / 1000.0 if raw > 1e11 else float(raw)
+        return datetime.fromtimestamp(ts, tz=timezone.utc)
+    if isinstance(raw, str) and raw.strip():
+        clean = raw.strip()
+        try:
+            clean_iso = clean.rstrip("Z")
+            dt = datetime.fromisoformat(clean_iso)
+            return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+        except Exception:
+            pass
+    fname = str(data.get("log_file_name") or data.get("filename") or "")
+    m = re.search(r'run_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})', fname)
+    if m:
+        try:
+            return datetime(
+                int(m.group(1)), int(m.group(2)), int(m.group(3)),
+                int(m.group(4)), int(m.group(5)), int(m.group(6)),
+                tzinfo=timezone.utc
+            )
+        except Exception:
+            pass
+    m_ts = re.search(r'run_(\d{10,13})', fname)
+    if m_ts:
+        try:
+            val = float(m_ts.group(1))
+            ts = val / 1000.0 if val > 1e11 else val
+            return datetime.fromtimestamp(ts, tz=timezone.utc)
+        except Exception:
+            pass
+    return None
+
+
+@app.route("/api/history/delete_older_than", methods=["POST"])
+@login_required
+def delete_history_older_than():
+    """
+    Delete all application history entries older than N days (default 30 days).
+    Cleans up local disk output folders, generated documents, logs, and NeonDB records.
+    """
+    try:
+        data = request.json or {}
+        days_raw = data.get("days", 30)
+        try:
+            days = int(days_raw)
+            if days < 1:
+                return jsonify({"success": False, "error": "Days must be a positive integer greater than 0"}), 400
+        except (ValueError, TypeError):
+            return jsonify({"success": False, "error": "Invalid days parameter"}), 400
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        user_output_dir = get_user_output_dir()
+        logs_dir = user_output_dir / "logs"
+
+        target_filenames = set()
+        target_run_ids = set()
+
+        # 1. From NeonDB
+        if db_layer.is_db_available():
+            db_history = db_layer.db_get_history(current_user.username)
+            for item in db_history:
+                dt = _extract_entry_datetime(item)
+                if dt and dt < cutoff:
+                    fname = item.get("log_file_name") or f"{item.get('run_id')}.json"
+                    target_filenames.add(fname)
+                    rid = item.get("_db_run_id") or item.get("run_id") or fname.replace(".json", "")
+                    if rid:
+                        target_run_ids.add(rid)
+
+        # 2. From local disk logs
+        if logs_dir.exists():
+            for lf in logs_dir.glob("run_*.json"):
+                try:
+                    with open(lf, "r", encoding="utf-8") as f:
+                        ldata = json.load(f)
+                    ldata["log_file_name"] = lf.name
+                    dt = _extract_entry_datetime(ldata)
+                    if dt and dt < cutoff:
+                        target_filenames.add(lf.name)
+                        target_run_ids.add(lf.name.replace(".json", ""))
+                except Exception:
+                    pass
+
+        deleted_count = 0
+        for fname in target_filenames:
+            if _delete_single_history_log(fname, user_output_dir):
+                deleted_count += 1
+
+        if db_layer.is_db_available():
+            for rid in target_run_ids:
+                db_layer.db_delete_history_item(rid, username=current_user.username)
+
+        return jsonify({
+            "success": True,
+            "deleted_count": max(deleted_count, len(target_filenames)),
+            "message": f"Successfully deleted {max(deleted_count, len(target_filenames))} applications older than {days} days."
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/history/delete_month", methods=["POST"])
+@login_required
+def delete_history_month():
+    """
+    Delete all application history entries for a specific month (e.g. month_key='2026-10').
+    Cleans up local disk output folders, generated documents, logs, and NeonDB records.
+    """
+    try:
+        data = request.json or {}
+        month_key = (data.get("month_key") or data.get("month") or "").strip()
+        if not month_key or not re.match(r'^\d{4}-\d{2}$', month_key):
+            return jsonify({"success": False, "error": "Invalid month format. Expected YYYY-MM (e.g. '2026-10')"}), 400
+
+        target_year, target_month = int(month_key.split("-")[0]), int(month_key.split("-")[1])
+        user_output_dir = get_user_output_dir()
+        logs_dir = user_output_dir / "logs"
+
+        target_filenames = set()
+        target_run_ids = set()
+
+        # 1. From NeonDB
+        if db_layer.is_db_available():
+            db_history = db_layer.db_get_history(current_user.username)
+            for item in db_history:
+                dt = _extract_entry_datetime(item)
+                if dt and dt.year == target_year and dt.month == target_month:
+                    fname = item.get("log_file_name") or f"{item.get('run_id')}.json"
+                    target_filenames.add(fname)
+                    rid = item.get("_db_run_id") or item.get("run_id") or fname.replace(".json", "")
+                    if rid:
+                        target_run_ids.add(rid)
+
+        # 2. From local disk logs
+        if logs_dir.exists():
+            for lf in logs_dir.glob("run_*.json"):
+                try:
+                    with open(lf, "r", encoding="utf-8") as f:
+                        ldata = json.load(f)
+                    ldata["log_file_name"] = lf.name
+                    dt = _extract_entry_datetime(ldata)
+                    if dt and dt.year == target_year and dt.month == target_month:
+                        target_filenames.add(lf.name)
+                        target_run_ids.add(lf.name.replace(".json", ""))
+                except Exception:
+                    pass
+
+        deleted_count = 0
+        for fname in target_filenames:
+            if _delete_single_history_log(fname, user_output_dir):
+                deleted_count += 1
+
+        if db_layer.is_db_available():
+            for rid in target_run_ids:
+                db_layer.db_delete_history_item(rid, username=current_user.username)
+
+        month_label = datetime(target_year, target_month, 1).strftime("%B %Y")
+        return jsonify({
+            "success": True,
+            "deleted_count": max(deleted_count, len(target_filenames)),
+            "month_key": month_key,
+            "month_label": month_label,
+            "message": f"Successfully deleted {max(deleted_count, len(target_filenames))} applications from {month_label}."
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
