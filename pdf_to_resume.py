@@ -49,7 +49,7 @@ RESUME TEXT:
     models = get_candidate_models()
     for model_name in models:
         try:
-            cfg = get_standard_genai_config(model_name=model_name, max_output_tokens=8192, temperature=0.1)
+            cfg = get_standard_genai_config(model_name=model_name, max_output_tokens=8192, temperature=0.1, is_json=True)
             response = client.models.generate_content(
                 model=model_name,
                 contents=prompt,

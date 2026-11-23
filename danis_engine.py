@@ -334,7 +334,7 @@ Draft the optimized resume now as valid JSON."""
                     response = current_client.models.generate_content(
                         model=model_name,
                         contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
-                        config=get_standard_genai_config(model_name=model_name, max_output_tokens=8192, temperature=0.3),
+                        config=get_standard_genai_config(model_name=model_name, max_output_tokens=8192, temperature=0.3, is_json=True),
                     )
                     raw_text = extract_clean_text(response)
                     if not raw_text:
@@ -537,7 +537,7 @@ Return the corrected JSON now."""
                 response = current_client.models.generate_content(
                     model=model_name,
                     contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
-                    config=get_standard_genai_config(model_name=model_name, max_output_tokens=8192, temperature=0.2),
+                    config=get_standard_genai_config(model_name=model_name, max_output_tokens=8192, temperature=0.2, is_json=True),
                 )
                 raw_text = extract_clean_text(response)
                 if not raw_text:

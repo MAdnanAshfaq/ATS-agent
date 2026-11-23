@@ -341,7 +341,8 @@ Return ONLY valid JSON now.
         for m in models:
             for m_retry in range(2):
                 try:
-                    cfg = get_standard_genai_config(model_name=m, max_output_tokens=8192, temperature=0.2)
+                    cfg = get_standard_genai_config(model_name=m, max_output_tokens=8192, temperature=0.2, is_json=True)
+                    cfg.thinking_config = None  # Ensure thinking_config is disabled for structured JSON (prevents 503)
                     cfg.system_instruction = REFINEMENT_SYSTEM_PROMPT
                     if "gemma" not in m:
                         cfg.response_mime_type = "application/json"
@@ -382,7 +383,7 @@ Return ONLY valid JSON now.
                     last_err = e
                     if "503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str or "OVERLOADED" in err_str or "504" in err_str or "DEADLINE" in err_str:
                         if m_retry == 0:
-                            time.sleep(0.8)
+                            time.sleep(1.2)
                             continue
                     break
         if last_err:

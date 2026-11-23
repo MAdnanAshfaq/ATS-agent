@@ -497,7 +497,9 @@ def rewrite_resume(
                     max_output_tokens=8192,
                     temperature=0.35 if attempt == 1 else 0.25,
                     top_p=0.9,
+                    is_json=True,
                 )
+                cfg.thinking_config = None  # Ensure thinking_config is disabled for structured JSON
                 response = client.models.generate_content(
                     model=model,
                     contents=[

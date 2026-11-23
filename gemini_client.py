@@ -140,13 +140,13 @@ _MODEL_LOCK = threading.Lock()
 
 DEPRECATED_MODELS = {
     "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash",
-    "gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro"
+    "gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro",
+    "gemini-3.8-flash", "gemini-flash-latest", # Free Tier 20 RPD cap & constant 503 trap
 }
 
 DEFAULT_MODELS_CASCADE = [
     "gemini-flash-lite-latest", # Primary: 100% operational across all keys (<1.2s), generous 1500 RPD quota
-    "gemini-3.5-flash-lite",    # High-speed flash-lite fallback
-    "gemini-3.8-flash",         # Advanced reasoning fallback
+    "gemini-3.5-flash-lite",    # High-speed flash-lite fallback (1500 RPD)
 ]
 
 
@@ -173,24 +173,28 @@ def get_standard_genai_config(
     max_output_tokens: int = 4096,
     temperature: float = 0.3,
     top_p: float = 0.88,
+    is_json: bool = False,
 ) -> types.GenerateContentConfig:
-    """Generate standardized config with model-appropriate thinking parameters to prevent timeouts/errors."""
+    """Generate standardized config with model-appropriate parameters to prevent timeouts/503 errors."""
     cfg_kwargs = {
         "temperature": temperature,
         "top_p": top_p,
         "max_output_tokens": max_output_tokens,
     }
-    # For Gemini 3.x and flash-lite models, use thinking_level="low" to eliminate reasoning delay (<1s response)
-    if "3." in model_name or "flash-lite" in model_name:
-        try:
-            cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_level="low")
-        except Exception:
-            pass
-    elif "2.5" in model_name:
-        try:
-            cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
-        except Exception:
-            pass
+    # CRITICAL: Google GenAI throws 503 UNAVAILABLE when thinking_level is paired
+    # with structured JSON (response_mime_type="application/json") or JSON schema tasks.
+    # Only attach thinking_config when NOT generating structured JSON!
+    if not is_json:
+        if "3." in model_name or "flash-lite" in model_name:
+            try:
+                cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_level="low")
+            except Exception:
+                pass
+        elif "2.5" in model_name:
+            try:
+                cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+            except Exception:
+                pass
     return types.GenerateContentConfig(**cfg_kwargs)
 
 
@@ -387,12 +391,12 @@ def rotate_key(reason: str = "quota") -> str:
     return new_key
 
 
-def get_gemini_client(force_rotate: bool = False, timeout_seconds: float = 20.0) -> genai.Client:
+def get_gemini_client(force_rotate: bool = False, timeout_seconds: float = 30.0) -> genai.Client:
     """Get a GenAI client initialized with active API key, v1beta endpoint, and fast failover retry limits."""
     if force_rotate:
         rotate_key(reason="manual request")
     key = get_active_key()
-    timeout_ms = max(12000, int(timeout_seconds * 1000))
+    timeout_ms = max(20000, int(timeout_seconds * 1000))
     try:
         http_opts = types.HttpOptions(
             api_version="v1beta",
@@ -436,8 +440,8 @@ def execute_with_failover(fn: Callable[[genai.Client], Any], max_rotations: int 
         raise RuntimeError("GEMINI_API_KEY is not configured in .env.")
 
     if max_rotations is None:
-        # Rotate through each available key once (at most 3 keys to avoid long browser delays)
-        max_rotations = min(len(keys), 3)
+        # Rotate through all available keys so every user key in pool gets tried!
+        max_rotations = len(keys)
 
     last_exception = None
     for attempt in range(max_rotations):

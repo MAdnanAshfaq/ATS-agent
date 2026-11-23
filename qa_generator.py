@@ -261,7 +261,7 @@ Generate the human-voiced answers as a JSON array now."""
     raw_response = None
     for model_name in models:
         try:
-            cfg = get_standard_genai_config(model_name=model_name, max_output_tokens=4096, temperature=0.3, top_p=0.88)
+            cfg = get_standard_genai_config(model_name=model_name, max_output_tokens=4096, temperature=0.3, top_p=0.88, is_json=True)
             response = client.models.generate_content(
                 model=model_name,
                 contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],

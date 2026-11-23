@@ -337,7 +337,7 @@ Return ONLY a valid JSON object matching this schema:
             last_err = None
             for m in models:
                 try:
-                    cfg = get_standard_genai_config(model_name=m, temperature=0.1)
+                    cfg = get_standard_genai_config(model_name=m, temperature=0.1, is_json=True)
                     if "gemma" not in m:
                         cfg.response_mime_type = "application/json"
                     resp = client.models.generate_content(
