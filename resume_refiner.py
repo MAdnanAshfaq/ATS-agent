@@ -9,7 +9,8 @@ and instantly outputs updated resume data + rebuilds the Word (.docx) & PDF docu
 import json
 import re
 import sys
-from typing import Tuple, Dict, Any
+import time
+from typing import Tuple, Dict, Any, Optional
 from google import genai
 from google.genai import types
 from gemini_client import execute_with_failover
@@ -219,6 +220,7 @@ def refine_tailored_resume(
     jd_text: str = "",
     company: str = "",
     role: str = "",
+    user_settings: Optional[dict] = None,
 ) -> Tuple[dict, str]:
     """
     Refine a tailored resume using user's explicit instructions.
@@ -226,6 +228,44 @@ def refine_tailored_resume(
     """
     if not instruction or not instruction.strip():
         return current_resume, "No revision instructions provided."
+
+    if user_settings:
+        keys_arr = []
+        raw_arr = user_settings.get("GEMINI_API_KEYS") or []
+        for itm in raw_arr:
+            k = (itm.get("key") or "").strip() if isinstance(itm, dict) else str(itm).strip()
+            if k and k not in keys_arr:
+                keys_arr.append(k)
+        for env_key in ("GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3"):
+            val = (user_settings.get(env_key) or "").strip()
+            if val and val not in keys_arr:
+                keys_arr.append(val)
+        if keys_arr:
+            from gemini_client import set_thread_gemini_keys
+            set_thread_gemini_keys(keys_arr)
+
+    try:
+        return _refine_tailored_resume_impl(
+            current_resume=current_resume,
+            instruction=instruction,
+            base_resume=base_resume,
+            jd_text=jd_text,
+            company=company,
+            role=role,
+        )
+    finally:
+        from gemini_client import clear_thread_gemini_keys
+        clear_thread_gemini_keys()
+
+
+def _refine_tailored_resume_impl(
+    current_resume: dict,
+    instruction: str,
+    base_resume: dict,
+    jd_text: str = "",
+    company: str = "",
+    role: str = "",
+) -> Tuple[dict, str]:
 
     # Detect if this instruction implies a skills overwrite (user wants ONLY their listed skills)
     _inst_lower = instruction.lower()
@@ -320,6 +360,13 @@ Return ONLY valid JSON now.
                             contents=f"{REFINEMENT_SYSTEM_PROMPT}\n\n{user_prompt}",
                             config=cfg,
                         )
+                    elif "thinking" in err_lower:
+                        cfg.thinking_config = None
+                        response = client.models.generate_content(
+                            model=m,
+                            contents=user_prompt,
+                            config=cfg,
+                        )
                     else:
                         raise call_err
 
@@ -333,7 +380,7 @@ Return ONLY valid JSON now.
                 print(f"[ResumeRefiner] Model {m} note: {e}")
                 last_err = e
                 if "503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str or "OVERLOADED" in err_str:
-                    time.sleep(0.8)
+                    time.sleep(0.1)
                 continue
         if last_err:
             raise last_err

@@ -3649,13 +3649,15 @@ def api_editor_ai_polish():
         try:
             from resume_refiner import refine_tailored_resume
             instruction_to_use = effective_instruction or custom_instruction or "Polish and elevate document."
+            user_settings = get_user_settings() if hasattr(current_user, 'data_dir') else None
             refined_resume, change_summary = refine_tailored_resume(
                 current_resume=resume_to_refine,
                 instruction=instruction_to_use,
                 base_resume=base_resume,
                 jd_text=jd_text,
                 company=company,
-                role=role or resume_to_refine.get("target_role", "")
+                role=role or resume_to_refine.get("target_role", ""),
+                user_settings=user_settings,
             )
 
             # Auto-persist updated JSON in target_dir
@@ -4980,6 +4982,7 @@ def refine_resume_api():
                 print(f"[Refine] Note saving job_description.txt: {e}")
 
         # 4. Call Refinement Engine
+        user_settings = get_user_settings() if hasattr(current_user, 'data_dir') else None
         refined_resume, change_summary = refine_tailored_resume(
             current_resume=current_resume,
             instruction=instruction,
@@ -4987,6 +4990,7 @@ def refine_resume_api():
             jd_text=jd_text,
             company=company,
             role=role,
+            user_settings=user_settings,
         )
 
         # 5. Save updated tailored_resume.json
@@ -5314,12 +5318,14 @@ def save_preview_edits():
 
             if instruction:
                 from resume_refiner import refine_tailored_resume
+                user_settings = get_user_settings() if hasattr(current_user, 'data_dir') else None
                 refined, summary_msg = refine_tailored_resume(
                     current_resume=updated_resume,
                     instruction=instruction,
                     base_resume=disk_master,
                     company=company or "Master Profile",
                     role=role or "Profile",
+                    user_settings=user_settings,
                 )
                 updated_resume = refined
                 change_summary = summary_msg
@@ -5424,6 +5430,7 @@ def save_preview_edits():
                 except Exception:
                     pass
 
+            user_settings = get_user_settings() if hasattr(current_user, 'data_dir') else None
             refined, summary_msg = refine_tailored_resume(
                 current_resume=updated_resume,
                 instruction=instruction,
@@ -5431,6 +5438,7 @@ def save_preview_edits():
                 jd_text=jd_text,
                 company=company or target_dir.name.split("_")[0],
                 role=role or updated_resume.get("target_role", ""),
+                user_settings=user_settings,
             )
             updated_resume = refined
             change_summary = summary_msg
