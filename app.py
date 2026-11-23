@@ -832,11 +832,30 @@ def humanize_text():
             print(f"[Humanizer] Colab endpoint note: {colab_err} — falling back to Gemini Engine")
 
     # Mode 2: Built-in Gemini Anti-Detection Humanizer Engine
-    from gemini_client import execute_with_failover, get_all_gemini_keys
+    from gemini_client import (
+        execute_with_failover, get_all_gemini_keys, set_thread_gemini_keys, clear_thread_gemini_keys,
+        get_candidate_models, get_standard_genai_config, extract_clean_text,
+        record_model_failure, record_model_success
+    )
+    user_settings = get_user_settings() if (current_user and current_user.is_authenticated and hasattr(current_user, 'data_dir')) else None
+    if user_settings:
+        keys_arr = []
+        raw_arr = user_settings.get("GEMINI_API_KEYS") or []
+        for itm in raw_arr:
+            k = (itm.get("key") or "").strip() if isinstance(itm, dict) else str(itm).strip()
+            if k and k not in keys_arr:
+                keys_arr.append(k)
+        for env_key in ("GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3"):
+            val = (user_settings.get(env_key) or "").strip()
+            if val and val not in keys_arr:
+                keys_arr.append(val)
+        if keys_arr:
+            set_thread_gemini_keys(keys_arr)
+
     keys = get_all_gemini_keys()
     if not keys:
         return jsonify({
-            "error": "GEMINI_API_KEY is not configured in .env. Please add it in Settings to use the built-in Humanizer."
+            "error": "GEMINI_API_KEY is not configured in Settings. Please add your free Google API key to use the built-in Humanizer."
         }), 400
 
     try:
@@ -864,21 +883,30 @@ CRITICAL RULES FOR HUMANIZING:
 ORIGINAL TEXT:
 {text}"""
 
-        from gemini_client import (
-            get_candidate_models, get_standard_genai_config, extract_clean_text,
-            record_model_failure, record_model_success
-        )
-
         def _call_humanizer(client):
             models = get_candidate_models()
             last_err = None
             for m in models:
                 try:
-                    response = client.models.generate_content(
-                        model=m,
-                        contents=humanize_prompt,
-                        config=get_standard_genai_config(model_name=m, max_output_tokens=2048, temperature=0.7),
-                    )
+                    cfg = get_standard_genai_config(model_name=m, max_output_tokens=2048, temperature=0.7)
+                    try:
+                        response = client.models.generate_content(
+                            model=m,
+                            contents=humanize_prompt,
+                            config=cfg,
+                        )
+                    except Exception as call_err:
+                        err_lower = str(call_err).lower()
+                        if "thinking" in err_lower:
+                            cfg.thinking_config = None
+                            response = client.models.generate_content(
+                                model=m,
+                                contents=humanize_prompt,
+                                config=cfg,
+                            )
+                        else:
+                            raise call_err
+
                     res_text = extract_clean_text(response)
                     if res_text:
                         if res_text.startswith(('"', "“")) and res_text.endswith(('"', "”")):
@@ -889,6 +917,9 @@ ORIGINAL TEXT:
                     record_model_failure(m, model_err)
                     print(f"[Humanizer] {m} note: {model_err}")
                     last_err = model_err
+                    me_str = str(model_err).upper()
+                    if "503" in me_str or "UNAVAILABLE" in me_str or "504" in me_str or "DEADLINE" in me_str:
+                        time.sleep(0.1)
                     continue
             if last_err:
                 raise last_err
@@ -908,6 +939,8 @@ ORIGINAL TEXT:
 
     except Exception as e:
         return jsonify({"error": f"Humanizing failed: {str(e)}"}), 500
+    finally:
+        clear_thread_gemini_keys()
 
 
 @app.route("/favicon.ico")

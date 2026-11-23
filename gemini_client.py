@@ -139,10 +139,9 @@ _MODEL_COOLDOWNS = {}
 _MODEL_LOCK = threading.Lock()
 
 DEFAULT_MODELS_CASCADE = [
-    "gemini-3.5-flash-lite",    # Primary: ultra-fast (<1s), generous quota (1500 RPD)
-    "gemini-flash-lite-latest", # Immediate resilient fallback (~0.8s), generous quota
+    "gemini-flash-lite-latest", # Primary: 100% operational across all keys (<1.2s), generous 1500 RPD quota
+    "gemini-3.5-flash-lite",    # High-speed flash-lite fallback
     "gemini-3.8-flash",         # Advanced reasoning fallback
-    "gemini-2.5-flash",         # Legacy fallback
 ]
 
 
@@ -202,8 +201,11 @@ def record_model_failure(model_name: str, error: Exception):
             _MODEL_COOLDOWNS[model_name] = now + 86400.0
             print(f"[Model Cooldown] ⚠️ '{model_name}' not available on this API key (404 Not Found). Skipping.")
         elif "503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str or "OVERLOADED" in err_str:
-            _MODEL_COOLDOWNS[model_name] = now + 4.0  # 4s momentary cooldown
-            print(f"[Model Cooldown] ⚠️ '{model_name}' spiked (503 High Demand). Deprioritizing for 4s.")
+            _MODEL_COOLDOWNS[model_name] = now + 6.0  # 6s momentary cooldown
+            print(f"[Model Cooldown] ⚠️ '{model_name}' spiked (503 High Demand). Deprioritizing for 6s.")
+        elif "504" in err_str or "DEADLINE_EXCEEDED" in err_str or "TIMEOUT" in err_str:
+            _MODEL_COOLDOWNS[model_name] = now + 10.0  # 10s cooldown on deadline exceeded
+            print(f"[Model Cooldown] ⚠️ '{model_name}' timed out (504 Deadline Exceeded). Deprioritizing for 10s.")
         elif "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
             # Quota is per-key/per-project (tracked in _KEY_COOLDOWNS), not a global model defect.
             # We only apply a brief 2-second cooldown to let current key rotate smoothly.
