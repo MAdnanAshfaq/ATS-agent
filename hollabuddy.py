@@ -289,6 +289,13 @@ def chat_with_hollabuddy(
                             contents=fallback_contents,
                             config=cfg,
                         )
+                    elif "thinking" in err_lower:
+                        cfg.thinking_config = None
+                        resp = client.models.generate_content(
+                            model=m,
+                            contents=chat_contents,
+                            config=cfg,
+                        )
                     else:
                         raise call_err_inner
 
@@ -302,7 +309,7 @@ def chat_with_hollabuddy(
                 me_str = str(me).upper()
                 call_err = me
                 if "503" in me_str or "UNAVAILABLE" in me_str or "HIGH DEMAND" in me_str or "OVERLOADED" in me_str:
-                    time.sleep(0.8)
+                    time.sleep(0.1)
                 continue
         if call_err:
             raise call_err

@@ -138,11 +138,10 @@ _MODEL_COOLDOWNS = {}
 _MODEL_LOCK = threading.Lock()
 
 DEFAULT_MODELS_CASCADE = [
-    "gemini-3.8-flash",       # Modern high-capacity reasoning model
-    "gemini-3.5-flash",       # Fast, high-capacity standard model (~2.2s)
-    "gemini-3.5-flash-lite",  # Ultra-fast (~1.2s), high throughput
-    "gemini-2.5-flash",       # Resilient standard fallback
-    "gemini-2.0-flash",       # Solid workhorse fallback
+    "gemini-3.5-flash-lite",  # Blazing fast (<1s), generous quota, universal across accounts
+    "gemini-2.5-flash",       # Standard workhorse model
+    "gemini-flash-lite-latest", # Dynamic resilient alias fallback
+    "gemini-3.8-flash",       # High reasoning fallback
 ]
 
 
@@ -176,13 +175,12 @@ def get_standard_genai_config(
         "top_p": top_p,
         "max_output_tokens": max_output_tokens,
     }
-    # For Gemini 3.x models, use thinking_level="minimal" to eliminate reasoning delay
+    # For Gemini 3.x models, use thinking_level="low" if applicable (minimal is not supported on 3.8)
     if "3." in model_name:
         try:
-            cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_level="minimal")
+            cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_level="low")
         except Exception:
             pass
-    # For Gemini 2.5 models, budget=0 disables reasoning traces
     elif "2.5" in model_name:
         try:
             cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
@@ -386,16 +384,13 @@ def get_gemini_client(force_rotate: bool = False, timeout_seconds: float = 35.0)
     if force_rotate:
         rotate_key(reason="manual request")
     key = get_active_key()
-    timeout_ms = int(timeout_seconds * 1000)
+    timeout_ms = max(15000, int(timeout_seconds * 1000))
     try:
         http_opts = types.HttpOptions(
             api_version="v1beta",
             timeout=timeout_ms,
             retry_options=types.HttpRetryOptions(
-                attempts=2,
-                initial_delay=0.6,
-                max_delay=2.5,
-                exp_base=2.0,
+                attempts=1,
                 http_status_codes=[408, 429, 500, 502, 503, 504],
             ),
         )

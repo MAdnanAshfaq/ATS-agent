@@ -1084,13 +1084,13 @@ def gemini_key_health():
         A key is operational if ANY model in the candidate cascade works.
         Never breaks prematurely on model-specific deprecation or 404 errors.
         """
-        from gemini_client import DEFAULT_MODELS_CASCADE, get_standard_genai_config
+        from gemini_client import DEFAULT_MODELS_CASCADE
         try:
             test_client = genai.Client(
                 api_key=key,
                 http_options=gtypes.HttpOptions(
                     api_version="v1beta",
-                    timeout=10000,
+                    timeout=15000,
                     retry_options=gtypes.HttpRetryOptions(attempts=1),
                 ),
             )
@@ -1107,24 +1107,24 @@ def gemini_key_health():
                     test_client.models.generate_content(
                         model=pm,
                         contents=[gtypes.Content(role="user", parts=[gtypes.Part(text="Reply: ok")])],
-                        config=get_standard_genai_config(model_name=pm, max_output_tokens=10, temperature=0),
+                        config=gtypes.GenerateContentConfig(max_output_tokens=10, temperature=0),
                     )
                     return "ok", "Active & Working"
                 except Exception as pe:
                     last_ping_err = pe
                     pe_str = str(pe).upper()
 
-                    # Truly invalid key or malformed credentials - key level error
-                    if "API_KEY_INVALID" in pe_str or "INVALID_ARGUMENT" in pe_str or "API KEY NOT VALID" in pe_str:
+                    # Truly invalid key or malformed credentials - key level error ONLY
+                    if "API_KEY_INVALID" in pe_str or "API KEY NOT VALID" in pe_str:
                         return "invalid", "Invalid API Key"
                     if "403" in pe_str or "PERMISSION_DENIED" in pe_str or "NOT BEEN USED" in pe_str:
                         return "invalid", "API Not Enabled (Enable Generative Language API)"
 
                     if is_quota_error(pe):
                         saw_quota = True
-                    elif "503" in pe_str or "UNAVAILABLE" in pe_str or "DEADLINE_EXCEEDED" in pe_str:
+                    elif "503" in pe_str or "UNAVAILABLE" in pe_str or "DEADLINE_EXCEEDED" in pe_str or "504" in pe_str:
                         saw_transient = True
-                    # For 404 NOT_FOUND (model deprecated/unavailable for this account) or 429/503 on this model,
+                    # For 404 NOT_FOUND (model deprecated/unavailable for this account) or parameter/quota errors on this model,
                     # CONTINUE to test the other candidate models in the cascade!
                     continue
 
@@ -1133,23 +1133,23 @@ def gemini_key_health():
                 return "quota_exhausted", "Quota / Rate Limit Exhausted"
             if saw_transient:
                 if attempt == 0:
-                    time.sleep(1.0)
+                    time.sleep(0.5)
                     continue
                 return "transient", "Gemini servers momentarily busy — key is fine"
 
             if last_ping_err:
                 err_up = str(last_ping_err).upper()
-                if "API_KEY_INVALID" in err_up or "INVALID_ARGUMENT" in err_up:
+                if "API_KEY_INVALID" in err_up or "API KEY NOT VALID" in err_up:
                     return "invalid", "Invalid API Key"
                 if "403" in err_up or "PERMISSION_DENIED" in err_up:
                     return "invalid", "API Not Enabled (Enable Generative Language API)"
                 if is_quota_error(last_ping_err):
                     return "quota_exhausted", "Quota / Rate Limit Exhausted"
-                if "503" in err_up or "UNAVAILABLE" in err_up:
+                if "503" in err_up or "UNAVAILABLE" in err_up or "504" in err_up:
                     return "transient", "Gemini servers momentarily busy — key is fine"
 
             if attempt == 0:
-                time.sleep(0.8)
+                time.sleep(0.5)
                 continue
 
             return "error", "Unexpected error — try refreshing"
