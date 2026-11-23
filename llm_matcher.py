@@ -337,14 +337,9 @@ Return ONLY a valid JSON object matching this schema:
             last_err = None
             for m in models:
                 try:
-                    cfg = types.GenerateContentConfig(
-                        temperature=0.1,
-                        response_mime_type="application/json",
-                        thinking_config=types.ThinkingConfig(thinking_budget=0),
-                    ) if ("gemma" not in m and "lite" not in m) else types.GenerateContentConfig(
-                        temperature=0.1,
-                        response_mime_type="application/json",
-                    )
+                    cfg = get_standard_genai_config(model_name=m, temperature=0.1)
+                    if "gemma" not in m:
+                        cfg.response_mime_type = "application/json"
                     resp = client.models.generate_content(
                         model=m,
                         contents=prompt,

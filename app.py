@@ -1086,7 +1086,14 @@ def gemini_key_health():
         """
         from gemini_client import DEFAULT_MODELS_CASCADE, get_standard_genai_config
         try:
-            test_client = genai.Client(api_key=key)
+            test_client = genai.Client(
+                api_key=key,
+                http_options=gtypes.HttpOptions(
+                    api_version="v1beta",
+                    timeout=10000,
+                    retry_options=gtypes.HttpRetryOptions(attempts=1),
+                ),
+            )
         except Exception:
             return "invalid", "Invalid API Key"
 

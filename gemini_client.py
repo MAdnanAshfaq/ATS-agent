@@ -138,9 +138,11 @@ _MODEL_COOLDOWNS = {}
 _MODEL_LOCK = threading.Lock()
 
 DEFAULT_MODELS_CASCADE = [
-    "gemini-3.5-flash-lite",  # Ultra-fast (~1.2s), high throughput, primary active model
-    "gemini-3.5-flash",       # Fast, high-capacity fallback (~2.5s)
-    "gemini-2.5-flash",       # Standard model fallback
+    "gemini-3.8-flash",       # Modern high-capacity reasoning model
+    "gemini-3.5-flash",       # Fast, high-capacity standard model (~2.2s)
+    "gemini-3.5-flash-lite",  # Ultra-fast (~1.2s), high throughput
+    "gemini-2.5-flash",       # Resilient standard fallback
+    "gemini-2.0-flash",       # Solid workhorse fallback
 ]
 
 
@@ -168,23 +170,29 @@ def get_standard_genai_config(
     temperature: float = 0.3,
     top_p: float = 0.88,
 ) -> types.GenerateContentConfig:
-    """Generate standardized config. Disables thinking traces on models that support thinking to prevent 503 timeouts."""
-    if "gemma" in model_name or "lite" in model_name:
-        return types.GenerateContentConfig(
-            temperature=temperature,
-            top_p=top_p,
-            max_output_tokens=max_output_tokens,
-        )
-    return types.GenerateContentConfig(
-        temperature=temperature,
-        top_p=top_p,
-        max_output_tokens=max_output_tokens,
-        thinking_config=types.ThinkingConfig(thinking_budget=0),
-    )
+    """Generate standardized config with model-appropriate thinking parameters to prevent timeouts/errors."""
+    cfg_kwargs = {
+        "temperature": temperature,
+        "top_p": top_p,
+        "max_output_tokens": max_output_tokens,
+    }
+    # For Gemini 3.x models, use thinking_level="minimal" to eliminate reasoning delay
+    if "3." in model_name:
+        try:
+            cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_level="minimal")
+        except Exception:
+            pass
+    # For Gemini 2.5 models, budget=0 disables reasoning traces
+    elif "2.5" in model_name:
+        try:
+            cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+        except Exception:
+            pass
+    return types.GenerateContentConfig(**cfg_kwargs)
 
 
 def record_model_failure(model_name: str, error: Exception):
-    """Mark a model as temporarily spiked/cooling down (e.g. 5 seconds on 503)."""
+    """Mark a model as temporarily spiked/cooling down (e.g. 4 seconds on 503)."""
     if not model_name:
         return
     err_str = str(error).upper()
@@ -194,9 +202,9 @@ def record_model_failure(model_name: str, error: Exception):
             # Model not supported on this account - cool down for 24 hours
             _MODEL_COOLDOWNS[model_name] = now + 86400.0
             print(f"[Model Cooldown] ⚠️ '{model_name}' not available on this API key (404 Not Found). Skipping.")
-        elif "503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str:
-            _MODEL_COOLDOWNS[model_name] = now + 5.0  # 5s momentary cooldown
-            print(f"[Model Cooldown] ⚠️ '{model_name}' spiked (503 High Demand). Deprioritizing for 5s.")
+        elif "503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str or "OVERLOADED" in err_str:
+            _MODEL_COOLDOWNS[model_name] = now + 4.0  # 4s momentary cooldown
+            print(f"[Model Cooldown] ⚠️ '{model_name}' spiked (503 High Demand). Deprioritizing for 4s.")
         elif "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
             # Quota is per-key/per-project (tracked in _KEY_COOLDOWNS), not a global model defect.
             # We only apply a brief 2-second cooldown to let current key rotate smoothly.
@@ -215,9 +223,16 @@ def get_candidate_models(base_models: List[str] = None) -> List[str]:
     """
     Return candidate models with currently spiked/cooling models pushed to the end.
     Healthy models always run first so subsequent calls don't waste time on overloaded models.
+    Supports user preferred model override via GEMINI_MODEL env or settings.
     """
     if not base_models:
-        base_models = list(DEFAULT_MODELS_CASCADE)
+        pref = os.getenv("GEMINI_MODEL", "").strip()
+        models = list(DEFAULT_MODELS_CASCADE)
+        if pref:
+            if pref in models:
+                models.remove(pref)
+            models.insert(0, pref)
+        base_models = models
     now = time.time()
     with _MODEL_LOCK:
         healthy = []
@@ -366,21 +381,27 @@ def rotate_key(reason: str = "quota") -> str:
     return new_key
 
 
-def get_gemini_client(force_rotate: bool = False, timeout_seconds: float = 25.0) -> genai.Client:
-    """Get a GenAI client initialized with active API key and strict HTTP socket timeout."""
+def get_gemini_client(force_rotate: bool = False, timeout_seconds: float = 35.0) -> genai.Client:
+    """Get a GenAI client initialized with active API key, v1beta endpoint, and fast failover retry limits."""
     if force_rotate:
         rotate_key(reason="manual request")
     key = get_active_key()
+    timeout_ms = int(timeout_seconds * 1000)
     try:
-        import httpx
         http_opts = types.HttpOptions(
-            client_args={
-                "timeout": httpx.Timeout(timeout_seconds, connect=7.0)
-            }
+            api_version="v1beta",
+            timeout=timeout_ms,
+            retry_options=types.HttpRetryOptions(
+                attempts=2,
+                initial_delay=0.6,
+                max_delay=2.5,
+                exp_base=2.0,
+                http_status_codes=[408, 429, 500, 502, 503, 504],
+            ),
         )
         return genai.Client(api_key=key, http_options=http_opts)
     except Exception:
-        return genai.Client(api_key=key)
+        return genai.Client(api_key=key, http_options=types.HttpOptions(api_version="v1beta"))
 
 
 def is_quota_error(exc: Exception) -> bool:

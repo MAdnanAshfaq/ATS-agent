@@ -271,11 +271,27 @@ def chat_with_hollabuddy(
                 cfg = get_standard_genai_config(model_name=m, max_output_tokens=4096, temperature=0.55, top_p=0.92)
                 cfg.system_instruction = system_content
                 cfg.automatic_function_calling = types.AutomaticFunctionCallingConfig(disable=True)
-                resp = client.models.generate_content(
-                    model=m,
-                    contents=chat_contents,
-                    config=cfg,
-                )
+                try:
+                    resp = client.models.generate_content(
+                        model=m,
+                        contents=chat_contents,
+                        config=cfg,
+                    )
+                except Exception as call_err_inner:
+                    err_lower = str(call_err_inner).lower()
+                    if "developer instruction" in err_lower or "v1beta" in err_lower or "system instruction" in err_lower:
+                        cfg.system_instruction = None
+                        fallback_contents = [
+                            types.Content(role="user", parts=[types.Part(text=f"[SYSTEM INSTRUCTIONS & CONTEXT]\n{system_content}\n\nPlease acknowledge and assist accordingly.")])
+                        ] + chat_contents
+                        resp = client.models.generate_content(
+                            model=m,
+                            contents=fallback_contents,
+                            config=cfg,
+                        )
+                    else:
+                        raise call_err_inner
+
                 txt = extract_clean_text(resp)
                 if txt:
                     record_model_success(m)
@@ -283,7 +299,10 @@ def chat_with_hollabuddy(
                     return resp
             except Exception as me:
                 record_model_failure(m, me)
+                me_str = str(me).upper()
                 call_err = me
+                if "503" in me_str or "UNAVAILABLE" in me_str or "HIGH DEMAND" in me_str or "OVERLOADED" in me_str:
+                    time.sleep(0.8)
                 continue
         if call_err:
             raise call_err

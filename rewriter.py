@@ -471,8 +471,6 @@ def rewrite_resume(
     last_valid_resume = None
 
     for attempt in range(1, max_retries + 1):
-        candidate_models = get_candidate_models()
-        model = candidate_models[(attempt - 1) % len(candidate_models)]
         system_prompt, user_prompt = _build_prompt(
             base_resume=base_resume,
             jd_text=jd_text,
@@ -485,36 +483,64 @@ def rewrite_resume(
             keyword_contexts=keyword_contexts,
         )
 
-        print(f"[Rewriter] Attempt {attempt}/{max_retries} with {model}...")
-        print(f"[Rewriter] Target: {len(missing_keywords)} keywords to inject")
+        model_succeeded = False
+        data = None
+        candidate_models = get_candidate_models()
+        for model in candidate_models:
+            print(f"[Rewriter] Attempt {attempt}/{max_retries} with {model}...")
+            print(f"[Rewriter] Target: {len(missing_keywords)} keywords to inject")
+
+            try:
+                from gemini_client import get_standard_genai_config, extract_clean_text
+                cfg = get_standard_genai_config(
+                    model_name=model,
+                    max_output_tokens=8192,
+                    temperature=0.35 if attempt == 1 else 0.25,
+                    top_p=0.9,
+                )
+                response = client.models.generate_content(
+                    model=model,
+                    contents=[
+                        types.Content(
+                            role="user",
+                            parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)],
+                        )
+                    ],
+                    config=cfg,
+                )
+
+                raw_text = extract_clean_text(response)
+                cleaned = _clean_json_response(raw_text)
+                data = json.loads(cleaned)
+                record_model_success(model)
+
+                if not _validate_resume_structure(data):
+                    raise ValueError(f"Missing required keys. Got: {list(data.keys())}")
+
+                model_succeeded = True
+                break
+            except Exception as e:
+                record_model_failure(model, e)
+                err_str = str(e).upper()
+                print(f"[Rewriter] Model {model} note: {e}")
+                if "503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str or "OVERLOADED" in err_str:
+                    time.sleep(0.8)
+                    continue
+                elif is_quota_error(e):
+                    keys = get_all_gemini_keys()
+                    if len(keys) > 1:
+                        rotate_key(reason=f"Rewriter Failover ({model})")
+                        client = _get_gemini_client()
+                    continue
+                else:
+                    continue
+
+        if not model_succeeded or not data:
+            print(f"[Rewriter] All candidate models busy on attempt {attempt}. Backing off...")
+            time.sleep(1.5)
+            continue
 
         try:
-            from gemini_client import get_standard_genai_config, extract_clean_text
-            cfg = get_standard_genai_config(
-                model_name=model,
-                max_output_tokens=8192,
-                temperature=0.35 if attempt == 1 else 0.25,
-                top_p=0.9,
-            )
-            response = client.models.generate_content(
-                model=model,
-                contents=[
-                    types.Content(
-                        role="user",
-                        parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)],
-                    )
-                ],
-                config=cfg,
-            )
-
-            raw_text = extract_clean_text(response)
-            cleaned = _clean_json_response(raw_text)
-            data = json.loads(cleaned)
-            record_model_success(model)
-
-            if not _validate_resume_structure(data):
-                raise ValueError(f"Missing required keys. Got: {list(data.keys())}")
-
             # Merge with original resume (preserve contact, education, certifications, etc.)
             merged = dict(base_resume)
             merged.update(data)
@@ -721,29 +747,9 @@ def rewrite_resume(
                 time.sleep(1)
                 continue
 
-        except json.JSONDecodeError as e:
-            print(f"[Rewriter] Attempt {attempt}/{max_retries} — JSON error: {e}")
-            if attempt < max_retries:
-                time.sleep(2)
-            continue
-
         except Exception as e:
-            record_model_failure(model, e)
-            err_str = str(e)
-            print(f"[Rewriter] Attempt {attempt}/{max_retries} with {model} — Error: {err_str}")
-            keys = get_all_gemini_keys()
-            if is_quota_error(e) or "503" in err_str or "UNAVAILABLE" in err_str.upper():
-                if len(keys) > 1:
-                    rotate_key(reason=f"Rewriter Failover ({model})")
-                    client = _get_gemini_client()
-                    print(f"[Rewriter] 503 / Quota on {model} -> Rotated key to backup key!")
-                    time.sleep(0.5)
-                else:
-                    if is_quota_error(e):
-                        print("[Rewriter] Quota exhausted on available keys — stopping retries and proceeding to manual injection fallback.")
-                        break
-                    time.sleep(1.0)
-            elif attempt < max_retries:
+            print(f"[Rewriter] Attempt {attempt}/{max_retries} processing error: {e}")
+            if attempt < max_retries:
                 time.sleep(0.5)
             continue
 

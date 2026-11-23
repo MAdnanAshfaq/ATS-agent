@@ -4845,7 +4845,13 @@ async function submitResumeRefinement(opts = {}) {
       }),
     });
 
-    const data = await res.json();
+    const text = await res.text();
+    let data;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      throw new Error(`Server returned HTTP ${res.status}: ${text ? text.slice(0, 160) : "Empty response"}`);
+    }
     if (!res.ok || !data.success) {
       throw new Error(data.error || "Failed to refine resume");
     }
@@ -5047,7 +5053,13 @@ async function submitHistoryRefinement() {
       }),
     });
 
-    const data = await res.json();
+    const text = await res.text();
+    let data;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      throw new Error(`Server returned HTTP ${res.status}: ${text ? text.slice(0, 160) : "Empty response"}`);
+    }
     if (!res.ok || !data.success) {
       throw new Error(data.error || "Failed to refine resume");
     }
@@ -7166,11 +7178,24 @@ async function sendHollaBuddyMessage() {
       pipeline_state: pipelineState,
     };
 
-    const res = await fetch("/api/hollabuddy/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    const controller = new AbortController();
+    const abortTimeout = setTimeout(() => controller.abort(), 75000);
+    let res;
+    try {
+      res = await fetch("/api/hollabuddy/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+    } catch (netErr) {
+      if (netErr.name === "AbortError") {
+        throw new Error("Chat request timed out after 75s. Gemini took too long to reply — please try again in a moment.");
+      }
+      throw netErr;
+    } finally {
+      clearTimeout(abortTimeout);
+    }
 
     const text = await res.text();
     let data;
@@ -9169,7 +9194,13 @@ async function applyLiveEdits() {
         }),
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      let data;
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        throw new Error(`Server returned HTTP ${res.status}: ${text ? text.slice(0, 160) : "Empty response"}`);
+      }
       if (!res.ok || !data.success) throw new Error(data.error || "Refinement failed");
 
       if (window.lastResult) {
@@ -9220,7 +9251,13 @@ async function applyLiveEdits() {
         }),
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      let data;
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        throw new Error(`Server returned HTTP ${res.status}: ${text ? text.slice(0, 160) : "Empty response"}`);
+      }
       if (!res.ok || !data.success) throw new Error(data.error || "Save failed");
 
       if (window.lastResult) {

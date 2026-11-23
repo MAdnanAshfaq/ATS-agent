@@ -322,44 +322,80 @@ Draft the optimized resume now as valid JSON."""
 
     last_err = None
     keys = get_all_gemini_keys()
-    max_attempts = min(len(keys), 3) if keys else 1
+    # Ensure at least 3 attempts across candidate models even on single key to ride out 503 spikes
+    max_attempts = max(3, len(keys))
 
     for attempt in range(1, max_attempts + 1):
         models = get_candidate_models()
         for model_name in models:
-            try:
-                current_client = get_gemini_client()
-                response = current_client.models.generate_content(
-                    model=model_name,
-                    contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
-                    config=get_standard_genai_config(model_name=model_name, max_output_tokens=4096, temperature=0.3),
-                )
-                raw_text = extract_clean_text(response)
-                if not raw_text:
-                    raise ValueError(f"Model {model_name} returned empty text or only thought tokens")
-                record_model_success(model_name)
-                parsed = json.loads(_clean_json(raw_text))
-                return deterministic_voice_cleanup(parsed)
-            except Exception as e:
-                last_err = e
-                print(f"[Dani's Engine - Writer] {model_name} note: {e}")
+            for m_retry in range(2):
+                try:
+                    current_client = get_gemini_client()
+                    response = current_client.models.generate_content(
+                        model=model_name,
+                        contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
+                        config=get_standard_genai_config(model_name=model_name, max_output_tokens=8192, temperature=0.3),
+                    )
+                    raw_text = extract_clean_text(response)
+                    if not raw_text:
+                        raise ValueError(f"Model {model_name} returned empty text or only thought tokens")
+                    record_model_success(model_name)
+                    parsed = json.loads(_clean_json(raw_text))
+                    return deterministic_voice_cleanup(parsed)
+                except Exception as e:
+                    last_err = e
+                    err_str = str(e).upper()
+                    print(f"[Dani's Engine - Writer] {model_name} (try {m_retry+1}) note: {e}")
 
-                if is_key_invalid_error(e):
-                    mark_key_dead(get_active_key(), reason="API key invalid")
-                    if get_all_gemini_keys():
-                        rotate_key(reason="Purged invalid key")
-                    break
+                    if is_key_invalid_error(e):
+                        mark_key_dead(get_active_key(), reason="API key invalid")
+                        if get_all_gemini_keys():
+                            rotate_key(reason="Purged invalid key")
+                        break
 
-                record_model_failure(model_name, e)
-                continue
+                    record_model_failure(model_name, e)
 
-        # If all models on the current active key failed, rotate to the backup key
-        keys = get_all_gemini_keys()
-        if len(keys) > 1 and attempt < max_attempts:
-            rotate_key(reason=f"Attempt {attempt} models exhausted — rotating to backup key")
-            time.sleep(0.3)
-        else:
-            break
+                    if "503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str or "OVERLOADED" in err_str:
+                        if m_retry == 0:
+                            time.sleep(1.0)
+                            continue
+                        else:
+                            break
+                    elif is_quota_error(e):
+                        keys = get_all_gemini_keys()
+                        if len(keys) > 1:
+                            rotate_key(reason=f"Quota exhausted on {model_name}")
+                        break
+                    else:
+                        break
+
+        # If all candidate models on this attempt hit 503/errors, pause with backoff before next attempt
+        if attempt < max_attempts:
+            keys = get_all_gemini_keys()
+            if len(keys) > 1:
+                rotate_key(reason=f"Attempt {attempt} models busy — rotating key")
+            backoff_delay = min(1.5 * attempt, 4.0)
+            print(f"[Dani's Engine - Writer] All candidate models busy on attempt {attempt}. Backing off {backoff_delay:.1f}s...")
+            time.sleep(backoff_delay)
+
+    # If Gemini experienced sustained API overload, fall back to the resilient rewriter engine
+    # so the user's pipeline NEVER fails with an uncaught exception
+    try:
+        from rewriter import rewrite_resume
+        print(f"[Dani's Engine - Writer] ⚠️ Gemini busy after {max_attempts} attempts. Falling back to resilient rewriter pass: {last_err}")
+        fallback_res = rewrite_resume(
+            base_resume=base_resume,
+            jd_text=research_rubric.get("jd_text", ""),
+            missing_keywords=missing_keywords,
+            company=company,
+            role=role,
+            custom_bullets=custom_bullets,
+            keyword_contexts=keyword_contexts,
+        )
+        if fallback_res and isinstance(fallback_res, dict):
+            return deterministic_voice_cleanup(fallback_res)
+    except Exception as fallback_err:
+        print(f"[Dani's Engine - Writer] Fallback rewriter error: {fallback_err}")
 
     raise RuntimeError(f"Writer failed across all models: {last_err}")
 
@@ -495,26 +531,36 @@ Return the corrected JSON now."""
     from gemini_client import get_candidate_models, record_model_failure, record_model_success, extract_clean_text
     models = get_candidate_models()
     for model_name in models:
-        try:
-            current_client = get_gemini_client()
-            response = current_client.models.generate_content(
-                model=model_name,
-                contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
-                config=get_standard_genai_config(model_name=model_name, max_output_tokens=4096, temperature=0.2),
-            )
-            raw_text = extract_clean_text(response)
-            if not raw_text:
-                continue
-            record_model_success(model_name)
-            return json.loads(_clean_json(raw_text))
-        except Exception as e:
-            record_model_failure(model_name, e)
-            print(f"[Dani's Engine - Editor] {model_name} note: {e}")
-            if is_quota_error(e) or "503" in str(e) or "UNAVAILABLE" in str(e).upper():
-                keys = get_all_gemini_keys()
-                if len(keys) > 1:
-                    rotate_key(reason=f"Editor Failover ({model_name})")
-            time.sleep(0.3)
+        for m_retry in range(2):
+            try:
+                current_client = get_gemini_client()
+                response = current_client.models.generate_content(
+                    model=model_name,
+                    contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
+                    config=get_standard_genai_config(model_name=model_name, max_output_tokens=8192, temperature=0.2),
+                )
+                raw_text = extract_clean_text(response)
+                if not raw_text:
+                    continue
+                record_model_success(model_name)
+                return json.loads(_clean_json(raw_text))
+            except Exception as e:
+                record_model_failure(model_name, e)
+                err_str = str(e).upper()
+                print(f"[Dani's Engine - Editor] {model_name} (try {m_retry+1}) note: {e}")
+                if "503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str or "OVERLOADED" in err_str:
+                    if m_retry == 0:
+                        time.sleep(0.8)
+                        continue
+                    else:
+                        break
+                elif is_quota_error(e):
+                    keys = get_all_gemini_keys()
+                    if len(keys) > 1:
+                        rotate_key(reason=f"Editor Failover ({model_name})")
+                    break
+                else:
+                    break
 
     return cleaned_draft
 
