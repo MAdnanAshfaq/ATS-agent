@@ -887,40 +887,43 @@ ORIGINAL TEXT:
             models = get_candidate_models()
             last_err = None
             for m in models:
-                try:
-                    cfg = get_standard_genai_config(model_name=m, max_output_tokens=2048, temperature=0.7)
+                for m_retry in range(2):
                     try:
-                        response = client.models.generate_content(
-                            model=m,
-                            contents=humanize_prompt,
-                            config=cfg,
-                        )
-                    except Exception as call_err:
-                        err_lower = str(call_err).lower()
-                        if "thinking" in err_lower:
-                            cfg.thinking_config = None
+                        cfg = get_standard_genai_config(model_name=m, max_output_tokens=2048, temperature=0.7)
+                        try:
                             response = client.models.generate_content(
                                 model=m,
                                 contents=humanize_prompt,
                                 config=cfg,
                             )
-                        else:
-                            raise call_err
+                        except Exception as call_err:
+                            err_lower = str(call_err).lower()
+                            if "thinking" in err_lower:
+                                cfg.thinking_config = None
+                                response = client.models.generate_content(
+                                    model=m,
+                                    contents=humanize_prompt,
+                                    config=cfg,
+                                )
+                            else:
+                                raise call_err
 
-                    res_text = extract_clean_text(response)
-                    if res_text:
-                        if res_text.startswith(('"', "“")) and res_text.endswith(('"', "”")):
-                            res_text = res_text[1:-1].strip()
-                        record_model_success(m)
-                        return res_text
-                except Exception as model_err:
-                    record_model_failure(m, model_err)
-                    print(f"[Humanizer] {m} note: {model_err}")
-                    last_err = model_err
-                    me_str = str(model_err).upper()
-                    if "503" in me_str or "UNAVAILABLE" in me_str or "504" in me_str or "DEADLINE" in me_str:
-                        time.sleep(0.1)
-                    continue
+                        res_text = extract_clean_text(response)
+                        if res_text:
+                            if res_text.startswith(('"', "“")) and res_text.endswith(('"', "”")):
+                                res_text = res_text[1:-1].strip()
+                            record_model_success(m)
+                            return res_text
+                    except Exception as model_err:
+                        record_model_failure(m, model_err)
+                        print(f"[Humanizer] {m} (try {m_retry+1}) note: {model_err}")
+                        last_err = model_err
+                        me_str = str(model_err).upper()
+                        if "503" in me_str or "UNAVAILABLE" in me_str or "504" in me_str or "DEADLINE" in me_str:
+                            if m_retry == 0:
+                                time.sleep(0.8)
+                                continue
+                        break
             if last_err:
                 raise last_err
             return ""

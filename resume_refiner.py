@@ -339,49 +339,52 @@ Return ONLY valid JSON now.
         models = get_candidate_models()
         last_err = None
         for m in models:
-            try:
-                cfg = get_standard_genai_config(model_name=m, max_output_tokens=8192, temperature=0.2)
-                cfg.system_instruction = REFINEMENT_SYSTEM_PROMPT
-                if "gemma" not in m:
-                    cfg.response_mime_type = "application/json"
+            for m_retry in range(2):
                 try:
-                    response = client.models.generate_content(
-                        model=m,
-                        contents=user_prompt,
-                        config=cfg,
-                    )
-                except Exception as call_err:
-                    err_lower = str(call_err).lower()
-                    if "developer instruction" in err_lower or "v1beta" in err_lower or "system instruction" in err_lower:
-                        # Fallback: prepend system instruction to user prompt without cfg.system_instruction
-                        cfg.system_instruction = None
-                        response = client.models.generate_content(
-                            model=m,
-                            contents=f"{REFINEMENT_SYSTEM_PROMPT}\n\n{user_prompt}",
-                            config=cfg,
-                        )
-                    elif "thinking" in err_lower:
-                        cfg.thinking_config = None
+                    cfg = get_standard_genai_config(model_name=m, max_output_tokens=8192, temperature=0.2)
+                    cfg.system_instruction = REFINEMENT_SYSTEM_PROMPT
+                    if "gemma" not in m:
+                        cfg.response_mime_type = "application/json"
+                    try:
                         response = client.models.generate_content(
                             model=m,
                             contents=user_prompt,
                             config=cfg,
                         )
-                    else:
-                        raise call_err
+                    except Exception as call_err:
+                        err_lower = str(call_err).lower()
+                        if "developer instruction" in err_lower or "v1beta" in err_lower or "system instruction" in err_lower:
+                            # Fallback: prepend system instruction to user prompt without cfg.system_instruction
+                            cfg.system_instruction = None
+                            response = client.models.generate_content(
+                                model=m,
+                                contents=f"{REFINEMENT_SYSTEM_PROMPT}\n\n{user_prompt}",
+                                config=cfg,
+                            )
+                        elif "thinking" in err_lower:
+                            cfg.thinking_config = None
+                            response = client.models.generate_content(
+                                model=m,
+                                contents=user_prompt,
+                                config=cfg,
+                            )
+                        else:
+                            raise call_err
 
-                clean_text = extract_clean_text(response)
-                if clean_text:
-                    record_model_success(m)
-                    return clean_text
-            except Exception as e:
-                record_model_failure(m, e)
-                err_str = str(e).upper()
-                print(f"[ResumeRefiner] Model {m} note: {e}")
-                last_err = e
-                if "503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str or "OVERLOADED" in err_str:
-                    time.sleep(0.1)
-                continue
+                    clean_text = extract_clean_text(response)
+                    if clean_text:
+                        record_model_success(m)
+                        return clean_text
+                except Exception as e:
+                    record_model_failure(m, e)
+                    err_str = str(e).upper()
+                    print(f"[ResumeRefiner] Model {m} (try {m_retry+1}) note: {e}")
+                    last_err = e
+                    if "503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str or "OVERLOADED" in err_str or "504" in err_str or "DEADLINE" in err_str:
+                        if m_retry == 0:
+                            time.sleep(0.8)
+                            continue
+                    break
         if last_err:
             raise last_err
         return ""

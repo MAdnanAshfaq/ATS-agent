@@ -138,6 +138,11 @@ def record_key_success(key: str):
 _MODEL_COOLDOWNS = {}
 _MODEL_LOCK = threading.Lock()
 
+DEPRECATED_MODELS = {
+    "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash",
+    "gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro"
+}
+
 DEFAULT_MODELS_CASCADE = [
     "gemini-flash-lite-latest", # Primary: 100% operational across all keys (<1.2s), generous 1500 RPD quota
     "gemini-3.5-flash-lite",    # High-speed flash-lite fallback
@@ -228,8 +233,8 @@ def get_candidate_models(base_models: List[str] = None) -> List[str]:
     """
     if not base_models:
         pref = os.getenv("GEMINI_MODEL", "").strip()
-        models = list(DEFAULT_MODELS_CASCADE)
-        if pref:
+        models = [m for m in DEFAULT_MODELS_CASCADE if m not in DEPRECATED_MODELS]
+        if pref and pref not in DEPRECATED_MODELS:
             if pref in models:
                 models.remove(pref)
             models.insert(0, pref)
@@ -456,12 +461,12 @@ def execute_with_failover(fn: Callable[[genai.Client], Any], max_rotations: int 
                     continue
                 raise e
 
-            # Handle quota exhausted, 503 high demand spike, or model unavailable
-            if is_quota_error(e) or "503" in str(e) or "UNAVAILABLE" in err_str or "404" in err_str or "NOT_FOUND" in err_str:
+            # Handle quota exhausted, 503 high demand spike, 504 deadline, or model unavailable
+            if is_quota_error(e) or "503" in str(e) or "UNAVAILABLE" in err_str or "504" in str(e) or "DEADLINE" in err_str or "404" in err_str or "NOT_FOUND" in err_str:
                 active_keys = get_all_gemini_keys()
                 if len(active_keys) > 1 and attempt < max_rotations - 1:
-                    rotate_key(reason=f"Failover ({type(e).__name__} / Rate-Limit/503/404)")
-                    time.sleep(0.2)
+                    rotate_key(reason=f"Failover ({type(e).__name__} / Rate-Limit/503/504/404)")
+                    time.sleep(0.8)
                     continue
                 else:
                     # Single key with daily quota limit or final key in pool — do not loop/sleep repeatedly
