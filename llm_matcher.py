@@ -336,28 +336,12 @@ Return ONLY a valid JSON object matching this schema:
             resp = None
             last_err = None
             for m in models:
-                try:
-                    cfg = get_standard_genai_config(model_name=m, temperature=0.1, is_json=True)
-                    if "gemma" not in m:
-                        cfg.response_mime_type = "application/json"
-                    resp = client.models.generate_content(
-                        model=m,
-                        contents=prompt,
-                        config=cfg,
-                    )
-                    raw = extract_clean_text(resp)
-                    if raw:
-                        record_model_success(m)
-                        print(f"[LLM Matcher] [OK] Extracted ATS matrix with {m} (JSON mode)")
-                        return resp
-                except Exception as model_err:
-                    last_err = model_err
-                    record_model_failure(m, model_err)
-                    print(f"[LLM Matcher] {m} note: {str(model_err)[:100]}")
-
-                    # Quick single attempt in plain text mode if JSON mode failed for this model
+                for attempt in range(2):
                     try:
-                        cfg = get_standard_genai_config(model_name=m, temperature=0.1)
+                        cfg = get_standard_genai_config(model_name=m, temperature=0.1, is_json=True)
+                        cfg.thinking_config = None  # Never combine thinking with structured JSON
+                        if "gemma" not in m:
+                            cfg.response_mime_type = "application/json"
                         resp = client.models.generate_content(
                             model=m,
                             contents=prompt,
@@ -366,11 +350,18 @@ Return ONLY a valid JSON object matching this schema:
                         raw = extract_clean_text(resp)
                         if raw:
                             record_model_success(m)
-                            print(f"[LLM Matcher] [OK] Extracted ATS matrix with {m} (Plain text fallback)")
+                            print(f"[LLM Matcher] [OK] Extracted ATS matrix with {m} (JSON mode)")
                             return resp
-                    except Exception as pe:
-                        last_err = pe
-                        continue
+                    except Exception as model_err:
+                        last_err = model_err
+                        err_str = str(model_err).upper()
+                        record_model_failure(m, model_err)
+                        print(f"[LLM Matcher] {m} (try {attempt + 1}) note: {str(model_err)[:120]}")
+                        # If momentary 503 high demand or 504 timeout, do a quick pause on attempt 0 before next try
+                        if ("503" in err_str or "UNAVAILABLE" in err_str or "504" in err_str) and attempt == 0:
+                            time.sleep(1.0)
+                            continue
+                        break
 
             if last_err:
                 raise last_err

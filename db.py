@@ -14,6 +14,7 @@ Set DATABASE_URL env var to enable. Falls back to local file mode if not set.
 import json
 import logging
 import os
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 _pool = None
 _pool_pid = None
+MAX_IDLE_SECONDS = 240.0  # Neon serverless closes connections after 300s; recycle > 4min idle connections proactively
 
 
 def get_pool():
@@ -48,9 +50,10 @@ def get_pool():
 
     try:
         from psycopg2 import pool as pg_pool
+        # minconn=0 allows pool to scale down cleanly without holding zombie SSL sockets
         # TCP keepalive prevents NAT routers and NeonDB from dropping idle SSL connections silently
         _pool = pg_pool.ThreadedConnectionPool(
-            minconn=1,
+            minconn=0,
             maxconn=10,
             dsn=db_url,
             keepalives=1,
@@ -74,10 +77,18 @@ def get_conn():
     if p is None:
         return None
 
+    now = time.time()
     for attempt in range(3):
+        conn = None
         try:
             conn = p.getconn()
             if conn.closed != 0:
+                p.putconn(conn, close=True)
+                continue
+
+            # Proactive idle check: if connection has been idle for > 240s, Neon serverless likely suspended
+            last_used = getattr(conn, "_ats_last_used", 0)
+            if last_used and (now - last_used > MAX_IDLE_SECONDS):
                 p.putconn(conn, close=True)
                 continue
 
@@ -85,13 +96,16 @@ def get_conn():
             with conn.cursor() as test_cur:
                 test_cur.execute("SELECT 1")
 
+            conn._ats_last_used = time.time()
             return conn
         except Exception as e:
-            logger.warning(f"[DB] Discarding stale/corrupted connection ({e}) on borrow attempt {attempt + 1}")
-            try:
-                p.putconn(conn, close=True)
-            except Exception:
-                pass
+            # Idle SSL sockets closed by Neon serverless during scale-to-zero are normal; cleanly recycle
+            logger.debug(f"[DB] Recycled idle NeonDB connection (attempt {attempt + 1}): {e}")
+            if conn:
+                try:
+                    p.putconn(conn, close=True)
+                except Exception:
+                    pass
 
     return None
 
@@ -108,6 +122,7 @@ def release_conn(conn, is_bad: bool = False):
                     conn.rollback()
                 except Exception:
                     pass
+                conn._ats_last_used = time.time()
                 p.putconn(conn)
         except Exception:
             pass

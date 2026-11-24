@@ -139,14 +139,19 @@ _MODEL_COOLDOWNS = {}
 _MODEL_LOCK = threading.Lock()
 
 DEPRECATED_MODELS = {
-    "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash",
-    "gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro",
-    "gemini-3.8-flash", "gemini-flash-latest", # Free Tier 20 RPD cap & constant 503 trap
+    "gemini-2.5-flash-lite",    # Shut down (404 NOT_FOUND: no longer available to new users)
+    "gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro", "gemini-2.0-flash", # Deprecated/shut down
+    "gemini-3.8-flash",         # Severe capacity limits on free tier
+    "gemini-flash-latest",      # Constant 504 timeouts
 }
 
 DEFAULT_MODELS_CASCADE = [
-    "gemini-flash-lite-latest", # Primary: 100% operational across all keys (<1.2s), generous 1500 RPD quota
-    "gemini-3.5-flash-lite",    # High-speed flash-lite fallback (1500 RPD)
+    "gemini-3.5-flash-lite",    # Primary: 1,500 RPD, lowest spike rate, sub-second latency
+    "gemini-flash-lite-latest", # High-capacity flash-lite fallback (1,500 RPD)
+    "gemini-3.5-flash",         # Full Flash: higher concurrency limits, handles 503 spikes gracefully
+    "gemini-3.6-flash",         # Gemini 3.6 generation
+    "gemini-3-flash-preview",   # Gemini 3 Preview
+    "gemini-2.5-flash",         # Reliable fallback
 ]
 
 

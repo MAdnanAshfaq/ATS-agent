@@ -4023,9 +4023,15 @@ def analyze_job():
         user_settings = get_user_settings()
         from gemini_client import set_thread_gemini_keys
         user_gemini_keys = []
-        for k in ("GEMINI_API_KEY", "GEMINI_API_KEY_2"):
+        # Load ALL API keys from the GEMINI_API_KEYS array first (dynamic pool)
+        for item in (user_settings.get("GEMINI_API_KEYS") or []):
+            v = (item.get("key") or "").strip() if isinstance(item, dict) else str(item).strip()
+            if v and v not in user_gemini_keys:
+                user_gemini_keys.append(v)
+        # Also check legacy individual key slots
+        for k in ("GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3"):
             val = (user_settings.get(k) or "").strip()
-            if val:
+            if val and val not in user_gemini_keys:
                 user_gemini_keys.append(val)
         if user_gemini_keys:
             set_thread_gemini_keys(user_gemini_keys)
@@ -4610,9 +4616,15 @@ def generate_cover_letter_api():
         user_settings = get_user_settings()
         from gemini_client import set_thread_gemini_keys
         user_gemini_keys = []
-        for k in ("GEMINI_API_KEY", "GEMINI_API_KEY_2"):
+        # Load ALL API keys from the GEMINI_API_KEYS array first (dynamic pool)
+        for item in (user_settings.get("GEMINI_API_KEYS") or []):
+            v = (item.get("key") or "").strip() if isinstance(item, dict) else str(item).strip()
+            if v and v not in user_gemini_keys:
+                user_gemini_keys.append(v)
+        # Also check legacy individual key slots
+        for k in ("GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3"):
             val = (user_settings.get(k) or "").strip()
-            if val:
+            if val and val not in user_gemini_keys:
                 user_gemini_keys.append(val)
         if user_gemini_keys:
             set_thread_gemini_keys(user_gemini_keys)
