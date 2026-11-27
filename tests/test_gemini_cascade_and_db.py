@@ -63,20 +63,48 @@ class TestGeminiCascadeAndDB(unittest.TestCase):
         mock_conn = MagicMock()
         mock_conn.closed = 0
         # Set last used time to 300 seconds ago (older than MAX_IDLE_SECONDS = 240)
-        mock_conn._ats_last_used = time.time() - 300.0
+        db._conn_last_used[id(mock_conn)] = time.time() - 300.0
 
         mock_conn_fresh = MagicMock()
         mock_conn_fresh.closed = 0
-        mock_conn_fresh._ats_last_used = 0
 
         # Pool returns old connection first, then fresh connection
         mock_pool.getconn.side_effect = [mock_conn, mock_conn_fresh]
 
-        with patch("db.get_pool", return_value=mock_pool):
-            conn = db.get_conn()
-            self.assertEqual(conn, mock_conn_fresh)
-            # Verify old conn was returned to pool with close=True
-            mock_pool.putconn.assert_any_call(mock_conn, close=True)
+        try:
+            with patch("db.get_pool", return_value=mock_pool):
+                conn = db.get_conn()
+                self.assertEqual(conn, mock_conn_fresh)
+                # Verify old conn was returned to pool with close=True
+                mock_pool.putconn.assert_any_call(mock_conn, close=True)
+                self.assertNotIn(id(mock_conn), db._conn_last_used)
+        finally:
+            db._conn_last_used.clear()
+
+    def test_db_get_conn_works_with_slotted_connection_objects(self):
+        """Real psycopg2 connections reject new attributes; get_conn must not rely on setattr."""
+        class _Cursor:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def execute(self, sql): pass
+
+        class _SlottedConn:
+            __slots__ = ("closed",)
+            def __init__(self): self.closed = 0
+            def cursor(self): return _Cursor()
+            def rollback(self): pass
+
+        real_like = _SlottedConn()
+        mock_pool = MagicMock()
+        mock_pool.getconn.return_value = real_like
+        try:
+            with patch("db.get_pool", return_value=mock_pool):
+                conn = db.get_conn()
+                self.assertIs(conn, real_like)
+                db.release_conn(conn)
+                mock_pool.putconn.assert_called_with(real_like)
+        finally:
+            db._conn_last_used.clear()
 
     def test_standard_genai_config_disables_thinking_for_full_flash(self):
         """Full Flash models must receive thinking_budget=0 to avoid 503/504 spikes; flash-lite must omit it."""

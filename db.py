@@ -26,6 +26,17 @@ _pool = None
 _pool_pid = None
 MAX_IDLE_SECONDS = 240.0  # Neon serverless closes connections after 300s; recycle > 4min idle connections proactively
 
+# psycopg2 connection objects are C extension types without __dict__, so we
+# cannot attach attributes to them. Track last-used timestamps here instead,
+# keyed by id(conn); entries are dropped whenever a connection is closed.
+_conn_last_used: dict = {}
+
+
+def _close_and_forget(p, conn):
+    """Close a connection back into the pool and drop its idle-tracking entry."""
+    _conn_last_used.pop(id(conn), None)
+    p.putconn(conn, close=True)
+
 
 def get_pool():
     """Return a psycopg2 connection pool (created once per process/worker)."""
@@ -40,6 +51,7 @@ def get_pool():
         except Exception:
             pass
         _pool = None
+        _conn_last_used.clear()
 
     if _pool is not None:
         return _pool
@@ -83,30 +95,31 @@ def get_conn():
         try:
             conn = p.getconn()
             if conn.closed != 0:
-                p.putconn(conn, close=True)
+                _close_and_forget(p, conn)
                 continue
 
             # Proactive idle check: if connection has been idle for > 240s, Neon serverless likely suspended
-            last_used = getattr(conn, "_ats_last_used", 0)
+            last_used = _conn_last_used.get(id(conn), 0)
             if last_used and (now - last_used > MAX_IDLE_SECONDS):
-                p.putconn(conn, close=True)
+                _close_and_forget(p, conn)
                 continue
 
             # Quick liveness ping to detect stale or desynced SSL sockets early
             with conn.cursor() as test_cur:
                 test_cur.execute("SELECT 1")
 
-            conn._ats_last_used = time.time()
+            _conn_last_used[id(conn)] = time.time()
             return conn
         except Exception as e:
             # Idle SSL sockets closed by Neon serverless during scale-to-zero are normal; cleanly recycle
             logger.debug(f"[DB] Recycled idle NeonDB connection (attempt {attempt + 1}): {e}")
             if conn:
                 try:
-                    p.putconn(conn, close=True)
+                    _close_and_forget(p, conn)
                 except Exception:
                     pass
 
+    logger.warning("[DB] Could not obtain a healthy NeonDB connection after 3 attempts")
     return None
 
 
@@ -116,13 +129,13 @@ def release_conn(conn, is_bad: bool = False):
     if p and conn:
         try:
             if is_bad or conn.closed != 0:
-                p.putconn(conn, close=True)
+                _close_and_forget(p, conn)
             else:
                 try:
                     conn.rollback()
                 except Exception:
                     pass
-                conn._ats_last_used = time.time()
+                _conn_last_used[id(conn)] = time.time()
                 p.putconn(conn)
         except Exception:
             pass
