@@ -199,10 +199,21 @@ def audit_resume_dict(resume: dict, tells: dict[str, Any] | None = None) -> dict
         cv = 0.35
 
     # 3. Audit Banned AI Lexicon & Generic Filler across entire resume (Red Flag #6)
-    full_text = json.dumps(resume, ensure_ascii=False).lower()
+    # Only the prose the writer controls (summary + bullets) is scanned. Skills,
+    # company names, education and internal "_" fields are facts or metadata that
+    # no rewrite can change, so flagging them would repeat on every run.
+    prose_parts = [str(resume.get("summary") or "")] + all_bullets
+    for pr in resume.get("projects", []) or []:
+        if isinstance(pr, dict):
+            prose_parts += [str(b) for b in (pr.get("bullets") or []) if isinstance(b, str)]
+    full_text = "\n".join(prose_parts).lower()
     banned_found = []
     for bw in banned_words:
-        if re.search(r'\b' + re.escape(bw) + r'\b', full_text):
+        pattern = r'\b' + re.escape(bw) + r'\b'
+        if bw == "dynamic":
+            # Technical uses ("dynamic programming", "dynamic SQL", "dynamic pricing") are fine.
+            pattern = r'\bdynamic(?= (?:and|team|teams|environment|environments|professional|leader|individual|role|workplace|company)\b)'
+        if re.search(pattern, full_text):
             banned_found.append(bw)
             findings.append(f"Banned AI tell word detected: '{bw}'")
 

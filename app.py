@@ -4071,6 +4071,13 @@ def hollabuddy_chat():
 
     from hollabuddy import chat_with_hollabuddy
     user_settings = get_user_settings() if hasattr(current_user, 'data_dir') else None
+    measured_report = None
+    if drafted_resume:
+        try:
+            measured_report = _measured_report_for_chat(
+                drafted_resume, base_resume, company, role, url, jd_text, pipeline_state, cached_user_history)
+        except Exception as rep_err:
+            logging.debug(f"[HollaBuddy] Could not build measured report: {rep_err}")
     res = chat_with_hollabuddy(
         message=message,
         history=history,
@@ -4080,8 +4087,40 @@ def hollabuddy_chat():
         pipeline_state=pipeline_state,
         user_settings=user_settings,
         application_history=application_history,
+        measured_report=measured_report,
     )
     return jsonify({"success": True, **res})
+
+
+def _measured_report_for_chat(drafted_resume, base_resume, company, role, url, jd_text, pipeline_state, history):
+    """Build the deterministic resume report HollaBuddy must answer audits from.
+
+    Keywords come from the stored list for this job (the same list the pipeline
+    used), so asking twice about the same resume gives the same findings."""
+    from resume_report import build_resume_report
+    item = None
+    co = (company or "").strip().lower()
+    for h in history or []:
+        if co and (h.get("company") or "").strip().lower() == co:
+            item = h
+            break
+    keywords = list((item or {}).get("target_keywords") or [])
+    job_text = jd_text or (item or {}).get("jd_text") or ""
+    job_url = url or (item or {}).get("url") or ""
+    if not keywords and job_text:
+        from llm_matcher import analyze_jd_and_resume_with_gemini
+        an = analyze_jd_and_resume_with_gemini(job_text, base_resume or {}, job_url=job_url)
+        keywords = list(dict.fromkeys((an.get("matching_keywords") or []) + (an.get("missing_keywords") or [])))
+    if not keywords and isinstance(pipeline_state, dict):
+        keywords = list(dict.fromkeys((pipeline_state.get("matched_keywords") or []) + (pipeline_state.get("missing_keywords") or [])))
+    platform = (item or {}).get("ats_platform") or (pipeline_state or {}).get("ats_platform")
+    docx_path = None
+    out_f = (item or {}).get("output_file") or ""
+    if out_f and str(out_f).lower().endswith(".docx") and Path(out_f).exists():
+        docx_path = out_f
+    return build_resume_report(drafted_resume, base_resume, keywords, role or (item or {}).get("role") or "",
+                               platform=platform if platform and platform != "Safe Mode" else None,
+                               docx_path=docx_path, jd_text=job_text)
 
 
 @app.route("/api/analyze", methods=["POST"])
@@ -4303,7 +4342,7 @@ def analyze_job():
         if not s_data.get("success") or not simplify_has_keywords:
             print(f"[Analyze] Using Gemini LLM Matcher for rich ATS cross-check...")
             from llm_matcher import analyze_jd_and_resume_with_gemini
-            llm_res = analyze_jd_and_resume_with_gemini(jd_text, base_resume)
+            llm_res = analyze_jd_and_resume_with_gemini(jd_text, base_resume, job_url=url)
             matching_keywords = llm_res.get("matching_keywords", [])
             missing_keywords  = llm_res.get("missing_keywords", [])
             score  = llm_res.get("score", 70)
@@ -4341,7 +4380,7 @@ def analyze_job():
             # If Simplify provided keywords, do a quick semantic enrichment for title, exp, and industry
             from llm_matcher import analyze_jd_and_resume_with_gemini
             try:
-                matrix_data = analyze_jd_and_resume_with_gemini(jd_text, base_resume)
+                matrix_data = analyze_jd_and_resume_with_gemini(jd_text, base_resume, job_url=url)
             except Exception:
                 matrix_data = {}
 
@@ -5993,7 +6032,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
         """(matching, missing) JD keywords for this resume, from one analysis."""
         try:
             from llm_matcher import analyze_jd_and_resume_with_gemini
-            _res = analyze_jd_and_resume_with_gemini(jd_text, base_resume)
+            _res = analyze_jd_and_resume_with_gemini(jd_text, base_resume, job_url=url)
             return list(_res.get("matching_keywords") or []), list(_res.get("missing_keywords") or [])
         except Exception as _kw_err:
             print(f"[Pipeline] Keyword analysis note: {_kw_err}")
@@ -6577,6 +6616,28 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                 send_log(6, "Interview Prep",
                          f"{len(added_beyond_master)} keyword(s) were added beyond your master resume. Be ready to discuss: {', '.join(added_beyond_master)}",
                          data={"added_beyond_master": added_beyond_master}, status="warning")
+            # The same deterministic report HollaBuddy and History show, run on the
+            # delivered file, so every place that judges this resume agrees.
+            final_report = None
+            try:
+                from resume_report import build_resume_report
+                final_report = build_resume_report(
+                    cleaned_resume, base_resume, target_keywords, role,
+                    platform=getattr(ats_profile, "id", None),
+                    docx_path=doc_path if after_eval.get("source") == "delivered_docx" else None,
+                    jd_text=jd_text,
+                )
+                _c = final_report["counts"]
+                send_log(7, "Resume Report",
+                         f"Verdict: {final_report['verdict'].replace('_', ' ')} | {_c['blocker']} blocker(s), "
+                         f"{_c['pipeline_fixable']} auto-fixable, {_c['from_master']} from your master resume, "
+                         f"{_c['needs_you']} need your decision",
+                         data={"resume_report": final_report},
+                         status="success" if final_report["verdict"] == "ready" else "warning")
+            except Exception as _rep_err:
+                print(f"[Pipeline] Resume report note: {_rep_err}")
+            cleaned_resume.pop("_report", None)
+
             # Keyword lists shown in the UI describe the delivered file.
             embedded_keywords = [k for k in missing_keywords if k in after_eval["matched"]]
             still_missing = list(after_eval["missing"])
@@ -6644,6 +6705,8 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                         "keyword_coverage_pct": coverage_pct,
                         "added_beyond_master": added_beyond_master,
                         "parse_findings": after_eval.get("parse_findings") or [],
+                        "resume_report": final_report,
+                        "target_keywords": target_keywords,
                         "cover_letter_text": cover_letter_text,
                         "output_file": doc_path,
                         "tailored_resume": cleaned_resume,
@@ -6691,6 +6754,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                     "keywords_in_file": after_eval["matched"],
                     "added_beyond_master": added_beyond_master,
                     "parse_findings": after_eval.get("parse_findings") or [],
+                    "resume_report": final_report,
                     "voice_audit": cleaned_resume.get("_voice_audit"),
                     "ats_audit": cleaned_resume.get("_ats_audit"),
                     "next_step": f"Upload the .docx or .pdf to your application ({ats_profile.display_name} compliant)",

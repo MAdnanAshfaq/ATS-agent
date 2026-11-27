@@ -195,6 +195,14 @@ CREATE TABLE IF NOT EXISTS job_history (
     created_at      TIMESTAMP DEFAULT NOW()
 );
 
+-- Keywords extracted once per job description, so the same job is always scored
+-- against the same keyword list (no per-user data: job text only).
+CREATE TABLE IF NOT EXISTS jd_keyword_cache (
+    cache_key       VARCHAR(80) PRIMARY KEY,
+    payload         TEXT NOT NULL,
+    created_at      TIMESTAMP DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_job_history_username ON job_history(username);
 CREATE INDEX IF NOT EXISTS idx_job_history_created ON job_history(created_at DESC);
 """
@@ -897,5 +905,49 @@ def db_delete_all_history(username: str) -> int:
         conn.rollback()
         logger.error(f"[DB] delete_all_history error: {e}")
         return 0
+    finally:
+        release_conn(conn)
+
+
+# ── JD keyword cache ───────────────────────────────────────────────────────────
+
+def db_get_jd_cache(cache_key: str) -> Optional[dict]:
+    conn = get_conn()
+    if not conn:
+        return None
+    is_bad = False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT payload FROM jd_keyword_cache WHERE cache_key = %s", (cache_key,))
+            row = cur.fetchone()
+        return json.loads(row[0]) if row and row[0] else None
+    except Exception as e:
+        is_bad = True
+        logger.debug(f"[DB] jd cache read note: {e}")
+        return None
+    finally:
+        release_conn(conn, is_bad=is_bad)
+
+
+def db_put_jd_cache(cache_key: str, payload: dict) -> bool:
+    conn = get_conn()
+    if not conn:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO jd_keyword_cache (cache_key, payload) VALUES (%s, %s) "
+                "ON CONFLICT (cache_key) DO NOTHING",
+                (cache_key, json.dumps(payload, ensure_ascii=False)),
+            )
+        conn.commit()
+        return True
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        logger.debug(f"[DB] jd cache write note: {e}")
+        return False
     finally:
         release_conn(conn)

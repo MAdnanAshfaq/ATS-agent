@@ -2,9 +2,12 @@
 tests/test_gemini_cascade_and_db.py - Tests for Gemini multi-model cascade failover on 503,
 and DB pool idle socket handling.
 """
+import os
 import unittest
 import time
 import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _isolation  # noqa: F401  (keeps tests off the real DB cache and data/ files)
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 

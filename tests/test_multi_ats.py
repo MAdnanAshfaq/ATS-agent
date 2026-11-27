@@ -1,6 +1,8 @@
 import unittest
 import os
 import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _isolation  # noqa: F401  (keeps tests off the real DB cache and data/ files)
 import json
 
 # Ensure parent directory is in sys.path

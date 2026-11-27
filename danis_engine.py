@@ -36,22 +36,61 @@ def _clean_json(text: str) -> str:
     return text.strip()
 
 
+# Every cliché opener in data/ai_tells.json has a plain replacement here, so the
+# auditor never re-flags an opener the cleanup could have fixed.
 _OPENER_VERB_SWAPS = {
-    "spearheaded": "Led", "leveraged": "Used", "utilized": "Used", "facilitated": "Ran",
-    "orchestrated": "Coordinated", "championed": "Led", "pioneered": "Introduced",
-    "revolutionized": "Overhauled", "architected": "Designed", "empowered": "Enabled",
-    "elevated": "Improved", "harnessed": "Used", "navigated": "Handled", "fostered": "Built",
-    "streamlined": "Simplified", "synergized": "Combined",
+    "spearheaded": "Led", "spearhead": "Lead", "spearheading": "Leading",
+    "leveraged": "Used", "leverage": "Use", "leveraging": "Using",
+    "utilized": "Used", "utilize": "Use", "utilizing": "Using",
+    "facilitated": "Ran", "facilitate": "Run", "facilitating": "Running",
+    "ensured": "Maintained", "ensure": "Maintain", "ensuring": "Maintaining",
+    "demonstrated": "Showed", "demonstrate": "Show", "demonstrating": "Showing",
+    "collaborated": "Worked", "collaborate": "Work", "collaborating": "Working",
+    "streamlined": "Simplified", "streamline": "Simplify", "streamlining": "Simplifying",
+    "championed": "Led", "champion": "Lead", "championing": "Leading",
+    "fostered": "Built", "foster": "Build", "fostering": "Building",
+    "harnessed": "Used", "harness": "Use", "harnessing": "Using",
+    "navigated": "Handled", "navigate": "Handle", "navigating": "Handling",
+    "liaised": "Worked", "liaise": "Work", "liaising": "Working",
+    "interfaced": "Worked", "interface": "Work", "interfacing": "Working",
+    "orchestrated": "Coordinated", "orchestrate": "Coordinate", "orchestrating": "Coordinating",
+    "pioneered": "Introduced", "pioneer": "Introduce", "pioneering": "Introducing",
+    "revolutionized": "Overhauled", "revolutionize": "Overhaul", "revolutionizing": "Overhauling",
+    "architected": "Designed", "architect": "Design", "architecting": "Designing",
+    "empowered": "Enabled", "empower": "Enable", "empowering": "Enabling",
+    "elevated": "Improved", "elevate": "Improve", "elevating": "Improving",
+    "unlocked": "Delivered", "unlock": "Deliver", "unlocking": "Delivering",
+    "synergized": "Combined", "synergize": "Combine", "synergizing": "Combining",
 }
 
-# Mid-sentence swaps limited to words with no technical meaning, so terms like
-# "dynamic programming" or "ensured idempotency" are never rewritten.
+# Mid-sentence swaps for every banned word/phrase in data/ai_tells.json that has
+# no technical meaning. "dynamic" is only swapped in non-technical phrases, so
+# "dynamic programming" or "dynamic SQL" survive.
 _ANYWHERE_SWAPS = [
     (r"\bleveraging\b", "using"), (r"\butilizing\b", "using"), (r"\butilize\b", "use"),
     (r"\bseamlessly\b", "smoothly"), (r"\bseamless\b", "smooth"),
-    (r"\bcutting-edge\b", "modern"), (r"\btapestry\b", "mix"), (r"\btestament\b", "proof"),
-    (r"\bpivotal\b", "key"), (r"\btransformative\b", "major"), (r"\bgroundbreaking\b", "new"),
-    (r"\bsynergy\b", "collaboration"),
+    (r"\bcutting-edge\b", "modern"), (r"\bstate-of-the-art\b", "modern"),
+    (r"\ba testament to\b", "proof of"), (r"\btapestry\b", "mix"), (r"\btestament\b", "proof"),
+    (r"\bpivotal\b", "key"), (r"\btransformative\b", "major"), (r"\btransformational\b", "major"),
+    (r"\bgroundbreaking\b", "new"), (r"\btrailblazing\b", "new"),
+    (r"\bsynergies\b", "shared gains"), (r"\bsynergy\b", "collaboration"),
+    (r"\brobust\b", "reliable"), (r"\bholistic\b", "end-to-end"), (r"\bmultifaceted\b", "varied"),
+    (r"\bgame-changer\b", "major improvement"), (r"\bbeacon\b", "example"),
+    (r"\bcornerstone\b", "core"), (r"\blinchpin\b", "core"), (r"\bvibrant\b", "active"),
+    (r"\bparamount\b", "essential"), (r"\brelentless\b", "steady"), (r"\bunwavering\b", "steady"),
+    (r"\bcrucible\b", "test"), (r"\bmyriad of\b", "many"), (r"\bmyriad\b", "many"),
+    (r"\ba plethora of\b", "many"), (r"\bplethora of\b", "many"), (r"\bplethora\b", "many"),
+    (r"\bdelved into\b", "dug into"), (r"\bdelving into\b", "digging into"), (r"\bdelve into\b", "dig into"),
+    (r"\bdelved\b", "dug"), (r"\bdelving\b", "digging"), (r"\bdelve\b", "dig"),
+    (r"\bplayed a (?:vital|key) role in\b", "helped with"), (r"\bplay a vital role in\b", "help with"),
+    (r"\bplayed a (?:vital|key) role\b", "helped"), (r"\bplay a vital role\b", "help"),
+    (r"\bserves as a\b", "is a"), (r"\bserved as a\b", "was a"),
+    (r"\bstands as a\b", "is a"), (r"\bstood as a\b", "was a"),
+    (r"\bdeep dive\b", "detailed review"), (r"\bat the forefront of\b", "leading"),
+    (r"\bat the forefront\b", "in the lead"), (r"\bever-evolving\b", "changing"),
+    (r"\bfast-paced environment\b", "busy team"), (r"\bdeeply rooted\b", "grounded"),
+    (r"\bit is worth noting that\s*", ""), (r"\bit is worth noting\s*", ""),
+    (r"\bdynamic(?= (?:and|team|teams|environment|environments|professional|leader|individual|role|workplace|company))", "fast-moving"),
 ]
 
 
@@ -66,8 +105,13 @@ def _clean_phrase(text: str) -> str:
     res = text
     for pat, rep in _ANYWHERE_SWAPS:
         res = re.sub(pat, lambda m, r=rep: _swap_keep_case(m, r), res, flags=re.IGNORECASE)
-    res = re.sub(r"(^|(?<=[.!?]\s))(?:Furthermore|Moreover|Additionally),\s*(\w)",
+    res = re.sub(r"(^|(?<=[.!?]\s))(?:Furthermore|Moreover|Additionally|Consequently|Notably|In summary|In conclusion),\s*(\w)",
                  lambda m: m.group(1) + m.group(2).upper(), res)
+    # Mid-sentence connectives the auditor bans.
+    res = re.sub(r",?\s*\b(?:moreover|furthermore|additionally|consequently|notably)\b,?", lambda m: "," if m.group(0).startswith(",") else "", res, flags=re.IGNORECASE)
+    res = re.sub(r"\s{2,}", " ", res).replace(" ,", ",").replace(",,", ",").strip()
+    if res[:1].islower():
+        res = res[0].upper() + res[1:]
     return res
 
 
@@ -105,7 +149,59 @@ def deterministic_voice_cleanup(draft_resume: dict) -> dict:
     for pr in cleaned.get("projects", []) or []:
         if isinstance(pr, dict) and isinstance(pr.get("bullets"), list):
             pr["bullets"] = [_clean_bullet(b) for b in pr["bullets"] if isinstance(b, str)]
+    _diversify_openers(cleaned)
     return cleaned
+
+
+# Alternates used when one opener starts 3+ bullets (the auditor flags that),
+# including openers the swaps above produce, so the cleanup never creates the repeat.
+_OPENER_ALTERNATES = {
+    "led": ["Directed", "Headed", "Ran"], "used": ["Applied", "Adopted", "Ran"],
+    "worked": ["Partnered", "Teamed up", "Contributed"], "built": ["Created", "Developed", "Set up"],
+    "designed": ["Planned", "Modeled", "Drafted"], "developed": ["Built", "Created", "Wrote"],
+    "implemented": ["Rolled out", "Deployed", "Put in place"], "created": ["Built", "Wrote", "Set up"],
+    "improved": ["Raised", "Boosted", "Upgraded"], "reduced": ["Cut", "Lowered", "Trimmed"],
+    "managed": ["Ran", "Oversaw", "Handled"], "maintained": ["Kept", "Sustained", "Upheld"],
+    "automated": ["Scripted", "Replaced manual work on", "Removed manual steps from"],
+    "coordinated": ["Organized", "Aligned", "Scheduled"], "simplified": ["Cleaned up", "Reworked", "Trimmed"],
+    "migrated": ["Moved", "Ported", "Transferred"], "optimized": ["Tuned", "Sped up", "Improved"],
+    "delivered": ["Shipped", "Completed", "Launched"], "enabled": ["Allowed", "Opened up", "Supported"],
+    "showed": ["Proved", "Confirmed", "Presented"], "handled": ["Managed", "Resolved", "Took on"],
+    "introduced": ["Launched", "Brought in", "Started"], "overhauled": ["Rebuilt", "Reworked", "Redesigned"],
+    "combined": ["Merged", "Joined", "Unified"], "wrote": ["Authored", "Drafted", "Produced"],
+    "deployed": ["Shipped", "Released", "Rolled out"], "integrated": ["Connected", "Wired", "Linked"],
+}
+
+
+def _diversify_openers(resume: dict) -> None:
+    """Keep any opener to at most 2 bullets across the resume by swapping the
+    3rd+ use for an unused alternate. Mutates resume in place."""
+    from collections import Counter
+    bullet_lists = [e["bullets"] for e in (resume.get("experience") or [])
+                    if isinstance(e, dict) and isinstance(e.get("bullets"), list)]
+    counts = Counter()
+    for bl in bullet_lists:
+        for b in bl:
+            m = re.match(r"^\W*([A-Za-z]+)", b) if isinstance(b, str) else None
+            if m:
+                counts[m.group(1).lower()] += 1
+    seen = Counter()
+    for bl in bullet_lists:
+        for i, b in enumerate(bl):
+            m = re.match(r"^(\W*)([A-Za-z]+)(.*)$", b, flags=re.S) if isinstance(b, str) else None
+            if not m:
+                continue
+            verb = m.group(2).lower()
+            seen[verb] += 1
+            if seen[verb] <= 2 or verb not in _OPENER_ALTERNATES:
+                continue
+            for alt in _OPENER_ALTERNATES[verb]:
+                alt_key = alt.split()[0].lower()
+                if counts[alt_key] < 2:
+                    bl[i] = m.group(1) + alt + m.group(3)
+                    counts[alt_key] += 1
+                    counts[verb] -= 1
+                    break
 
 
 def run_researcher_phase(
@@ -186,6 +282,9 @@ def run_writer_phase(
     keyword_contexts: Optional[dict[str, str]] = None,
     ats_profile: Any = None,
     target_keywords: Optional[list[str]] = None,
+    must_have: Optional[list[str]] = None,
+    nice_to_have: Optional[list[str]] = None,
+    core_themes: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """
     Role 2: Writer.
@@ -239,10 +338,15 @@ TARGET ATS: {profile.display_name} ({profile.matching_style} matching)
 
     all_targets = list(dict.fromkeys([str(k).strip() for k in (target_keywords or []) if str(k).strip()] + [str(k).strip() for k in missing_keywords if str(k).strip()]))
     base_exp = [e for e in base_resume.get("experience", []) if isinstance(e, dict)]
+    import resume_rules as _rr
     roles_block = "\n".join(
-        f"  {i + 1}. {e.get('title') or e.get('role') or ''} | {e.get('company', '')} | {e.get('dates') or e.get('date') or ''} | {len(e.get('bullets') or [])} master bullets"
+        f"  {i + 1}. {e.get('title') or e.get('role') or ''} | {e.get('company', '')} | {e.get('dates') or e.get('date') or ''} | "
+        f"{len(e.get('bullets') or [])} master bullets | at most {_rr.role_cap(i, len(e.get('bullets') or []))} bullets"
         for i, e in enumerate(base_exp)
     )
+    must_list = [k for k in (must_have if must_have is not None else all_targets)]
+    nice_list = [k for k in (nice_to_have or []) if k not in must_list]
+    themes_list = list(core_themes or [])
 
     system_prompt = f"""You are the Writer on a resume-tailoring team. You rewrite the candidate's master resume for ONE job so that it (a) passes the employer's ATS keyword screen and (b) reads as a credible, specific, human-written resume to the recruiter who opens it next.
 
@@ -254,21 +358,27 @@ FIXED FACTS (copy exactly, never change, never add):
 - Total years of experience: as implied by the dates. Never state a larger number.
 
 WHAT YOU WRITE:
-1. KEYWORD COVERAGE (most important). Every keyword in TARGET KEYWORDS must appear VERBATIM (the JD's spelling) in at least one experience bullet, not only in skills. Missing keywords are tools or practices the candidate's master bullets do not show yet: write responsibilities and achievements in the candidate's existing roles that show hands-on use of each one, matching how the JD context uses it.
+1. KEYWORD COVERAGE WITHOUT STUFFING.
+   - Every MUST-HAVE keyword appears VERBATIM (the JD's spelling) in at least one experience bullet or the summary. Where the master resume does not show one yet, write a responsibility in an existing role that shows hands-on use of it, matching how the JD context uses it.
+   - NICE-TO-HAVE keywords go in Skills. Put one in a bullet only if it fits naturally; never force it.
+   - At most {_rr.MAX_NEW_KEYWORDS_PER_BULLET} keywords the master resume does not already show per bullet. Never cram a list of tools into one bullet. If a role needs more, write one new, specific bullet for them in that role instead of stuffing existing ones.
 2. PLACEMENT that survives an interview:
    - Put each keyword in the role where it is most believable for that title, seniority, team and company domain. The most recent role carries most new technology.
    - Respect technology eras: never place a tool in a role that ended before the tool was widely used (e.g. LLMs/GenAI/LangChain/vector databases not before 2022; dbt not before 2018; Kubernetes not before 2016; Snowflake not before 2016; Terraform not before 2016). If no role fits a keyword's era, use the most recent role.
    - Keep every technology used correctly: right vendor (no "AWS BigQuery"), right layer (orchestration vs storage vs compute), right verb (you deploy to Kubernetes, model data in dbt, orchestrate with Airflow).
 3. BULLETS:
-   - Keep the substance of every master bullet; you may rewrite it to weave keywords in. Each role keeps at least its master bullet count and may gain up to 2 new bullets for keywords that do not fit an existing bullet.
+   - Each role tells ONE coherent story that fits its title and dates: what that team owned and what the candidate delivered. New responsibilities must fit that story.
+   - Respect each role's "at most N bullets" limit in ROLES (at most {_rr.MAX_ADDED_BULLETS_PER_ROLE} more than the master; older roles get fewer). When a role is over its limit, drop or shorten the master bullets that matter least for THIS job.
+   - Whole resume: at most {_rr.MAX_TOTAL_BULLETS} bullets and about {_rr.MAX_PROSE_WORDS} words of summary + bullets (two pages).
    - Shape: strong past-tense verb + what you built or changed + the tool + the result. Present tense only for the current role.
    - Length varies on purpose: mix short bullets (10-14 words) with longer ones (20-28 words). Never more than 28 words.
-   - Numbers: reuse the master resume's numbers wherever they fit. New numbers must be modest and believable for the scale of the company (e.g. 15-40% improvements, hours saved per week, row or request volumes); one number per bullet at most; roughly half the bullets carry a number.
+   - Numbers: about half the bullets carry one number. Reuse the master resume's numbers first; new numbers (at most {_rr.MAX_NEW_NUMERIC_CLAIMS} across the resume) must be modest and believable for the company's scale. Never more than one number per bullet. No invented budgets or headcounts beyond a small team you mentored.
    - Vary openers: no verb starts more than 2 bullets in the whole resume.
    - Write what the candidate did, never the JD's wording about it: no "such as", "e.g.", "experience with", "familiarity with", "a tool like". Name the exact tool once, as used.
    - Keep the resume tight: add a new bullet only when no existing bullet can carry the keyword naturally.
-4. SUMMARY: 2-3 sentences, at most 60 words. Name the target role "{role}" (or its closest truthful equivalent), the candidate's real years of experience, and the 4-6 most important target keywords. No clichés.
-5. SKILLS: a flat list of short items (1-4 words each). Keep every master skill and add every target keyword using the JD's spelling. No sentences.
+4. CORE THEMES: the job's main responsibilities are listed under CORE THEMES. Show each one in the summary or in a bullet of the two most recent roles, as something the candidate did (e.g. "owned the billing service end to end", "mentored 3 engineers", "worked with product managers on the roadmap").
+5. SUMMARY: 2-3 sentences, at most 60 words. Bridge the candidate's real background to the target role: name "{role}" (or its closest truthful equivalent), the real years of experience, and at most {_rr.MAX_SUMMARY_KEYWORDS} of the most important must-have keywords. Never a list of tools. No clichés.
+6. SKILLS: a flat list of short items (1-4 words each), no duplicates or synonyms of each other (not both "PostgreSQL" and "Postgres", not both "AWS" and "Amazon Web Services"); use the JD's spelling. Include the must-have and nice-to-have keywords. No sentences.
 
 VOICE:
 - Plain, specific, engineer-to-engineer. Would a sharp engineer say this out loud in an interview without wincing?
@@ -276,7 +386,8 @@ VOICE:
 - Never use: {banned_list}, "responsible for", "successfully", "various", "utilize".
 
 SELF-CHECK BEFORE ANSWERING:
-- Every TARGET KEYWORD appears verbatim in at least one bullet (list where in "_keyword_placement").
+- Every MUST-HAVE keyword appears verbatim in a bullet or the summary (list where in "_keyword_placement").
+- No bullet carries more than {_rr.MAX_NEW_KEYWORDS_PER_BULLET} new keywords; no role exceeds its bullet limit.
 - Every role from ROLES is present with its exact company, title and dates.
 - No bullet over 28 words; no verb opens more than 2 bullets.
 
@@ -297,8 +408,14 @@ OUTPUT: one JSON object, nothing else:
 
     user_prompt = f"""TARGET JOB: {role} at {company}
 
-TARGET KEYWORDS (all must appear verbatim in bullets):
-{json.dumps(all_targets, ensure_ascii=False)}
+MUST-HAVE KEYWORDS (each verbatim in a bullet or the summary):
+{json.dumps(must_list, ensure_ascii=False)}
+
+NICE-TO-HAVE KEYWORDS (Skills is enough; a bullet only if natural):
+{json.dumps(nice_list, ensure_ascii=False)}
+
+CORE THEMES (show each in the summary or a recent-role bullet):
+{json.dumps(themes_list, ensure_ascii=False)}
 
 KEYWORDS THE MASTER RESUME DOES NOT SHOW YET (write new responsibilities for these):
 {json.dumps(missing_keywords, ensure_ascii=False)}
@@ -497,26 +614,26 @@ def run_editor_phase(
     client: genai.Client,
     ats_profile: Any = None,
     jd_keywords: Optional[list[str]] = None,
+    extra_findings: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """
     Role 4: Editor.
     Fixes audit findings. Applies deterministic voice and ATS keyword density cleanup (0 API calls).
-    Only calls LLM if unresolvable findings remain.
+    Only calls LLM if unresolvable findings remain. extra_findings are issues the
+    voice/ATS audits do not detect themselves (e.g. a tool placed before its era).
     """
     cleaned_draft = deterministic_voice_cleanup(draft_resume)
-    if ats_profile and jd_keywords:
-        cleaned_draft = reduce_keyword_density_to_ceiling(cleaned_draft, ats_profile, jd_keywords)
 
     re_audit = audit_resume_dict(cleaned_draft)
     from human_voice_audit import audit_ats_compliance
     re_ats = audit_ats_compliance(cleaned_draft, ats_profile=ats_profile, jd_keywords=jd_keywords)
 
-    if (re_audit.get("passed") or not re_audit.get("findings")) and (re_ats.get("passed") or not re_ats.get("findings")):
+    if not extra_findings and (re_audit.get("passed") or not re_audit.get("findings")) and (re_ats.get("passed") or not re_ats.get("findings")):
         print(f"[Dani's Engine - Editor] Deterministic regex & density cleanup resolved all audit findings! (0 API calls burned)")
         return cleaned_draft
 
     combined_to_fix = list(re_audit.get("findings", []))
-    for f in re_ats.get("findings", []):
+    for f in list(re_ats.get("findings", [])) + list(extra_findings or []):
         if f not in combined_to_fix:
             combined_to_fix.append(f)
 
@@ -529,6 +646,10 @@ Never change a company, title, date or location. Keep every role and at least as
 Replace any cliché opener with a plain strong action verb (Built, Designed, Cut, Led, Shipped, Automated, Improved).
 Replace any banned AI words with plain equivalents.
 Shorten overlong sentences to under 24 words.
+If a bullet crams too many new keywords, keep at most 2 in it and move the rest into another bullet of the same role (or drop nice-to-have ones; they stay in Skills).
+If core themes are missing, rewrite the summary or a recent-role bullet to show them as something the candidate did.
+If there are too many new numbers, remove the least believable ones; never more than one number per bullet.
+If the summary does not name the target role, rewrite it to bridge the candidate's background to that role.
 If keyword density ceiling was exceeded, replace redundant repetitions with pronouns or synonyms so total occurrences decrease.
 
 Return the fully corrected resume as valid JSON."""
@@ -629,7 +750,8 @@ These keywords are not yet in any bullet. Each must appear VERBATIM (exact spell
 {ctx_lines}
 
 Rules:
-- For each keyword, either rewrite the single most related existing bullet to include it, or add ONE new bullet to the most believable role (at most 2 new bullets per role).
+- For each keyword, either rewrite the single most related existing bullet to include it, or add ONE new bullet to the most believable role. Never put more than 2 of these keywords in one bullet: prefer one new, specific bullet over cramming.
+- Do not add a bullet to a role that already has 7 or more bullets; rewrite one of its weakest bullets instead.
 - Place each tool only in a role whose dates fit the era the tool was in common use; otherwise use the most recent role.
 - Use each technology correctly for how the JD context above uses it. Strong past-tense verb first, 10-28 words, at most one modest believable number.
 - Describe what was done, not the JD's wording: never "such as", "e.g.", "experience with", "a tool like".
@@ -656,6 +778,103 @@ EXPERIENCE (JSON):
     out = dict(draft)
     out["experience"] = new_exp
     return out
+
+
+def run_unstuff_phase(resume: dict, base_resume: dict, keywords: list[str], must_have: list[str], role: str = "",
+                      core_themes: Optional[list[str]] = None) -> tuple[dict, int]:
+    """Fix keyword stuffing by REDISTRIBUTING keywords across each role's existing
+    bullets (not by adding bullets, which would push a role over its limit and
+    force trimming). Also rewrites a summary that lists too many tools.
+
+    The rewrite is accepted only if deterministic checks pass: fewer stuffed
+    bullets, every must-have keyword still in prose, no role over its bullet
+    limit, no fewer bullets with numbers, no core theme lost, and companies,
+    titles and dates unchanged. Returns (resume, items_fixed)."""
+    import resume_rules as rr
+    from ats_scoring import keyword_present, resume_prose_text
+    out = json.loads(json.dumps(resume))
+    roles = [e for e in (out.get("experience") or []) if isinstance(e, dict)]
+    base_roles = [e for e in (base_resume.get("experience") or []) if isinstance(e, dict)]
+    before_stuffed = rr.stuffed_bullets(base_resume, out, keywords)
+    summary_hits = [k for k in keywords if keyword_present(k, str(out.get("summary") or ""))]
+    fix_summary = len(summary_hits) > rr.MAX_SUMMARY_KEYWORDS
+    if not before_stuffed and not fix_summary:
+        return out, 0
+
+    caps = [rr.role_cap(i, len((base_roles[i].get("bullets") or [])) if i < len(base_roles) else len(e.get("bullets") or []))
+            for i, e in enumerate(roles)]
+    from ats_scoring import resume_json_text
+    master_text = resume_json_text(base_resume or {})
+    new_kws = [k for k in keywords if not keyword_present(k, master_text, allow_aliases=True)]
+    exp_view = [{"title": e.get("title", ""), "company": e.get("company", ""), "dates": e.get("dates", ""),
+                 "max_bullets": caps[i], "bullets": e.get("bullets") or []} for i, e in enumerate(roles)]
+    prompt = f"""You are fixing keyword stuffing in a resume tailored for "{role}".
+Some bullets cram several tools into one sentence. Rewrite the EXPERIENCE so that:
+- No bullet contains more than {rr.MAX_NEW_KEYWORDS_PER_BULLET} of these NEW KEYWORDS: {json.dumps(new_kws, ensure_ascii=False)}
+- Spread them by rewriting OTHER existing bullets of the same role to carry one or two each (keep each bullet's real work, numbers and meaning). A keyword may move to another role only if that role's dates fit when the tool was in common use.
+- Keep each role's number of bullets the same, never above its max_bullets.
+- Every one of these MUST-HAVE keywords stays in some bullet, spelled exactly: {json.dumps(must_have, ensure_ascii=False)}
+- Keep every number that is already in a bullet.
+- Keep showing these core responsibilities of the job in the two most recent roles (they are checked): {json.dumps(list(core_themes or []), ensure_ascii=False)}
+- Bullets: strong verb first, 10-26 words, specific work, no lists of tools, no "such as".
+- Never change title, company or dates.
+{"Also rewrite the SUMMARY as 2-3 sentences (max 60 words) that bridges the candidate's background to the role and names at most " + str(rr.MAX_SUMMARY_KEYWORDS) + " tools; never a list of tools." if fix_summary else ""}
+
+EXPERIENCE:
+{json.dumps(exp_view, ensure_ascii=False, indent=1)}
+{"CURRENT SUMMARY: " + json.dumps(out.get("summary") or "", ensure_ascii=False) if fix_summary else ""}
+
+Return ONLY JSON: {{"experience": [{{"title": "...", "company": "...", "dates": "...", "bullets": ["..."]}}]{', "summary": "..."' if fix_summary else ""}}}"""
+    def numeric_bullets(r):
+        return sum(1 for e in (r.get("experience") or []) if isinstance(e, dict)
+                   for b in (e.get("bullets") or []) if rr._numbers_in(str(b)))
+
+    feedback = ""
+    for attempt in range(2):
+        result = _call_json_llm(prompt + feedback, temperature=0.2, max_tokens=8192, label="Rebalance")
+        if not isinstance(result, dict):
+            return out, 0
+        candidate, checks, fixed_summary = _apply_rebalance(out, result, caps, roles, keywords, must_have,
+                                                            base_resume, before_stuffed, fix_summary, core_themes, numeric_bullets)
+        if all(checks.values()):
+            return candidate, (len(before_stuffed) - len(rr.stuffed_bullets(base_resume, candidate, keywords))) + int(fixed_summary)
+        failed = [k for k, v in checks.items() if not v]
+        print(f"[Dani's Engine - Rebalance] attempt {attempt + 1} rejected: {failed}")
+        feedback = ("\n\nYOUR PREVIOUS ANSWER FAILED THESE CHECKS: " + ", ".join(failed)
+                    + ". Fix them: keep every number, keep the core responsibilities listed above visible, "
+                    "keep every must-have keyword, and keep each role within max_bullets.")
+    return out, 0
+
+
+def _apply_rebalance(out, result, caps, roles, keywords, must_have, base_resume, before_stuffed, fix_summary, core_themes, numeric_bullets):
+    import resume_rules as rr
+    from ats_scoring import keyword_present, resume_prose_text
+    candidate = json.loads(json.dumps(out))
+    cand_roles = [e for e in (candidate.get("experience") or []) if isinstance(e, dict)]
+    new_roles = [e for e in (result.get("experience") or []) if isinstance(e, dict)]
+    if len(new_roles) == len(cand_roles):
+        for i, (cur, upd) in enumerate(zip(cand_roles, new_roles)):
+            bl = [str(b).strip() for b in (upd.get("bullets") or []) if str(b).strip()]
+            if bl and len(bl) <= max(caps[i], len(cur.get("bullets") or [])):
+                cur["bullets"] = bl  # facts (title/company/dates) stay from `cur`
+    fixed_summary = False
+    if fix_summary and isinstance(result.get("summary"), str) and result["summary"].strip():
+        ns = result["summary"].strip()
+        if len([k for k in keywords if keyword_present(k, ns)]) <= rr.MAX_SUMMARY_KEYWORDS and len(ns.split()) <= 70:
+            candidate["summary"] = ns
+            fixed_summary = True
+    candidate = deterministic_voice_cleanup(candidate)
+    prose_after = resume_prose_text(candidate)
+    themes = list(core_themes or [])
+    checks = {
+        "less stuffing": len(rr.stuffed_bullets(base_resume, candidate, keywords)) < len(before_stuffed) or (fixed_summary and not before_stuffed),
+        "must-have kept": all(keyword_present(k, prose_after) for k in must_have if keyword_present(k, resume_prose_text(out))),
+        "within limits": all(len(e.get("bullets") or []) <= max(caps[i], len(roles[i].get("bullets") or []))
+                             for i, e in enumerate(cand_roles)),
+        "numbers kept": numeric_bullets(candidate) >= numeric_bullets(out),
+        "themes kept": len(rr.missing_themes(candidate, themes)) <= len(rr.missing_themes(out, themes)),
+    }
+    return candidate, checks, fixed_summary
 
 
 def _keywords_absent_from_prose(resume: dict, keywords: list[str]) -> list[str]:
@@ -702,6 +921,17 @@ def execute_danis_engine_pipeline(
         [str(k).strip() for k in (target_keywords or []) if str(k).strip()]
         + [str(k).strip() for k in (missing_keywords or []) if str(k).strip()]
     ))
+    # Must-have keywords go in bullets; nice-to-have ones may sit in Skills only.
+    # The report uses the same split, so "covered" means the same thing everywhere.
+    import resume_rules as rr
+    tiers = rr.split_keyword_tiers(all_targets, jd_text)
+    must_have, nice_to_have = tiers["must_have"], tiers["nice_to_have"]
+    core_themes = rr.extract_core_themes(jd_text)
+    log(4, "Keyword Tiers",
+        f"{len(must_have)} must-have keyword(s) for bullets, {len(nice_to_have)} nice-to-have for Skills"
+        + (f" ({', '.join(nice_to_have)})" if nice_to_have else "")
+        + (f"; core themes: {', '.join(core_themes)}" if core_themes else ""),
+        data={"must_have": must_have, "nice_to_have": nice_to_have, "core_themes": core_themes}, status="success")
 
     # Step 1: Researcher Phase (Deterministic & local - preserves 100% quota for Writer)
     log(4, "Dani's Researcher", f"Extracting 3-tier keyword matrix for {role} at {company}...", status="working")
@@ -724,6 +954,9 @@ def execute_danis_engine_pipeline(
         keyword_contexts=keyword_contexts,
         ats_profile=profile,
         target_keywords=all_targets,
+        must_have=must_have,
+        nice_to_have=nice_to_have,
+        core_themes=core_themes,
     )
     log(4, "Dani's Writer", f"Draft created with strict human-voice protocols & {profile.display_name} phrasing rules.", status="success")
 
@@ -772,25 +1005,25 @@ def execute_danis_engine_pipeline(
         ats_report = re_ats_audit
         log(5, "Dani's Editor", f"Corrected draft re-audited. Voice: {re_audit['score']}%, ATS: {re_ats_audit['score']}%", data={"voice_audit": re_audit, "ats_audit": re_ats_audit}, status="success")
 
-    # Step 4.5: Keyword coverage loop: every target keyword must sit in a bullet or
-    # the summary, not only in Skills. Up to 2 targeted weave passes.
-    absent = _keywords_absent_from_prose(draft, all_targets)
+    # Step 4.5: Keyword coverage loop: every MUST-HAVE keyword must sit in a bullet
+    # or the summary (nice-to-have ones may stay in Skills). Up to 2 weave passes.
+    absent = _keywords_absent_from_prose(draft, must_have)
     for weave_round in range(2):
         if not absent:
             break
         log(5, "Keyword Coverage", f"{len(absent)} keyword(s) not yet in any bullet: {', '.join(absent[:12])}. Weaving pass {weave_round + 1}...", status="working")
         woven = run_keyword_weave_phase(draft, absent, keyword_contexts=keyword_contexts, role=role, company=company)
         woven = deterministic_voice_cleanup(woven)
-        still = _keywords_absent_from_prose(woven, all_targets)
+        still = _keywords_absent_from_prose(woven, must_have)
         if len(still) < len(absent):
             draft, absent = woven, still
         else:
             break
-    if all_targets:
+    if must_have:
         log(5, "Keyword Coverage",
-            f"{len(all_targets) - len(absent)}/{len(all_targets)} keywords placed in bullets/summary"
+            f"{len(must_have) - len(absent)}/{len(must_have)} must-have keywords placed in bullets/summary"
             + (f"; {len(absent)} only in Skills: {', '.join(absent)}" if absent else ""),
-            data={"in_prose": [k for k in all_targets if k not in absent], "skills_only": absent},
+            data={"in_prose": [k for k in must_have if k not in absent], "skills_only": absent},
             status="success" if not absent else "warning")
 
     # Step 5: Post-Processing & Multi-Role Guarantee
@@ -922,6 +1155,84 @@ def execute_danis_engine_pipeline(
     merged["skills"] = final_skills
     merged.pop("_keyword_placement", None)
 
+    def _shape(resume: dict) -> dict:
+        """Deterministic fixes shared with the report's checks: merge duplicate
+        skills (keeping the JD's spelling), cap the Skills list, and trim bullets
+        to the per-role, total and length limits."""
+        from ats_scoring import resume_prose_text
+        shaped, dropped = rr.trim_bullets(resume, base_resume, must_have, nice_to_have, core_themes)
+        skills = rr.dedupe_skills(shaped.get("skills") or [], jd_text)
+        shaped["skills"] = rr.cap_skills(skills, all_targets, resume_prose_text(shaped))
+        if dropped:
+            log(5, "Length Limits", f"Dropped {len(dropped)} bullet(s) that matter least for this job to stay within the length limits.",
+                data={"dropped": dropped}, status="success")
+        return shaped
+
+    merged = _shape(merged)
+
+    # Step 6: Final gate. The same report HollaBuddy and the History card show is
+    # run here, and everything the pipeline is allowed to fix is fixed before
+    # delivery, so a later audit does not rediscover it.
+    from resume_report import build_resume_report
+    report = build_resume_report(merged, base_resume, all_targets, role, profile, jd_text=jd_text)
+
+    def _must_gaps(rep: dict) -> int:
+        return len([k for k in rep["keywords_missing"] if k in must_have]) + \
+            len([k for k in rep["keywords_skills_only"] if k in must_have])
+
+    for gate_round in range(2):
+        fixable = [f for f in report["findings"] if f["fix"] == "pipeline"]
+        if not fixable:
+            break
+        log(5, "Final Quality Gate",
+            f"Round {gate_round + 1}: fixing {len(fixable)} issue(s) before delivery: "
+            + "; ".join(f["issue"][:90] for f in fixable[:4]),
+            status="working")
+        if any(f["category"] in ("keyword_stuffing", "summary") for f in fixable):
+            unstuffed, n_fixed = run_unstuff_phase(merged, base_resume, all_targets, must_have, role, core_themes)
+            if n_fixed:
+                unstuffed = _shape(unstuffed)
+                un_report = build_resume_report(unstuffed, base_resume, all_targets, role, profile, jd_text=jd_text)
+                if _must_gaps(un_report) <= _must_gaps(report) and un_report["counts"]["blocker"] <= report["counts"]["blocker"] \
+                        and un_report["counts"]["pipeline_fixable"] < report["counts"]["pipeline_fixable"]:
+                    merged, report = unstuffed, un_report
+                    log(5, "Final Quality Gate", f"Spread keywords across bullets: fixed {n_fixed} stuffed bullet(s)/summary.", status="success")
+                    fixable = [f for f in report["findings"] if f["fix"] == "pipeline"]
+                    if not fixable:
+                        break
+        era_or_kw = [f["issue"] for f in fixable if f["category"] in
+                     ("credibility", "keywords", "core_themes", "keyword_stuffing", "new_claims", "summary")]
+        if any("Low quantified impact" in f["issue"] for f in fixable):
+            # Restore the candidate's REAL numbers first, before inventing any.
+            real = [str(b) for e in (base_resume.get("experience") or []) if isinstance(e, dict)
+                    for b in (e.get("bullets") or []) if rr._numbers_in(str(b))][:10]
+            if real:
+                era_or_kw.append("Too few bullets carry a number. Reuse these REAL numbers from the master resume in the "
+                                 "matching bullets (same role) before adding any new number: " + " | ".join(real))
+        edited = run_editor_phase(merged, [f["issue"] for f in fixable], client,
+                                  ats_profile=profile, jd_keywords=all_targets, extra_findings=era_or_kw)
+        candidate = _shape(_merge_text_edits(merged, edited))
+        new_report = build_resume_report(candidate, base_resume, all_targets, role, profile, jd_text=jd_text)
+        lost_kw = len(new_report["keywords_missing"]) > len(report["keywords_missing"]) or \
+            _must_gaps(new_report) > _must_gaps(report)
+        improved = (new_report["counts"]["blocker"] <= report["counts"]["blocker"]
+                    and new_report["counts"]["pipeline_fixable"] < report["counts"]["pipeline_fixable"])
+        if improved and not lost_kw:
+            merged, report = candidate, new_report
+        else:
+            why = "it would lose a must-have keyword" if lost_kw else (
+                f"issues went {report['counts']['pipeline_fixable']} -> {new_report['counts']['pipeline_fixable']}, "
+                f"blockers {report['counts']['blocker']} -> {new_report['counts']['blocker']}")
+            log(5, "Final Quality Gate", f"Kept the previous version: the edit was not an improvement ({why}).", status="warning")
+            break
+    remaining = [f for f in report["findings"] if f["fix"] == "pipeline"]
+    log(5, "Final Quality Gate",
+        f"Verdict: {report['verdict']} | {report['counts']['blocker']} blocker(s), "
+        f"{len(remaining)} auto-fixable left, {report['counts']['from_master']} from master resume, "
+        f"{report['counts']['needs_you']} need your decision",
+        data={"report": report}, status="success" if not remaining else "warning")
+    absent = report["keywords_skills_only"]
+
     # Final audits run on the resume as shipped (after all merges), so the
     # numbers shown to the user describe this exact resume.
     final_voice = audit_resume_dict(merged)
@@ -935,5 +1246,26 @@ def execute_danis_engine_pipeline(
         "in_prose": [k for k in all_targets if k not in absent],
         "skills_only": absent,
     }
+    merged["_report"] = report
     return merged
+
+
+def _merge_text_edits(current: dict, edited: Any) -> dict:
+    """Take only the summary and bullet text from an Editor result. Roles, facts,
+    skills and every other field stay exactly as in `current`, and a role never
+    ends up with fewer bullets than it had."""
+    out = json.loads(json.dumps(current))
+    if not isinstance(edited, dict):
+        return out
+    if isinstance(edited.get("summary"), str) and edited["summary"].strip():
+        out["summary"] = edited["summary"].strip()
+    cur_roles = [e for e in (out.get("experience") or []) if isinstance(e, dict)]
+    new_roles = [e for e in (edited.get("experience") or []) if isinstance(e, dict)]
+    for i, role in enumerate(cur_roles):
+        if i >= len(new_roles):
+            break
+        nb = [str(b).strip() for b in (new_roles[i].get("bullets") or []) if str(b).strip()]
+        if len(nb) >= len(role.get("bullets") or []):
+            role["bullets"] = nb
+    return deterministic_voice_cleanup(out)
 

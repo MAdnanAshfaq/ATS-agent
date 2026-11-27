@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _isolation  # noqa: F401  (keeps tests off the real DB cache and data/ files)
 import unittest
 from unittest.mock import MagicMock, patch
 import json

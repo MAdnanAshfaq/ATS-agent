@@ -1409,8 +1409,70 @@ function displayResults(res, shouldScroll = true) {
   };
   addSection("Added beyond your master resume — prepare to discuss these in interviews",
     res.added_beyond_master, "pill-warn");
-  addSection("File checks (how ATS parsers will read the delivered file)",
-    (res.parse_findings || []).map(f => f.issue || String(f)), "pill-warn");
+  const report = res.resume_report;
+  if (report && Array.isArray(report.findings)) {
+    // The same measured report HollaBuddy answers from, grouped by who can fix it.
+    const verdictText = { ready: "Ready to submit: passes every check",
+      ready_with_minor_issues: "Ready to submit, with minor style notes",
+      needs_fixes: "Needs fixes before submitting" }[report.verdict] || report.verdict;
+    const head = document.createElement("div");
+    head.className = `report-verdict report-${report.verdict}`;
+    head.textContent = `Resume report: ${verdictText}`;
+    extra.appendChild(head);
+    // Coverage and believability side by side, from the same report HollaBuddy reads.
+    const cov = report.coverage || {}, bel = report.believability || {};
+    const grid = document.createElement("div");
+    grid.className = "report-grid";
+    const col = (title, rows) => {
+      const c = document.createElement("div");
+      c.className = "report-col";
+      const h = document.createElement("div");
+      h.className = "report-col-title";
+      h.textContent = title;
+      c.appendChild(h);
+      rows.forEach(([k, v]) => {
+        const r = document.createElement("div");
+        r.className = "report-row";
+        const kk = document.createElement("span"); kk.textContent = k;
+        const vv = document.createElement("strong"); vv.textContent = v;
+        r.append(kk, vv);
+        c.appendChild(r);
+      });
+      return c;
+    };
+    grid.append(
+      col("Coverage", [
+        ["Job keywords in file", report.keyword_score == null ? "—" : `${report.keyword_score}%`],
+        ["Must-have in bullets", cov.must_have_in_bullets || "—"],
+        ["Nice-to-have in file", cov.nice_to_have_in_file || "—"],
+        ["Core themes shown", cov.core_themes_shown || "—"],
+      ]),
+      col("Believability", [
+        ["Era flags", String(bel.era_flags ?? "—")],
+        ["Stuffed bullets", String(bel.stuffed_bullets ?? "—")],
+        ["New numbers to explain", String(bel.new_numeric_claims ?? "—")],
+        ["Bullets / words", bel.bullets_total == null ? "—" : `${bel.bullets_total} / ${bel.prose_words}`],
+      ]),
+    );
+    extra.appendChild(grid);
+    addSection("New numbers and claims to be ready to explain",
+      (report.interview_prep_claims || []).map(c => `${c.company}: ${(c.numbers || []).join(", ")}`), "pill-info");
+    const groups = [
+      ["pipeline", "Left after the automatic fixes (ask HollaBuddy to fix these)"],
+      ["master", "Comes from your master resume (change it there)"],
+      ["you", "Needs your decision"],
+    ];
+    groups.forEach(([fix, title]) => {
+      const items = report.findings.filter(f => f.fix === fix).map(f => f.issue);
+      addSection(title, items, fix === "pipeline" ? "pill-warn" : "pill-info");
+    });
+    if (!report.findings.length) {
+      addSection("Checks", ["No issues found by any check."], "pill-success");
+    }
+  } else {
+    addSection("File checks (how ATS parsers will read the delivered file)",
+      (res.parse_findings || []).map(f => f.issue || String(f)), "pill-warn");
+  }
 
   window.lastResult = res;
   syncActiveResultStorage();

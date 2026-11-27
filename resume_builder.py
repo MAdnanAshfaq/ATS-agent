@@ -487,12 +487,10 @@ def _categorize_skills(skills: list) -> dict:
             categories["Frameworks & Tools"].append(skill_clean)
             placed_skills_lower.add(c_lower)
 
-    # Balance and prune: cap each category to max 8 items to prevent text walls
-    out = {}
-    for k, v in categories.items():
-        if v:
-            out[k] = v[:8]
-    return out
+    # Never drop skills here. A per-category cap of 8 used to remove job keywords
+    # from the delivered file silently; the pipeline caps the total number of
+    # skills instead (resume_rules.MAX_SKILLS), and long rows simply wrap.
+    return {k: v for k, v in categories.items() if v}
 
 
 def sanitize_pdf_metadata(

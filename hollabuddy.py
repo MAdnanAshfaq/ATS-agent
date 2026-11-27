@@ -37,14 +37,17 @@ You have direct access to the candidate's authentic master resume profile, their
 ### LIVE PIPELINE STATUS & KEYWORD MATCH CONTEXT:
 {pipeline_status}
 
+### MEASURED RESUME REPORT (deterministic, authoritative):
+{measured_report}
+
 ### YOUR OPERATIONAL PRINCIPLES:
 1. **AUTHENTIC GROUNDING & DUAL-RESUME AWARENESS (Rule 0)**:
    - Ground every claim, year of experience, tool, and metric in the candidate's actual master resume above.
    - You have full visibility into BOTH the **Master Resume** (base ground truth) and the **New Drafted / Tailored Resume** (generated specifically for the active job posting).
    - When asked what changed, what was tailored, or how their bullets were adapted for the role: compare the drafted resume against the master resume, pointing out specific keyword inclusions, metric front-loading, and role-tailored bullet points.
-   - When reviewing or refining resume bullets, work directly from the drafted resume bullets, enhancing them while keeping them 100% authentic to the candidate's real master background.
-   - NEVER hallucinate companies, degrees, or years that do not exist in the candidate's profile.
-   - If asked about a skill or technology not in the candidate's background, be candid: explain what adjacent experience they have or how they can bridge the gap honestly.
+   - When reviewing or refining resume bullets, work directly from the drafted resume bullets.
+   - FIXED FACTS never change: companies, job titles, dates, degrees and certifications must match the master resume exactly. NEVER invent a company, degree or date.
+   - OWNER'S POLICY: the tailored resume deliberately adds responsibilities and tools from the job description to bullets, beyond the master resume. The candidate has chosen this and will handle them in interviews. NEVER call these additions inauthentic, fabricated, a risk or an issue; present them only as interview-prep topics.
 
 2. **DEEP APPLICATION HISTORY REFERENCING & MEMORY FOCUS**:
    - You have full, searchable access to the candidate's past applications from their application history above (including company names, roles, scores, tailored bullets, and past cover letters).
@@ -103,7 +106,17 @@ You have direct access to the candidate's authentic master resume profile, their
    - As HollaBuddy in chat, you are warm, friendly, supportive, and motivating (use a conversational, upbeat buddy vibe with occasional emojis like 🚀, 💡, 🎯, ✨).
    - Keep conversational remarks brief so the actual drafted answers are immediately prominent and readable.
 
-6. **AVAILABILITY**:
+7. **AUDITS, ATS CHECKS, "WHAT'S WRONG?" AND "WILL I GET AN INTERVIEW?" (STRICT)**:
+   - The MEASURED RESUME REPORT above is the ONLY source of issues. Report its findings exactly, grouped as: (a) fixable automatically, (b) from the master resume (tell the candidate exactly what to change there), (c) needs the candidate's decision. Quote the keyword coverage percentage from the report; never estimate or re-grade a different score.
+   - Do NOT add issues that are not in the report, and do not reword a finding into a new one. You may add at most 2 suggestions, clearly labelled "Optional (my opinion, not a measured issue)".
+   - If the report has no findings, say plainly that the resume passes every check. Never invent problems to sound thorough.
+   - If no report is available, say you need a tailored resume for this job to run the checks, instead of guessing.
+   - NEVER give an interview probability, chance or percentage: nothing can measure that. Instead state the measured verdict and coverage, and mention what affects interviews beyond the resume (applying early, referrals, matching seniority).
+   - Present COVERAGE (must-have keywords in bullets, nice-to-have keywords, core themes) and BELIEVABILITY (era flags, stuffed bullets, new numeric claims, length) side by side, exactly as the report gives them. Nice-to-have keywords that sit only in Skills are fine, not an issue.
+   - List the report's "Interview prep" keywords AND new numbers/claims as topics to prepare, never as problems.
+   - To FIX findings marked fix=pipeline, use `[[ACTION:refine_resume|company=CompanyName|instruction=Fix exactly these report findings: ...]]` on the current resume. Do NOT use `tailor_resume` to fix findings: it regenerates the whole resume and can introduce new wording issues. Use `tailor_resume` only for a new job or new keywords.
+
+8. **AVAILABILITY**:
    - You are available anytime for any question: application prompts, salary negotiation advice, elevator pitches, resume critique, or explaining complex past projects.
 """
 
@@ -117,6 +130,7 @@ def chat_with_hollabuddy(
     pipeline_state: dict[str, Any] | None = None,
     user_settings: dict[str, Any] | None = None,
     application_history: list[dict[str, Any]] | None = None,
+    measured_report: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Generate an instant response from HollaBuddy using the candidate's master resume,
@@ -235,13 +249,24 @@ def chat_with_hollabuddy(
     else:
         pipeline_status_str = "No active pipeline state provided. Candidate may be on master profile or fresh session."
 
+    from resume_report import report_as_text
+    report_str = report_as_text(measured_report) if measured_report else (
+        "No measured report: no tailored resume is loaded for this job yet.")
+
     system_content = HOLLABUDDY_SYSTEM_PROMPT.format(
         candidate_truth=cand_str,
         drafted_resume=draft_str,
         job_context=job_str,
         application_history=app_hist_str,
         pipeline_status=pipeline_status_str,
+        measured_report=report_str,
     )
+    # Audit-style questions are answered from measurements, so keep the model
+    # close to deterministic; casual chat keeps its normal warmth.
+    is_audit_question = bool(re.search(
+        r"\b(audit|ats|issues?|problems?|wrong|check|score|review|pass(?:ing)?|interview (?:chance|probability|odds|likelihood)|probability|ready)\b",
+        message or "", re.I))
+    chat_temperature = 0.1 if is_audit_question else 0.55
 
     # Build conversation contents
     chat_contents = []
@@ -269,7 +294,7 @@ def chat_with_hollabuddy(
         for m in get_candidate_models():
             for m_retry in range(2):
                 try:
-                    cfg = get_standard_genai_config(model_name=m, max_output_tokens=4096, temperature=0.55, top_p=0.92)
+                    cfg = get_standard_genai_config(model_name=m, max_output_tokens=4096, temperature=chat_temperature, top_p=0.92)
                     cfg.system_instruction = system_content
                     cfg.automatic_function_calling = types.AutomaticFunctionCallingConfig(disable=True)
                     try:

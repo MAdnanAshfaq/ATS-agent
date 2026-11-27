@@ -221,7 +221,184 @@ def _local_matcher_fallback(jd_text: str, base_resume: dict) -> dict:
     return res
 
 
-def analyze_jd_and_resume_with_gemini(jd_text: str, base_resume: dict) -> dict:
+# ── Stable keyword list per job ────────────────────────────────────────────────
+# Gemini picks a slightly different keyword set each time it reads the same JD,
+# which made the "before" score move between checks. The list is extracted once
+# per job, stored, and every later check scores against that same list.
+_JD_CACHE_MEM: dict = {}
+_RESULT_CACHE_MEM: dict = {}
+_JD_CACHE_FILE = os.environ.get("ATS_JD_CACHE_FILE") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "jd_keyword_cache.json")
+
+
+def _jd_cache_uses_db() -> bool:
+    if os.environ.get("ATS_JD_CACHE") == "file":
+        return False
+    import db as _db
+    return _db.is_db_available()
+_TRACKING_PARAMS = re.compile(r"^(utm_.*|ref|refId|source|src|gh_src|trk|trackingId|lever-source.*|lever-origin|currentJobId)$", re.I)
+
+
+def _normalize_job_url(url: str) -> str:
+    from urllib.parse import urlsplit, parse_qsl, urlencode
+    url = (url or "").strip()
+    if not url.lower().startswith(("http://", "https://")):
+        return ""
+    parts = urlsplit(url)
+    query = urlencode(sorted((k, v) for k, v in parse_qsl(parts.query) if not _TRACKING_PARAMS.match(k)))
+    path = parts.path.rstrip("/")
+    return f"{parts.netloc.lower()}{path}" + (f"?{query}" if query else "")
+
+
+def _jd_cache_keys(jd_text: str, job_url: str = "") -> list:
+    import hashlib
+    keys = []
+    norm_url = _normalize_job_url(job_url)
+    if norm_url:
+        keys.append("url:" + hashlib.sha1(norm_url.encode("utf-8")).hexdigest())
+    norm_jd = re.sub(r"\s+", " ", (jd_text or "").lower()).strip()
+    if norm_jd:
+        keys.append("jd:" + hashlib.sha1(norm_jd.encode("utf-8")).hexdigest())
+    return keys
+
+
+def _jd_cache_get(keys: list):
+    for k in keys:
+        if k in _JD_CACHE_MEM:
+            return _JD_CACHE_MEM[k]
+    try:
+        import db as _db
+        if _jd_cache_uses_db():
+            for k in keys:
+                hit = _db.db_get_jd_cache(k)
+                if hit:
+                    _JD_CACHE_MEM[k] = hit
+                    return hit
+            return None
+    except Exception:
+        pass
+    try:
+        with open(_JD_CACHE_FILE, "r", encoding="utf-8") as f:
+            disk = json.load(f)
+        for k in keys:
+            if k in disk:
+                _JD_CACHE_MEM[k] = disk[k]
+                return disk[k]
+    except Exception:
+        pass
+    return None
+
+
+def _jd_cache_put(keys: list, payload: dict) -> None:
+    for k in keys:
+        _JD_CACHE_MEM.setdefault(k, payload)
+    try:
+        import db as _db
+        if _jd_cache_uses_db():
+            for k in keys:
+                _db.db_put_jd_cache(k, payload)
+            return
+    except Exception:
+        pass
+    try:
+        disk = {}
+        if os.path.exists(_JD_CACHE_FILE):
+            with open(_JD_CACHE_FILE, "r", encoding="utf-8") as f:
+                disk = json.load(f)
+        for k in keys:
+            disk.setdefault(k, payload)
+        os.makedirs(os.path.dirname(_JD_CACHE_FILE), exist_ok=True)
+        with open(_JD_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(disk, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"[LLM Matcher] keyword cache write note: {e}")
+
+
+def _resume_fingerprint(base_resume: dict) -> str:
+    import hashlib
+    clean = {k: v for k, v in (base_resume or {}).items() if not str(k).startswith("_")}
+    return hashlib.sha1(json.dumps(clean, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def _result_from_keywords(payload: dict, jd_text: str, base_resume: dict, soft: dict | None = None) -> dict:
+    """Deterministic analysis from a stored keyword list: same JD + same resume = same result."""
+    resume_full = _flatten_resume_text(base_resume)
+    resume_skills = [str(s) for s in base_resume.get("skills", [])]
+    matching, missing = [], []
+    for kw in payload.get("keywords") or []:
+        (matching if is_keyword_in_resume(kw, resume_full, resume_skills) else missing).append(kw)
+    exps = base_resume.get("experience") or []
+    cand_title = (exps[0].get("title") or exps[0].get("role") or "") if exps and isinstance(exps[0], dict) else ""
+    cand_years = _estimate_years_experience(base_resume)
+    req = re.search(r"(\d+)", str(payload.get("exp_years_jd") or ""))
+    req_years = int(req.group(1)) if req else None
+    jd_title = payload.get("job_title_jd") or "Not stated"
+    stop = {"senior", "junior", "lead", "staff", "principal", "sr", "jr"}
+    jd_words = set(re.findall(r"[a-z]{3,}", jd_title.lower())) - stop
+    cv_words = set(re.findall(r"[a-z]{3,}", cand_title.lower())) - stop
+    contexts = payload.get("contexts") or {}
+    det_ctx = extract_keyword_contexts_from_jd(missing, jd_text)
+    soft = soft or {}
+    cand_name = base_resume.get("name", "Candidate")
+    res = {
+        "resume_name": f"{cand_name.replace(' ', '_')}_Resume",
+        "job_title_jd": jd_title,
+        "job_title_resume": soft.get("job_title_resume") or cand_title or "Not stated",
+        "job_title_match": soft.get("job_title_match", bool(jd_words & cv_words)),
+        "exp_years_jd": payload.get("exp_years_jd") or "Not stated",
+        "exp_years_resume": f"{cand_years}+ years exp" if cand_years else (soft.get("exp_years_resume") or "Not stated"),
+        "exp_years_match": (cand_years >= req_years) if (req_years and cand_years) else bool(soft.get("exp_years_match", False)),
+        "ai_score": soft.get("ai_score"),
+        "score_source": "keyword_coverage",
+        "keyword_source": payload.get("source", "gemini"),
+        "industries": payload.get("industries") or [],
+        "industries_match": bool(soft.get("industries_match", False)),
+        "matching_keywords": matching,
+        "missing_keywords": missing,
+        "missing_keyword_contexts": {k: (contexts.get(k) or det_ctx.get(k) or "").strip() for k in missing},
+        "total_keywords": len(matching) + len(missing),
+        "summary_feedback": soft.get("summary_feedback") or "",
+        "summary_match": bool(soft.get("summary_match", False)),
+    }
+    res.update(_deterministic_score(matching, missing))
+    return res
+
+
+def analyze_jd_and_resume_with_gemini(jd_text: str, base_resume: dict, job_url: str = "") -> dict:
+    """ATS analysis with a stable keyword list per job.
+
+    The first analysis of a job asks Gemini for the JD's keywords and stores the
+    list; every later analysis of the same job (same URL or same JD text) reuses
+    it, so the score only changes when the resume changes."""
+    base_resume = base_resume or {}
+    keys = _jd_cache_keys(jd_text, job_url)
+    res_key = (keys[-1] if keys else "") + ":" + _resume_fingerprint(base_resume)
+    cached = _jd_cache_get(keys) if keys else None
+    if cached and cached.get("keywords"):
+        print(f"[LLM Matcher] Reusing stored keyword list for this job ({len(cached['keywords'])} keywords), no Gemini call")
+        return _result_from_keywords(cached, jd_text, base_resume, _RESULT_CACHE_MEM.get(res_key))
+
+    res = _analyze_uncached(jd_text, base_resume)
+    kws = list(dict.fromkeys((res.get("matching_keywords") or []) + (res.get("missing_keywords") or [])))
+    # Only a real Gemini extraction is stored; a local fallback (Gemini down) is
+    # not, so the next check can still get the better list.
+    if keys and len(kws) >= 5 and not res.get("error") and res.get("ai_score") is not None:
+        payload = {
+            "keywords": kws,
+            "job_title_jd": res.get("job_title_jd"),
+            "exp_years_jd": res.get("exp_years_jd"),
+            "industries": res.get("industries") or [],
+            "contexts": res.get("missing_keyword_contexts") or {},
+            "source": "gemini",
+        }
+        _jd_cache_put(keys, payload)
+        soft = {k: res.get(k) for k in ("job_title_resume", "job_title_match", "exp_years_resume", "exp_years_match",
+                                        "industries_match", "summary_feedback", "summary_match", "ai_score")}
+        _RESULT_CACHE_MEM[res_key] = soft
+        return _result_from_keywords(payload, jd_text, base_resume, soft)
+    return res
+
+
+def _analyze_uncached(jd_text: str, base_resume: dict) -> dict:
     """
     Passes BOTH the scraped Job Description AND the candidate's Base Resume to Gemini.
     Gemini compares them semantically and returns high-value missing keywords,

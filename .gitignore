@@ -108,3 +108,6 @@ Thumbs.db
 .agents/
 skills-lock.json
 
+
+# Per-job keyword cache (file fallback when no database)
+data/jd_keyword_cache.json

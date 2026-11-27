@@ -518,6 +518,14 @@ Return ONLY valid JSON now.
                     combined_lower.add(s.lower())
             refined["skills"] = clean_technical_skills_list(combined_skills, jd_text=jd_text)
 
+        # Same word-level cleanup the pipeline uses, so a refine never brings back
+        # a cliché opener or banned word the auditor would flag on the next check.
+        try:
+            from danis_engine import deterministic_voice_cleanup
+            refined = deterministic_voice_cleanup(refined)
+        except Exception as _vc_err:
+            print(f"[ResumeRefiner] voice cleanup note: {_vc_err}")
+
         return refined, change_summary
 
     except Exception as e:

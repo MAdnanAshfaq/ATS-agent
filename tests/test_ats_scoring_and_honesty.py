@@ -2,6 +2,8 @@
 and the engine's keyword-coverage guarantee."""
 import os
 import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _isolation  # noqa: F401  (keeps tests off the real DB cache and data/ files)
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -175,7 +177,9 @@ class TestVoiceCleanupIsSafe(unittest.TestCase):
         ]}]})
         b = out["experience"][0]["bullets"]
         self.assertEqual(b[0], "Led a dynamic programming solver for routing.")
-        self.assertEqual(b[1], "Ensured idempotency of Airflow DAGs using smooth retries.")
+        # "Ensured" is on the auditor's cliche-opener list, so it must be swapped (or the
+        # audit would flag it on every run); the technical term itself is untouched.
+        self.assertEqual(b[1], "Maintained idempotency of Airflow DAGs using smooth retries.")
 
 
 class TestSecretsNeverSentToBrowser(unittest.TestCase):
