@@ -1339,15 +1339,19 @@ function displayResults(res, shouldScroll = true) {
   document.getElementById("res-company").textContent = res.company || "";
   document.getElementById("res-role").textContent = res.role || "";
 
-  const beforeVal = (res.simplify_score_before !== undefined && res.simplify_score_before !== null)
-    ? res.simplify_score_before
-    : (res.score_before || 75);
-  const afterVal = res.score_after || (beforeVal < 90 ? 90 : Math.min(98, beforeVal + 10));
-  const deltaVal = res.score_delta || (afterVal - beforeVal);
+  // Both scores are measured the same way (job keywords found in the master resume
+  // vs in the delivered file). A missing measurement shows as "—", never an estimate.
+  const isNum = v => typeof v === "number" && isFinite(v);
+  const beforeVal = isNum(res.score_before) ? res.score_before : null;
+  const afterVal = isNum(res.score_after) ? res.score_after : null;
+  const deltaVal = isNum(res.score_delta) ? res.score_delta
+    : (beforeVal !== null && afterVal !== null ? afterVal - beforeVal : null);
 
-  document.getElementById("score-before").textContent = `${beforeVal}%`;
-  document.getElementById("score-after").textContent = `${afterVal}%`;
-  document.getElementById("score-delta-badge").textContent = `+${deltaVal}% Target Match`;
+  document.getElementById("score-before").textContent = beforeVal !== null ? `${beforeVal}%` : "—";
+  document.getElementById("score-after").textContent = afterVal !== null ? `${afterVal}%` : "—";
+  document.getElementById("score-delta-badge").textContent = deltaVal !== null
+    ? `${deltaVal >= 0 ? "+" : ""}${deltaVal}% keyword match`
+    : "Not measured";
   document.getElementById("keywords-added-count").textContent = res.newly_added ? res.newly_added.length : (res.keywords_injected || 0);
 
   // Newly added keyword pills
@@ -1375,8 +1379,38 @@ function displayResults(res, shouldScroll = true) {
       missingPills.appendChild(pill);
     });
   } else {
-    missingPills.innerHTML = `<span class="pill pill-success">0 missing keywords! 100% Match!</span>`;
+    missingPills.innerHTML = `<span class="pill pill-success">Every job keyword is in the delivered file.</span>`;
   }
+
+  // Interview prep + parse warnings, measured on the delivered file.
+  let extra = document.getElementById("result-honesty-panel");
+  if (!extra) {
+    extra = document.createElement("div");
+    extra.id = "result-honesty-panel";
+    extra.style.marginTop = "12px";
+    missingPills.parentNode.insertBefore(extra, missingPills.nextSibling);
+  }
+  extra.innerHTML = "";
+  const addSection = (title, items, cls) => {
+    if (!items || !items.length) return;
+    const h = document.createElement("div");
+    h.style.cssText = "font-weight:600;margin:10px 0 6px";
+    h.textContent = title;
+    extra.appendChild(h);
+    const wrap = document.createElement("div");
+    items.forEach(t => {
+      const pill = document.createElement("span");
+      pill.className = `pill ${cls}`;
+      pill.style.marginRight = "6px";
+      pill.textContent = t;
+      wrap.appendChild(pill);
+    });
+    extra.appendChild(wrap);
+  };
+  addSection("Added beyond your master resume — prepare to discuss these in interviews",
+    res.added_beyond_master, "pill-warn");
+  addSection("File checks (how ATS parsers will read the delivered file)",
+    (res.parse_findings || []).map(f => f.issue || String(f)), "pill-warn");
 
   window.lastResult = res;
   syncActiveResultStorage();

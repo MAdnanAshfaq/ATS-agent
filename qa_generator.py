@@ -187,6 +187,25 @@ def answer_application_questions(
         summary = str(summary_raw or "")
 
     skills = _format_skills_list(base_resume.get("skills", []))
+
+    # Legal/personal facts come only from fields the candidate filled in on their profile.
+    _fact_fields = [
+        ("work_authorization", "Work authorization"),
+        ("requires_sponsorship", "Requires visa sponsorship"),
+        ("citizenship", "Citizenship"),
+        ("security_clearance", "Security clearance"),
+        ("willing_to_relocate", "Willing to relocate"),
+        ("salary_expectation", "Salary expectation"),
+        ("notice_period", "Notice period"),
+        ("earliest_start_date", "Earliest start date"),
+    ]
+    _facts_src = base_resume.get("application_facts") if isinstance(base_resume.get("application_facts"), dict) else base_resume
+    _fact_lines = []
+    for _key, _label in _fact_fields:
+        _val = _facts_src.get(_key) if isinstance(_facts_src, dict) else None
+        if _val not in (None, "", []):
+            _fact_lines.append(f"- {_label}: {_val}")
+    application_facts = "\n".join(_fact_lines) if _fact_lines else "(none provided)"
     experience_raw = base_resume.get("experience", [])
     if isinstance(experience_raw, dict):
         experience_raw = [experience_raw]
@@ -214,11 +233,10 @@ STRICT EDITORIAL & TECHNICAL GUARDRAILS (Rules 0–16 from ResumeHQ):
      - For "what would you change" or challenges: Describe a realistic edge case (e.g. AI generating subtly incorrect assumptions or outdated API signatures), explaining how it reinforced your rule to always write automated tests and never deploy AI code without thorough validation.
 
 4. FOR SHORT FACTUAL / COMPLIANCE QUESTIONS:
-   - "Do you have X+ years...", "Are you authorized to work in the US...", "Do you require sponsorship...":
-   - Give an immediate, crisp response followed by 1 factual supporting statement grounded in the candidate's resume.
-   - Example: "Yes. I have 6+ years of professional engineering experience building production systems with [candidate's core stack]."
-   - Example: "Yes, I am legally authorized to work in the United States."
-   - Example: "No, I do not require sponsorship now or in the future."
+   - "Do you have X+ years...": give a direct yes/no from the candidate's dates, then 1 supporting statement.
+   - LEGAL / PERSONAL FACTS (work authorization, visa or sponsorship, citizenship, security clearance, relocation, salary, notice period, start date, criminal record, disability, veteran status):
+     * Answer ONLY from APPLICATION FACTS below, restating that fact plainly.
+     * If the needed fact is not listed there, the answer MUST be exactly: "[Answer yourself: <what the question asks>]". Never guess, never assume a default, never copy an example.
 
 5. FOR "WHY US" / MISSION / CULTURE QUESTIONS:
    - Connect your real professional background directly to {company}'s specific platform, product, or mission. No sycophantic praise or throat-clearing fluff.
@@ -227,6 +245,9 @@ STRICT EDITORIAL & TECHNICAL GUARDRAILS (Rules 0–16 from ResumeHQ):
    - Word count: 75–130 words per substantive question. Dense with technical reality, zero fluff.
    - Active first-person voice ("I architected...", "I owned...", "I learned...").
    - Strictly banned AI tells: {banned_words}, {cliche_openers}, "testament", "pivotal", "transformative", "seamless", "robust", "delve", "leverage", "in the dynamic realm of", "game-changer".
+
+APPLICATION FACTS (provided by the candidate; the ONLY source for legal/personal questions):
+{application_facts}
 
 CANDIDATE CONTEXT:
 Name: {candidate_name}

@@ -292,40 +292,44 @@ _active_runs_lock = threading.Lock()
 # Bounded to _MAX_ANALYSIS_CACHE entries; oldest 25% evicted when full.
 # At ~5KB per entry × 200 entries = ~1MB max — well within Render's limits.
 _MAX_ANALYSIS_CACHE = 200
-GLOBAL_ANALYSIS_CACHE = {}  # url -> {company, role, jd_text}
+_ANALYSIS_CACHE_BY_USER = {}  # username -> {url: {company, role, jd_text, keywords, ...}}
+_analysis_cache_lock = threading.Lock()
 
 
-def _trim_analysis_cache():
-    """Evict oldest entries when GLOBAL_ANALYSIS_CACHE exceeds limit.
-    Python 3.7+ dicts preserve insertion order, so keys()[0] is oldest.
-    Newly inserted key is always last, so it is never evicted here.
-    """
-    if len(GLOBAL_ANALYSIS_CACHE) > _MAX_ANALYSIS_CACHE:
-        # Drop oldest quarter — keeps the cache useful while reclaiming memory
-        keys = list(GLOBAL_ANALYSIS_CACHE.keys())
-        n_drop = max(1, len(keys) // 4)
-        for k in keys[:n_drop]:
-            GLOBAL_ANALYSIS_CACHE.pop(k, None)
+def _user_analysis_cache(username: str) -> dict:
+    """The calling user's own analysis cache. Users never see each other's entries:
+    keyword gaps are computed against one user's resume and are wrong for anyone else."""
+    key = (username or "").strip() or "_anonymous"
+    with _analysis_cache_lock:
+        return _ANALYSIS_CACHE_BY_USER.setdefault(key, {})
 
 
-def get_cached_analysis_entry(url="", direct_jd_text=""):
-    """Find analysis cache entry by URL, direct text, or most recent valid entry."""
-    if url and url in GLOBAL_ANALYSIS_CACHE:
-        return GLOBAL_ANALYSIS_CACHE[url]
-    # Check if URL starts with [Direct or Manual or is a short label
-    if url and (url.startswith("[Direct") or url.startswith("Manual") or len(url) < 100):
-        for k, v in reversed(list(GLOBAL_ANALYSIS_CACHE.items())):
+def _trim_analysis_cache(cache: dict = None):
+    """Evict the oldest quarter of a user's cache when it exceeds the limit."""
+    caches = [cache] if cache is not None else list(_ANALYSIS_CACHE_BY_USER.values())
+    for c in caches:
+        if len(c) > _MAX_ANALYSIS_CACHE:
+            keys = list(c.keys())
+            for k in keys[:max(1, len(keys) // 4)]:
+                c.pop(k, None)
+
+
+def get_cached_analysis_entry(url="", direct_jd_text="", username=""):
+    """Find this user's analysis entry by URL or by identical pasted JD text.
+    Falls back to the user's most recent analysis ONLY when no URL was given
+    (e.g. Generate pressed right after analyzing pasted text) — never for a real URL,
+    which would silently tailor the resume to a different job."""
+    cache = _user_analysis_cache(username)
+    if url and url in cache:
+        return cache[url]
+    if direct_jd_text and len(direct_jd_text) >= 50:
+        for _k, v in reversed(list(cache.items())):
+            if isinstance(v, dict) and v.get("jd_text") == direct_jd_text:
+                return v
+    if not url or url == "Manual Job Description" or url.startswith("[Direct"):
+        for _k, v in reversed(list(cache.items())):
             if isinstance(v, dict) and len(v.get("jd_text", "")) >= 50:
                 return v
-    # Search by direct_jd_text matching
-    if direct_jd_text and len(direct_jd_text) >= 50:
-        for k, v in reversed(list(GLOBAL_ANALYSIS_CACHE.items())):
-            if isinstance(v, dict) and (v.get("jd_text") == direct_jd_text or (len(direct_jd_text) > 100 and direct_jd_text[:100] in v.get("jd_text", ""))):
-                return v
-    # Fallback to most recent cache entry if there's any valid entry with jd_text >= 50
-    for k, v in reversed(list(GLOBAL_ANALYSIS_CACHE.items())):
-        if isinstance(v, dict) and len(v.get("jd_text", "")) >= 50:
-            return v
     return None
 
 
@@ -4125,7 +4129,8 @@ def analyze_job():
 
             sanitized_url = sanitize_jd_url(url.rstrip("/"))
             # Check GLOBAL_ANALYSIS_CACHE first for instantaneous 0ms response
-            cached_full = GLOBAL_ANALYSIS_CACHE.get(sanitized_url) or GLOBAL_ANALYSIS_CACHE.get(url)
+            _ucache = _user_analysis_cache(current_user.username)
+            cached_full = _ucache.get(sanitized_url) or _ucache.get(url)
             if cached_full and cached_full.get("matrix"):
                 print(f"[Analyze] ⚡ Instant cache hit from memory for {sanitized_url} — returning in 0ms!")
                 return jsonify(cached_full["matrix"])
@@ -4198,7 +4203,10 @@ def analyze_job():
             if isinstance(simplify_result, dict):
                 s_data = simplify_result
                 if s_data.get("success"):
-                    score = s_data.get("score") or 75
+                    score = s_data.get("score")
+                    if not isinstance(score, (int, float)):
+                        _m, _x = s_data.get("matching_keywords", []), s_data.get("missing_keywords", [])
+                        score = round(100 * len(_m) / max(1, len(_m) + len(_x))) if (_m or _x) else 0
                     missing_keywords = s_data.get("missing_keywords", [])
                     matching_keywords = s_data.get("matching_keywords", [])
                     print(f"[Analyze] Simplify extension score: {score}% ({len(missing_keywords)} missing, {len(matching_keywords)} matching)")
@@ -4272,9 +4280,9 @@ def analyze_job():
                 cand_title = first_exp.strip()
         elif isinstance(exp_list, dict):
             cand_title = exp_list.get("title") or exp_list.get("role") or "Data Engineer"
-        score_10 = matrix_data.get("score_scale_10", round(score / 10.0, 1))
-        
-        rating = matrix_data.get("score_rating")
+        # The 0-10 scale and rating always derive from the score actually shown.
+        score_10 = round((score or 0) / 10.0, 1)
+        rating = None
         if not rating:
             if score_10 < 6.0: rating = "Poor"
             elif score_10 < 7.0: rating = "Fair"
@@ -4294,11 +4302,11 @@ def analyze_job():
             "resume_name": resume_name_tag,
             "job_title_jd": matrix_data.get("job_title_jd") or role,
             "job_title_resume": matrix_data.get("job_title_resume") or cand_title,
-            "job_title_match": matrix_data.get("job_title_match", True),
-            "exp_years_jd": matrix_data.get("exp_years_jd", "3+ years exp"),
-            "exp_years_resume": matrix_data.get("exp_years_resume", "8+ years exp"),
-            "exp_years_match": matrix_data.get("exp_years_match", True),
-            "industries": matrix_data.get("industries", ["Technology", "Data Platform"]),
+            "job_title_match": matrix_data.get("job_title_match", False),
+            "exp_years_jd": matrix_data.get("exp_years_jd", "Not stated"),
+            "exp_years_resume": matrix_data.get("exp_years_resume", "Not stated"),
+            "exp_years_match": matrix_data.get("exp_years_match", False),
+            "industries": matrix_data.get("industries", []),
             "industries_match": matrix_data.get("industries_match", False),
             "matching_keywords": matching_keywords,
             "missing_keywords": missing_keywords,
@@ -4325,7 +4333,8 @@ def analyze_job():
             res_payload["target_ats"] = None
 
         # Store in global memory cache so Generate step reuses this extract with 0 browser launches
-        GLOBAL_ANALYSIS_CACHE[url] = {
+        _ucache_store = _user_analysis_cache(current_user.username)
+        _ucache_store[url] = {
             "company": company,
             "role": role,
             "jd_text": jd_text,
@@ -4339,7 +4348,7 @@ def analyze_job():
             "ats": res_payload.get("ats"),
             "target_ats": res_payload.get("target_ats"),
         }
-        _trim_analysis_cache()
+        _trim_analysis_cache(_ucache_store)
 
         print(f"[Analyze] ✅ Analysis complete for {role} at {company}! Score: {score}% | Matched: {len(matching_keywords)} | Missing: {len(missing_keywords)}")
         return jsonify(res_payload)
@@ -4715,7 +4724,7 @@ def generate_cover_letter_api():
 
         if url:
             # Check cache or scrape
-            cached = GLOBAL_ANALYSIS_CACHE.get(url)
+            cached = _user_analysis_cache(current_user.username).get(url)
             if cached:
                 company = company or cached["company"]
                 role = role or cached["role"]
@@ -5796,7 +5805,7 @@ def run_agent():
     user_username = current_user.username if current_user.is_authenticated else ""
 
     if not url and not direct_jd_text:
-        cached_entry = get_cached_analysis_entry(url, direct_jd_text)
+        cached_entry = get_cached_analysis_entry(url, direct_jd_text, current_user.username)
         if cached_entry and len(cached_entry.get("jd_text", "")) >= 50:
             direct_jd_text = cached_entry["jd_text"]
             url = "Manual Job Description"
@@ -5835,6 +5844,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
     _resume_path = Path(user_resume_path) if user_resume_path else RESUME_PATH
     _output_dir = Path(user_output_dir) if user_output_dir else OUTPUT_DIR
     _settings = user_settings or {}
+    _ucache = _user_analysis_cache(user_username)
 
     # ── Restore resume from DB to local disk if needed (Render: ephemeral disk) ──
     if db_layer.is_db_available() and user_username:
@@ -5901,6 +5911,16 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
     if _settings.get("HF_API_KEY"):
         os.environ["HF_API_KEY"] = _settings["HF_API_KEY"]
 
+    def _analyze_keyword_sets():
+        """(matching, missing) JD keywords for this resume, from one analysis."""
+        try:
+            from llm_matcher import analyze_jd_and_resume_with_gemini
+            _res = analyze_jd_and_resume_with_gemini(jd_text, base_resume)
+            return list(_res.get("matching_keywords") or []), list(_res.get("missing_keywords") or [])
+        except Exception as _kw_err:
+            print(f"[Pipeline] Keyword analysis note: {_kw_err}")
+            return [], []
+
     def send_log(step, stage, message, data=None, status="info"):
         try:
             msg_queue.put_nowait({
@@ -5960,7 +5980,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
 
         # Step 2: Scrape JD (checks memory & disk cache first, or uses direct text)
         is_direct_text = ("\n" in url) or (" " in url and len(url.split()) > 5) or (not url.startswith(("http://", "https://")) and not ("." in url and "/" in url))
-        cached_analysis = get_cached_analysis_entry(url, direct_jd_text)
+        cached_analysis = get_cached_analysis_entry(url, direct_jd_text, user_username)
 
         # If direct_jd_text was not provided or is suspiciously short (< 50 chars), recover from cache
         if (not direct_jd_text or len(direct_jd_text) < 50) and cached_analysis and len(cached_analysis.get("jd_text", "")) >= 50:
@@ -5975,14 +5995,14 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
             company = custom_company or (cached_analysis.get("company") if cached_analysis else "Target Company")
             role = clean_role_title(custom_role) if custom_role else (clean_role_title(cached_analysis.get("role")) if cached_analysis else "Data Engineer")
             no_simplify = True
-            if url not in GLOBAL_ANALYSIS_CACHE:
-                GLOBAL_ANALYSIS_CACHE[url] = {}
-            GLOBAL_ANALYSIS_CACHE[url].update({"company": company, "role": role, "jd_text": jd_text})
-            if cached_analysis and cached_analysis.get("missing_keywords") and "missing_keywords" not in GLOBAL_ANALYSIS_CACHE[url]:
-                GLOBAL_ANALYSIS_CACHE[url]["missing_keywords"] = cached_analysis["missing_keywords"]
-                GLOBAL_ANALYSIS_CACHE[url]["matching_keywords"] = cached_analysis.get("matching_keywords", [])
-                GLOBAL_ANALYSIS_CACHE[url]["score"] = cached_analysis.get("score")
-            _trim_analysis_cache()
+            if url not in _ucache:
+                _ucache[url] = {}
+            _ucache[url].update({"company": company, "role": role, "jd_text": jd_text})
+            if cached_analysis and cached_analysis.get("missing_keywords") and "missing_keywords" not in _ucache[url]:
+                _ucache[url]["missing_keywords"] = cached_analysis["missing_keywords"]
+                _ucache[url]["matching_keywords"] = cached_analysis.get("matching_keywords", [])
+                _ucache[url]["score"] = cached_analysis.get("score")
+            _trim_analysis_cache(_ucache)
             send_log(2, "Scrape JD", f"Using direct Job Description text ({len(jd_text):,} chars)",
                      data={"company": company, "role": role, "jd_length": len(jd_text)}, status="success")
         elif is_direct_text:
@@ -6013,7 +6033,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                      data={"company": company, "role": role, "jd_length": len(jd_text)}, status="success")
         else:
             send_log(2, "Scrape JD", f"Extracting job description from {url}...", status="working")
-            cached_analysis = GLOBAL_ANALYSIS_CACHE.get(url)
+            cached_analysis = _ucache.get(url)
             if cached_analysis and len(cached_analysis.get("jd_text", "")) >= 800:
                 company = custom_company or cached_analysis["company"]
                 role = clean_role_title(custom_role) if custom_role else clean_role_title(cached_analysis["role"])
@@ -6060,9 +6080,9 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
         if custom_role:
             role = clean_role_title(custom_role)
 
-        if url in GLOBAL_ANALYSIS_CACHE:
-            GLOBAL_ANALYSIS_CACHE[url]["company"] = company
-            GLOBAL_ANALYSIS_CACHE[url]["role"] = role
+        if url in _ucache:
+            _ucache[url]["company"] = company
+            _ucache[url]["role"] = role
 
         # Resolve target ATS Platform (User Selection/Override -> URL Detection -> HTML Fingerprints -> Safe Mode)
         from platform_rules import get_profile, get_safe_mode_profile
@@ -6124,7 +6144,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                      status="success")
         elif no_simplify:
             send_log(3, "Keyword Extraction", "Extracting missing keywords directly from JD (--no-simplify mode)...", status="working")
-            missing_keywords = extract_keywords_from_jd(jd_text, base_resume)
+            matching_keywords, missing_keywords = _analyze_keyword_sets()
             send_log(3, "Keyword Extraction",
                      f"Found {len(missing_keywords)} candidate keywords from JD text (estimated, not real ATS score)",
                      data={"missing_keywords": missing_keywords, "source": "jd_extraction"},
@@ -6151,26 +6171,49 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                              status="success")
                 else:
                     error = simplify_data.get("error", "Unknown error")
-                    missing_keywords = extract_keywords_from_jd(jd_text, base_resume)
+                    matching_keywords, missing_keywords = _analyze_keyword_sets()
                     send_log(3, "Simplify ATS Score",
                              f"Simplify unavailable: {error}. Using JD keyword fallback.",
                              data={"missing_keywords": missing_keywords, "source": "jd_extraction"},
                              status="warning")
             except Exception as e:
-                missing_keywords = extract_keywords_from_jd(jd_text, base_resume)
+                matching_keywords, missing_keywords = _analyze_keyword_sets()
                 send_log(3, "Simplify ATS Score", f"Simplify error: {e}. Using JD keyword fallback.",
                          status="warning")
 
         # Guaranteed fallback: ensure we never enter rewrite with 0 missing keywords if JD text exists
         if not missing_keywords and jd_text and len(jd_text) >= 50:
-            missing_keywords = extract_keywords_from_jd(jd_text, base_resume)
+            matching_keywords, missing_keywords = _analyze_keyword_sets()
             if missing_keywords:
                 send_log(3, "Keyword Fallback", f"Extracted {len(missing_keywords)} missing keywords from job description text.", status="success")
+
+        # ── Measured baseline: literal keyword coverage of the master resume ──
+        from ats_scoring import (score_text, score_docx, resume_json_text, dedupe_keywords,
+                                 keywords_added_beyond, extract_docx_text)
+        target_keywords = dedupe_keywords(list(matching_keywords or []) + list(missing_keywords or []))
+        _user_master_docx = _resume_path.parent / "master_resume_original.docx"
+        before_src = "master resume"
+        try:
+            if _user_master_docx.exists():
+                before_eval = score_text(extract_docx_text(str(_user_master_docx)), target_keywords)
+                before_src = "master DOCX"
+            else:
+                before_eval = score_text(resume_json_text(base_resume), target_keywords)
+        except Exception as _be:
+            print(f"[Pipeline] Baseline scoring note: {_be}")
+            before_eval = score_text(resume_json_text(base_resume), target_keywords)
+        if target_keywords:
+            send_log(3, "ATS Baseline",
+                     f"Your {before_src} contains {len(before_eval['matched'])}/{before_eval['total']} job keywords ({before_eval['score']}%).",
+                     data={"score": before_eval["score"], "matched": before_eval["matched"], "missing": before_eval["missing"]},
+                     status="success")
+        else:
+            send_log(3, "ATS Baseline", "No job keywords could be extracted, so no ATS score can be measured for this job.", status="warning")
 
         # Step 4 & 5: Resume Tailoring & Verification with JD Domain Context
         keyword_contexts = {}
         try:
-            cached_item = GLOBAL_ANALYSIS_CACHE.get(url, {})
+            cached_item = _ucache.get(url, {})
             keyword_contexts = cached_item.get("missing_keyword_contexts", {})
             if not keyword_contexts and missing_keywords and jd_text:
                 from llm_matcher import extract_keyword_contexts_from_jd
@@ -6193,8 +6236,16 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                 log_callback=send_log,
                 keyword_contexts=keyword_contexts,
                 ats_profile=ats_profile,
+                target_keywords=target_keywords,
             )
-            send_log(5, "Dani's Engine", "Multi-role resume generation & human-voice audit passed!", status="success")
+            _va = cleaned_resume.get("_voice_audit") or {}
+            _aa = cleaned_resume.get("_ats_audit") or {}
+            _open = len(_va.get("findings") or []) + len(_aa.get("findings") or [])
+            send_log(5, "Dani's Engine",
+                     "Final audit passed: no voice or ATS-format findings." if _open == 0 else
+                     f"Final audit: {_open} open finding(s). Voice {_va.get('score', '?')}%, ATS format {_aa.get('score', '?')}%.",
+                     data={"voice_audit": _va, "ats_audit": _aa},
+                     status="success" if _open == 0 else "warning")
         else:
             # Step 4: Standard Gemini Resume Rewrite (strict keyword injection + custom bullets)
             bullets_msg = f" and custom experience bullets" if (custom_bullets and custom_bullets.strip()) else ""
@@ -6221,7 +6272,8 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
 
         # Step 6a: Keyword Coverage (injection verification)
         send_log(6, "Coverage Check", "Verifying keyword injection coverage...", status="working")
-        embedded_keywords, still_missing = _check_keyword_coverage(cleaned_resume, missing_keywords)
+        _cov = score_text(resume_json_text(cleaned_resume), missing_keywords)
+        embedded_keywords, still_missing = _cov["matched"], _cov["missing"]
         coverage_pct = (
             round(len(embedded_keywords) / len(missing_keywords) * 100)
             if missing_keywords else 100
@@ -6286,11 +6338,10 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                     exp_item["location"] = matched_orig.get("location", "")
 
 
-        orig_docx_path = BASE_DIR / "master_resume_original.docx"
+        # Only the user's OWN template is ever patched. Without one, the clean ATS
+        # builder is used (never the repo-level template, which belongs to someone else).
         user_data_dir = _resume_path.parent
-        user_orig_docx = user_data_dir / "master_resume_original.docx"
-        if user_orig_docx.exists():
-            orig_docx_path = user_orig_docx
+        orig_docx_path = user_data_dir / "master_resume_original.docx"
         effective_output = custom_output or str(_output_dir)
 
         # ── Task A: Re-score rewritten resume against JD (Gemini API call) ──
@@ -6324,9 +6375,27 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                     send_log(7, "Word Document", f"Patched original master template ({ats_profile.display_name} compliant)!", status="success")
                 except Exception as patch_err:
                     print(f"[Pipeline] DOCX patcher error: {patch_err}, falling back to build_resume_docx")
+                    send_log(7, "Word Document",
+                             f"Your template could not be patched ({str(patch_err)[:160]}). Built the resume on the clean ATS template instead.",
+                             status="warning")
                     _doc_path = build_resume_docx(
                         resume=cleaned_resume, company=company, role=role, output_dir=effective_output,
                     )
+                # Verify the patched file kept every keyword the tailored resume has.
+                try:
+                    if _doc_path and target_keywords and Path(_doc_path).suffix.lower() == ".docx":
+                        _json_cov = score_text(resume_json_text(cleaned_resume), target_keywords)
+                        _doc_cov = score_text(extract_docx_text(_doc_path), target_keywords)
+                        _lost = [k for k in _json_cov["matched"] if k not in _doc_cov["matched"]]
+                        if _lost:
+                            send_log(7, "Word Document",
+                                     f"Your template lost {len(_lost)} keyword(s) during patching ({', '.join(_lost[:8])}). Rebuilt on the clean ATS template so none are dropped.",
+                                     status="warning")
+                            _doc_path = build_resume_docx(
+                                resume=cleaned_resume, company=company, role=role, output_dir=effective_output,
+                            )
+                except Exception as _verify_err:
+                    print(f"[Pipeline] Delivered-file verification note: {_verify_err}")
             else:
                 _doc_path = build_resume_docx(
                     resume=cleaned_resume, company=company, role=role, output_dir=effective_output,
@@ -6384,8 +6453,7 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
         cover_letter_text = ""
         doc_path = None
 
-        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="pipeline_parallel") as executor:
-            future_rescore = executor.submit(_task_rescore)
+        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="pipeline_parallel") as executor:
             future_docs = executor.submit(_task_build_docs)
             future_cl = executor.submit(_task_cover_letter)
 
@@ -6395,31 +6463,46 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
             except Exception as doc_err:
                 print(f"[Pipeline] Doc build error: {doc_err}")
 
-            try:
-                rescore_result = future_rescore.result(timeout=45)
-                score_before_display = analyze_score_before if analyze_score_before is not None else (simplify_score_before if simplify_score_before is not None else 65)
-                if rescore_result and rescore_result.get("score") is not None:
-                    score_after_real = rescore_result.get("score")
-                else:
-                    # Grounded ATS score calculation from verified keyword injection
-                    score_after_real = min(96, max(int(score_before_display + 18), int(coverage_pct * 0.94)))
+            # After score = the same literal keyword measure, applied to the file the
+            # user will upload. No model grades its own work and nothing is estimated.
+            after_eval = None
+            if doc_path and str(doc_path).lower().endswith(".docx"):
+                try:
+                    after_eval = score_docx(doc_path, target_keywords)
+                except Exception as _ae:
+                    print(f"[Pipeline] Delivered-file scoring note: {_ae}")
+            if after_eval is None:
+                after_eval = score_text(resume_json_text(cleaned_resume), target_keywords)
+                after_eval["source"] = "tailored_resume_json"
+                after_eval["parse_findings"] = []
+            score_before_display = before_eval["score"]
+            score_after_real = after_eval["score"]
+            delta = (score_after_real - score_before_display) if (score_after_real is not None and score_before_display is not None) else None
+            if score_after_real is not None:
+                send_log(6, "Score Analysis",
+                         f"ATS keyword match: {score_before_display}% \u2192 {score_after_real}% "
+                         f"({len(after_eval['matched'])}/{after_eval['total']} job keywords found in the "
+                         f"{'delivered file' if after_eval.get('source') == 'delivered_docx' else 'tailored resume'})",
+                         data={"score_before": score_before_display, "score_after": score_after_real, "delta": delta,
+                               "missing_in_file": after_eval["missing"], "source": after_eval.get("source")},
+                         status="success" if not after_eval["missing"] else "warning")
+            for _f in after_eval.get("parse_findings") or []:
+                send_log(7, "Parse Check", _f.get("issue", ""), data=_f, status="warning")
 
-                delta = (score_after_real - score_before_display) if score_before_display is not None else None
-                delta_str = f" (+{delta}pts)" if delta is not None and delta > 0 else (f" ({delta}pts)" if delta is not None else "")
-                send_log(6, "Score Analysis",
-                         f"ATS Match Score: {score_before_display}% → {score_after_real}%{delta_str}",
-                         data={"score_before": score_before_display, "score_after": score_after_real, "delta": delta},
-                         status="success")
-            except Exception as rescore_err:
-                print(f"[Pipeline] Rescore note: {rescore_err}")
-                score_before_display = analyze_score_before if analyze_score_before is not None else (simplify_score_before if simplify_score_before is not None else 65)
-                score_after_real = min(96, max(int(score_before_display + 18), int(coverage_pct * 0.94)))
-                delta = score_after_real - score_before_display
-                delta_str = f" (+{delta}pts)" if delta > 0 else ""
-                send_log(6, "Score Analysis",
-                         f"ATS Match Score: {score_before_display}% → {score_after_real}%{delta_str}",
-                         data={"score_before": score_before_display, "score_after": score_after_real, "delta": delta},
-                         status="success")
+            # Keywords the final resume claims that the master resume never showed.
+            try:
+                _final_text = extract_docx_text(doc_path) if after_eval.get("source") == "delivered_docx" else resume_json_text(cleaned_resume)
+            except Exception:
+                _final_text = resume_json_text(cleaned_resume)
+            added_beyond_master = keywords_added_beyond(base_resume, _final_text, target_keywords)
+            if added_beyond_master:
+                send_log(6, "Interview Prep",
+                         f"{len(added_beyond_master)} keyword(s) were added beyond your master resume. Be ready to discuss: {', '.join(added_beyond_master)}",
+                         data={"added_beyond_master": added_beyond_master}, status="warning")
+            # Keyword lists shown in the UI describe the delivered file.
+            embedded_keywords = [k for k in missing_keywords if k in after_eval["matched"]]
+            still_missing = list(after_eval["missing"])
+            coverage_pct = round(100 * len(embedded_keywords) / len(missing_keywords)) if missing_keywords else 100
 
             try:
                 cl_result = future_cl.result(timeout=90)
@@ -6433,19 +6516,10 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
 
         # Determine final score values for dashboard:
         # Priority: 1. analyze_score_before from Analyze step  2. simplify_score_before from pipeline  3. default 75
-        if analyze_score_before is not None:
-            score_before_val = analyze_score_before
-        elif simplify_score_before is not None:
-            score_before_val = simplify_score_before
-        else:
-            score_before_val = 75
-
-        # Use real rescore if available; fall back to conservative estimate only as last resort
-        if score_after_real is not None:
-            score_after_val = score_after_real
-        else:
-            score_after_val = 90 if score_before_val < 90 else min(98, score_before_val + 10)
-        score_delta_val = score_after_val - score_before_val
+        # Both scores are the same literal keyword measure (master vs delivered file).
+        score_before_val = before_eval["score"]
+        score_after_val = score_after_real
+        score_delta_val = (score_after_val - score_before_val) if (score_after_val is not None and score_before_val is not None) else None
 
         # ATS compliance audit of final rewritten resume
         ats_compliance_report = {}
@@ -6490,6 +6564,8 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                         "embedded_keywords": embedded_keywords,
                         "still_missing_keywords": still_missing,
                         "keyword_coverage_pct": coverage_pct,
+                        "added_beyond_master": added_beyond_master,
+                        "parse_findings": after_eval.get("parse_findings") or [],
                         "cover_letter_text": cover_letter_text,
                         "output_file": doc_path,
                         "tailored_resume": cleaned_resume,
@@ -6532,6 +6608,13 @@ def _execute_agent_pipeline(run_id, url, custom_keywords_str, no_simplify, passe
                     "ats_platform": ats_profile.id,
                     "ats_profile_name": ats_profile.display_name,
                     "ats_compliance": ats_compliance_report,
+                    "score_source": "literal_keyword_coverage",
+                    "target_keywords": target_keywords,
+                    "keywords_in_file": after_eval["matched"],
+                    "added_beyond_master": added_beyond_master,
+                    "parse_findings": after_eval.get("parse_findings") or [],
+                    "voice_audit": cleaned_resume.get("_voice_audit"),
+                    "ats_audit": cleaned_resume.get("_ats_audit"),
                     "next_step": f"Upload the .docx or .pdf to your application ({ats_profile.display_name} compliant)",
                 }
             })
@@ -6675,7 +6758,7 @@ def api_health_memory():
     return jsonify({
         "rss_mb": round(rss_mb, 1),
         "active_runs": len(active_runs),
-        "analysis_cache_entries": len(GLOBAL_ANALYSIS_CACHE),
+        "analysis_cache_entries": sum(len(c) for c in _ANALYSIS_CACHE_BY_USER.values()),
         "console_buffer_lines": len(GLOBAL_CONSOLE_BUFFER.buffer),
         "console_subscribers": len(GLOBAL_CONSOLE_BUFFER.subscribers),
         "scraper_mem_cache_entries": len(_scraper_mod._MEM_CACHE),

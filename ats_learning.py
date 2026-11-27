@@ -17,7 +17,11 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger("ats_learning")
 
-LEARNED_DATA_FILE = os.path.join(os.path.dirname(__file__), "data", "ats_learned_domains.json")
+# ATS_LEARNED_DATA_FILE lets tests (or alternate deployments) point the learning
+# store somewhere other than the tracked seed file in data/.
+LEARNED_DATA_FILE = os.environ.get("ATS_LEARNED_DATA_FILE") or os.path.join(
+    os.path.dirname(__file__), "data", "ats_learned_domains.json"
+)
 _LOCK = threading.Lock()
 
 

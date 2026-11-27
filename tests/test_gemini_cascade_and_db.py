@@ -52,7 +52,10 @@ class TestGeminiCascadeAndDB(unittest.TestCase):
             base_resume={"name": "Alex", "skills": ["Python", "SQL"]}
         )
 
-        self.assertEqual(result.get("score"), 85)
+        # Score is measured keyword coverage (2 of 3 JD keywords in the resume), not
+        # the model's own opinion; the opinion is kept separately as ai_score.
+        self.assertEqual(result.get("score"), 67)
+        self.assertEqual(result.get("ai_score"), 85)
         self.assertIn("Python", result.get("matching_keywords", []))
         self.assertIn("Airflow", result.get("missing_keywords", []))
         self.assertGreaterEqual(call_counts["count"], 2)

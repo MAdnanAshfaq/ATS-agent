@@ -36,78 +36,75 @@ def _clean_json(text: str) -> str:
     return text.strip()
 
 
+_OPENER_VERB_SWAPS = {
+    "spearheaded": "Led", "leveraged": "Used", "utilized": "Used", "facilitated": "Ran",
+    "orchestrated": "Coordinated", "championed": "Led", "pioneered": "Introduced",
+    "revolutionized": "Overhauled", "architected": "Designed", "empowered": "Enabled",
+    "elevated": "Improved", "harnessed": "Used", "navigated": "Handled", "fostered": "Built",
+    "streamlined": "Simplified", "synergized": "Combined",
+}
+
+# Mid-sentence swaps limited to words with no technical meaning, so terms like
+# "dynamic programming" or "ensured idempotency" are never rewritten.
+_ANYWHERE_SWAPS = [
+    (r"\bleveraging\b", "using"), (r"\butilizing\b", "using"), (r"\butilize\b", "use"),
+    (r"\bseamlessly\b", "smoothly"), (r"\bseamless\b", "smooth"),
+    (r"\bcutting-edge\b", "modern"), (r"\btapestry\b", "mix"), (r"\btestament\b", "proof"),
+    (r"\bpivotal\b", "key"), (r"\btransformative\b", "major"), (r"\bgroundbreaking\b", "new"),
+    (r"\bsynergy\b", "collaboration"),
+]
+
+
+def _swap_keep_case(match: re.Match, replacement: str) -> str:
+    word = match.group(0)
+    return replacement[0].upper() + replacement[1:] if word[:1].isupper() else replacement
+
+
+def _clean_phrase(text: str) -> str:
+    if not isinstance(text, str):
+        return text
+    res = text
+    for pat, rep in _ANYWHERE_SWAPS:
+        res = re.sub(pat, lambda m, r=rep: _swap_keep_case(m, r), res, flags=re.IGNORECASE)
+    res = re.sub(r"(^|(?<=[.!?]\s))(?:Furthermore|Moreover|Additionally),\s*(\w)",
+                 lambda m: m.group(1) + m.group(2).upper(), res)
+    return res
+
+
+def _clean_bullet(text: str) -> str:
+    if not isinstance(text, str):
+        return text
+    res = _clean_phrase(text)
+    m = re.match(r"^(\W*)([A-Za-z]+)(.*)$", res, flags=re.S)
+    if m and m.group(2).lower() in _OPENER_VERB_SWAPS:
+        res = m.group(1) + _OPENER_VERB_SWAPS[m.group(2).lower()] + m.group(3)
+    return res
+
+
 def deterministic_voice_cleanup(draft_resume: dict) -> dict:
-    """Fast, local regex cleanup of AI clichés, banned buzzwords, and formulaic phrases (0 API calls)."""
+    """Local cleanup of AI clichés (0 API calls). Verb swaps apply only to the
+    first word of a bullet; mid-sentence swaps only to non-technical filler words."""
     if not isinstance(draft_resume, dict):
         return draft_resume
-
-    cliche_replacements = {
-        r'\b[Ss]pearheaded\b': 'Led',
-        r'\b[Ll]everaged\b': 'Used',
-        r'\b[Uu]tilized\b': 'Used',
-        r'\b[Ff]acilitated\b': 'Managed',
-        r'\b[Ee]nsured\b': 'Maintained',
-        r'\b[Dd]emonstrated\b': 'Showed',
-        r'\b[Cc]ollaborated with\b': 'Worked with',
-        r'\b[Cc]ollaborated\b': 'Partnered',
-        r'\b[Ss]treamlined\b': 'Simplified',
-        r'\b[Cc]hampioned\b': 'Drove',
-        r'\b[Ff]ostered\b': 'Supported',
-        r'\b[Hh]arnessed\b': 'Applied',
-        r'\b[Nn]avigated\b': 'Handled',
-        r'\b[Oo]rchestrated\b': 'Built',
-        r'\b[Pp]ioneered\b': 'Introduced',
-        r'\b[Rr]evolutionized\b': 'Overhauled',
-        r'\b[Aa]rchitected\b': 'Designed',
-        r'\b[Ee]mpowered\b': 'Enabled',
-        r'\b[Ee]levated\b': 'Improved',
-        r'\b[Uu]nlocked\b': 'Achieved',
-        r'\b[Rr]obust\b': 'reliable',
-        r'\b[Ss]eamless\b': 'smooth',
-        r'\b[Ss]eamlessly\b': 'smoothly',
-        r'\b[Tt]apestry\b': 'mix',
-        r'\b[Pp]ivotal\b': 'key',
-        r'\b[Tt]estament\b': 'proof',
-        r'\b[Tt]ransformative\b': 'major',
-        r'\b[Gg]roundbreaking\b': 'new',
-        r'\b[Cc]utting-edge\b': 'modern',
-        r'\b[Ss]ynergy\b': 'cooperation',
-        r'\b[Dd]ynamic\b': 'active',
-        r'\b[Ff]urthermore,?\s*': '',
-        r'\b[Mm]oreover,?\s*': '',
-    }
-
     try:
         cleaned = json.loads(json.dumps(draft_resume))
     except Exception:
         cleaned = dict(draft_resume)
 
-    def _clean_str(text: str) -> str:
-        if not isinstance(text, str):
-            return text
-        res = text
-        for pat, rep in cliche_replacements.items():
-            res = re.sub(pat, rep, res)
-        return res
-
-    if "summary" in cleaned and isinstance(cleaned["summary"], str):
+    if isinstance(cleaned.get("summary"), str):
         s = cleaned["summary"]
-        for opener in [
-            r'^[Rr]esults-driven\s+\w+\s+with\b',
-            r'^[Rr]esults-oriented\s+\w+\s+with\b',
-            r'^[Dd]ynamic and experienced\s+\w+\s+with\b',
-            r'^[Ss]easoned professional\s+with\b',
-            r'^[Pp]assionate and dedicated\s+\w+\s+with\b',
-            r'^[Pp]roven track record\s+in\b',
-        ]:
-            s = re.sub(opener, 'Engineer with', s)
-        cleaned["summary"] = _clean_str(s)
+        for opener in (r"^[Rr]esults-driven\s+", r"^[Rr]esults-oriented\s+", r"^[Dd]ynamic and experienced\s+",
+                       r"^[Ss]easoned\s+", r"^[Pp]assionate and dedicated\s+", r"^[Hh]ighly motivated\s+"):
+            s = re.sub(opener, "", s)
+        s = s[:1].upper() + s[1:] if s else s
+        cleaned["summary"] = _clean_phrase(s)
 
-    if "experience" in cleaned and isinstance(cleaned["experience"], list):
-        for exp in cleaned["experience"]:
-            if isinstance(exp, dict) and "bullets" in exp:
-                exp["bullets"] = [_clean_str(b) for b in exp.get("bullets", []) if isinstance(b, str)]
-
+    for exp in cleaned.get("experience", []) or []:
+        if isinstance(exp, dict) and isinstance(exp.get("bullets"), list):
+            exp["bullets"] = [_clean_bullet(b) for b in exp["bullets"] if isinstance(b, str)]
+    for pr in cleaned.get("projects", []) or []:
+        if isinstance(pr, dict) and isinstance(pr.get("bullets"), list):
+            pr["bullets"] = [_clean_bullet(b) for b in pr["bullets"] if isinstance(b, str)]
     return cleaned
 
 
@@ -167,6 +164,7 @@ def run_researcher_phase(
 
     return {
         "role_title": role,
+        "jd_text": jd_text,
         "company_name": company,
         "hard_requirements": hard_reqs[:10],
         "soft_requirements": soft_reqs[:5],
@@ -187,6 +185,7 @@ def run_writer_phase(
     model_name: str = "gemini-flash-lite-latest",
     keyword_contexts: Optional[dict[str, str]] = None,
     ats_profile: Any = None,
+    target_keywords: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """
     Role 2: Writer.
@@ -233,86 +232,85 @@ Weave these technologies into relevant work experience bullets adhering strictly
 """
 
     ats_section = f"""
-===================================================================
-TARGET ATS PLATFORM MANDATES ({profile.display_name.upper()}):
-===================================================================
-- Target ATS Platform: {profile.display_name} ({profile.matching_style.upper()} matching algorithm)
-  {"* LITERAL BOOLEAN MANDATE: The target ATS uses exact string search. Match required tools, skills, and certifications verbatim in experience bullets." if profile.matching_style == "exact_weighted" else "* SEMANTIC/VECTOR MANDATE: The target ATS and recruiters evaluate contextual accomplishment. Use the primary keyword naturally, and use organic domain synonyms across other bullets."}
-- Keyword Density Ceiling: STRICT MAXIMUM {profile.keyword_density_ceiling*100:.1f}%. Never repeat any single keyword excessively across bullets (2-3 natural occurrences max across the whole resume). Avoid keyword stuffing flags.
-- Date Formatting Standard: All job and education dates MUST be strictly formatted as {profile.date_format}.
-- Title Equivalence (Rule 0 Guardrail): Master resume job titles must remain truthful. If the candidate's existing title represents an equivalent role to '{role}', you may include an authentic parenthetical equivalent in the summary or bullet context (e.g. 'Software Engineer ({role} focus)'), but NEVER fabricate a false past title.
-"""
+TARGET ATS: {profile.display_name} ({profile.matching_style} matching)
+- {"Exact-match ATS: it credits a keyword only when the JD's exact spelling appears. Use the keyword verbatim, never a synonym in its place." if profile.matching_style == "exact_weighted" else "Semantic ATS plus recruiter search: use the JD's exact spelling at least once, then natural phrasing around it."}
+- Repetition: each keyword 1-3 times across the whole resume (skills line + 1-2 bullets). Never stack the same keyword in consecutive bullets.
+- Dates: copy every role's dates exactly as given in the master resume."""
 
-    system_prompt = f"""You are the Writer in Dani's Multi-Agent Resume Team.
-Your job is to tailor the candidate's resume with strict adherence to human voice, authenticity, and high HR impact.
+    all_targets = list(dict.fromkeys([str(k).strip() for k in (target_keywords or []) if str(k).strip()] + [str(k).strip() for k in missing_keywords if str(k).strip()]))
+    base_exp = [e for e in base_resume.get("experience", []) if isinstance(e, dict)]
+    roles_block = "\n".join(
+        f"  {i + 1}. {e.get('title') or e.get('role') or ''} | {e.get('company', '')} | {e.get('dates') or e.get('date') or ''} | {len(e.get('bullets') or [])} master bullets"
+        for i, e in enumerate(base_exp)
+    )
+
+    system_prompt = f"""You are the Writer on a resume-tailoring team. You rewrite the candidate's master resume for ONE job so that it (a) passes the employer's ATS keyword screen and (b) reads as a credible, specific, human-written resume to the recruiter who opens it next.
 
 {ats_section}
 
-EDITORIAL PRIORITY ORDER (NEVER INVERT):
-1. AUTHENTICITY / TRUTH: Never invent fake metrics, fake companies, or fake degrees.
-2. HUMAN VOICE (RULES 0–5): Brevity, rhythmic sentence variation (jazz, not metronome), plain language.
-3. HR IMPACT: Real quantified numbers, front-loaded impact (first 3 words carry weight).
-4. DEEP ATS & BULLET WEAVING (CRITICAL):
-   - NEVER simply dump required keywords only into the "skills" list.
-   - You MUST actively weave key required frameworks, database tools, and cloud platforms from the JD and missing keywords directly into work experience bullets across the candidate's canonical roles (e.g. demonstrating active hands-on design, migration, ETL, or deployment in real engineering context).
-   - CRITICAL DOMAIN CONTEXT: When weaving missing keywords, you MUST match their precise technical domain meaning as used in the Job Description context provided. Never misapply a technical keyword.
+FIXED FACTS (copy exactly, never change, never add):
+- Employers, job titles, employment dates and locations: exactly the roles listed under ROLES below, in the same order. No new employers, no renamed titles.
+- Education, degrees, schools, certifications, licences, awards, contact details: unchanged. Never add a certification or degree.
+- Total years of experience: as implied by the dates. Never state a larger number.
 
-WRITING ENHANCEMENT RULES (Rules 0–16 from ResumeHQ):
-- Rule 0 (Human Voice Gate): Would a sharp engineer say this out loud in an interview without cringing?
-- Rule 1 (The "So What?" Test): Every bullet answers why it matters. Action + measurable result.
-- Rule 2 (Front-Load Value): First 3 words carry the punch (e.g. "Cut data errors 40% by...", "Built 15+ data marts using...").
-- Rule 3 (Eliminate Deadwood): Never use "Responsible for", "Successfully", "Duties included", "Played a key role in", "Utilized", "Leveraged".
-- Rule 4 (Metrics Mandate): >= 50% of bullets need real numbers (scale, speed, money, percentage, frequency).
-- Rule 5 (Plain Strong Verbs):
-  * GOOD OPENERS: Led, Built, Wrote, Cut, Fixed, Ran, Reviewed, Hired, Closed, Designed, Analyzed, Created, Shipped, Reduced, Increased, Trained, Audited, Implemented, Developed, Established, Improved, Resolved, Validated.
-  * BANNED CLICHÉ OPENERS (Strictly Prohibited): {cliche_list}.
-  * BANNED AI WORDS (Strictly Prohibited): {banned_list}.
-- Rule 6 (Summary Constraints): Max 3 sentences, max 70 words. No "Results-driven" or "Passionate professional" openers.
+WHAT YOU WRITE:
+1. KEYWORD COVERAGE (most important). Every keyword in TARGET KEYWORDS must appear VERBATIM (the JD's spelling) in at least one experience bullet, not only in skills. Missing keywords are tools or practices the candidate's master bullets do not show yet: write responsibilities and achievements in the candidate's existing roles that show hands-on use of each one, matching how the JD context uses it.
+2. PLACEMENT that survives an interview:
+   - Put each keyword in the role where it is most believable for that title, seniority, team and company domain. The most recent role carries most new technology.
+   - Respect technology eras: never place a tool in a role that ended before the tool was widely used (e.g. LLMs/GenAI/LangChain/vector databases not before 2022; dbt not before 2018; Kubernetes not before 2016; Snowflake not before 2016; Terraform not before 2016). If no role fits a keyword's era, use the most recent role.
+   - Keep every technology used correctly: right vendor (no "AWS BigQuery"), right layer (orchestration vs storage vs compute), right verb (you deploy to Kubernetes, model data in dbt, orchestrate with Airflow).
+3. BULLETS:
+   - Keep the substance of every master bullet; you may rewrite it to weave keywords in. Each role keeps at least its master bullet count and may gain up to 2 new bullets for keywords that do not fit an existing bullet.
+   - Shape: strong past-tense verb + what you built or changed + the tool + the result. Present tense only for the current role.
+   - Length varies on purpose: mix short bullets (10-14 words) with longer ones (20-28 words). Never more than 28 words.
+   - Numbers: reuse the master resume's numbers wherever they fit. New numbers must be modest and believable for the scale of the company (e.g. 15-40% improvements, hours saved per week, row or request volumes); one number per bullet at most; roughly half the bullets carry a number.
+   - Vary openers: no verb starts more than 2 bullets in the whole resume.
+   - Write what the candidate did, never the JD's wording about it: no "such as", "e.g.", "experience with", "familiarity with", "a tool like". Name the exact tool once, as used.
+   - Keep the resume tight: add a new bullet only when no existing bullet can carry the keyword naturally.
+4. SUMMARY: 2-3 sentences, at most 60 words. Name the target role "{role}" (or its closest truthful equivalent), the candidate's real years of experience, and the 4-6 most important target keywords. No clichés.
+5. SKILLS: a flat list of short items (1-4 words each). Keep every master skill and add every target keyword using the JD's spelling. No sentences.
 
-ALL CANONICAL EXPERIENCES & BULLET COUNTS MUST BE PRESERVED:
-- If the master profile has multiple jobs, your output MUST contain ALL of them.
-- MANDATORY BULLET COUNT: For EACH role, output the EXACT same number of bullet points as present in the master resume. NEVER compress, truncate, or drop bullets!
-- MANDATORY COMPANY NAMES: The ONLY allowed company names in the "experience" array are: {[e.get('company') for e in base_resume.get('experience', [])]}. NEVER replace, invent, or substitute company names. Preserve the exact company names and dates!
+VOICE:
+- Plain, specific, engineer-to-engineer. Would a sharp engineer say this out loud in an interview without wincing?
+- Never start a bullet with: {cliche_list}.
+- Never use: {banned_list}, "responsible for", "successfully", "various", "utilize".
 
-BULLET STRUCTURE REQUIREMENTS:
-- Every bullet MUST be a complete, self-contained accomplishment sentence of at least 15 words.
-- NEVER output short 2-to-3-word header fragments (e.g. NEVER output "Streamed data." or "ETL pipelines.").
-- Start every bullet with a capitalized strong action verb and end with a period.
+SELF-CHECK BEFORE ANSWERING:
+- Every TARGET KEYWORD appears verbatim in at least one bullet (list where in "_keyword_placement").
+- Every role from ROLES is present with its exact company, title and dates.
+- No bullet over 28 words; no verb opens more than 2 bullets.
 
-SKILLS CONSTRAINTS:
-The "skills" array must retain all candidate master skills and include new relevant keywords (< 4 words each). NEVER drop or prune the candidate's core hard skills!
+ROLES (fixed, in order):
+{roles_block}
 
-JSON OUTPUT FORMAT:
+OUTPUT: one JSON object, nothing else:
 {{
   "target_role": "{role}",
-  "summary": "2-3 crisp sentences.",
-  "skills": ["skill1", "skill2", ...],
+  "summary": "2-3 sentences",
+  "skills": ["Skill", "..."],
   "experience": [
-    {{
-      "title": "string",
-      "company": "string",
-      "dates": "string",
-      "location": "string",
-      "bullets": ["bullet1", "bullet2", ...]
-    }}
+    {{"title": "exact master title", "company": "exact master company", "dates": "exact master dates", "location": "master location", "bullets": ["...", "..."]}}
   ],
-  "projects": []
+  "projects": [],
+  "_keyword_placement": {{"Keyword": "Company it was placed under"}}
 }}"""
 
-    user_prompt = f"""TARGET: {role} at {company}
+    user_prompt = f"""TARGET JOB: {role} at {company}
 
-RESEARCHER RUBRIC:
-Hard Requirements: {json.dumps(research_rubric.get("hard_requirements", []))}
-Keywords & Tech: {json.dumps(missing_keywords)}
+TARGET KEYWORDS (all must appear verbatim in bullets):
+{json.dumps(all_targets, ensure_ascii=False)}
 
+KEYWORDS THE MASTER RESUME DOES NOT SHOW YET (write new responsibilities for these):
+{json.dumps(missing_keywords, ensure_ascii=False)}
+
+HARD REQUIREMENTS FROM THE JD:
+{json.dumps(research_rubric.get("hard_requirements", []), ensure_ascii=False)}
 {context_section}
-
 {custom_section}
-
 MASTER RESUME:
-{json.dumps(base_resume, ensure_ascii=False, separators=(',', ':'))}
+{json.dumps({k: v for k, v in base_resume.items() if not str(k).startswith('_')}, ensure_ascii=False, separators=(',', ':'))}
 
-Draft the optimized resume now as valid JSON."""
+Write the tailored resume JSON now."""
 
     from gemini_client import (
         is_key_invalid_error, mark_key_dead, get_active_key,
@@ -334,7 +332,7 @@ Draft the optimized resume now as valid JSON."""
                     response = current_client.models.generate_content(
                         model=model_name,
                         contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
-                        config=get_standard_genai_config(model_name=model_name, max_output_tokens=8192, temperature=0.3, is_json=True),
+                        config=get_standard_genai_config(model_name=model_name, max_output_tokens=16384, temperature=0.3, is_json=True),
                     )
                     raw_text = extract_clean_text(response)
                     if not raw_text:
@@ -525,6 +523,8 @@ def run_editor_phase(
     system_prompt = """You are the Editor in Dani's Multi-Agent Resume Team.
 The Auditor has flagged specific human-voice, AI-tell, or ATS keyword density findings in the draft resume.
 Your task is to fix ONLY the flagged lines while preserving all facts, numbers, tools, and experiences.
+Every technology keyword in a line you edit must still appear, spelled exactly the same, after your edit: ATS matching depends on it.
+Never change a company, title, date or location. Keep every role and at least as many bullets per role.
 
 Replace any cliché opener with a plain strong action verb (Built, Designed, Cut, Led, Shipped, Automated, Improved).
 Replace any banned AI words with plain equivalents.
@@ -581,6 +581,89 @@ Return the corrected JSON now."""
     return cleaned_draft
 
 
+def _call_json_llm(prompt: str, temperature: float = 0.3, max_tokens: int = 16384, label: str = "LLM") -> Optional[Any]:
+    """One JSON-mode Gemini call across the model cascade and key pool; None on failure."""
+    from gemini_client import get_candidate_models, record_model_failure, record_model_success, extract_clean_text
+    for attempt in range(2):
+        for model_name in get_candidate_models():
+            try:
+                client = get_gemini_client()
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=[types.Content(role="user", parts=[types.Part(text=prompt)])],
+                    config=get_standard_genai_config(model_name=model_name, max_output_tokens=max_tokens,
+                                                     temperature=temperature, is_json=True),
+                )
+                raw = extract_clean_text(response)
+                if not raw:
+                    continue
+                record_model_success(model_name)
+                return json.loads(_clean_json(raw))
+            except Exception as e:
+                record_model_failure(model_name, e)
+                print(f"[Dani's Engine - {label}] {model_name} note: {str(e)[:160]}")
+                if is_quota_error(e) and len(get_all_gemini_keys()) > 1:
+                    rotate_key(reason=f"{label} quota")
+        time.sleep(1.5)
+    return None
+
+
+def run_keyword_weave_phase(
+    draft: dict,
+    absent_keywords: list[str],
+    keyword_contexts: Optional[dict[str, str]] = None,
+    role: str = "",
+    company: str = "",
+) -> dict:
+    """Targeted pass for keywords that are still not in any bullet: rewrite or add
+    bullets so each appears verbatim, leaving everything else untouched."""
+    experience = [e for e in (draft.get("experience") or []) if isinstance(e, dict)]
+    if not absent_keywords or not experience:
+        return draft
+    ctx_lines = "\n".join(
+        f'- "{k}": {(keyword_contexts or {}).get(k, "").strip() or "(no JD sentence found)"}' for k in absent_keywords
+    )
+    prompt = f"""You are editing the EXPERIENCE section of a resume tailored for "{role}" at {company}.
+
+These keywords are not yet in any bullet. Each must appear VERBATIM (exact spelling below) in at least one bullet:
+{ctx_lines}
+
+Rules:
+- For each keyword, either rewrite the single most related existing bullet to include it, or add ONE new bullet to the most believable role (at most 2 new bullets per role).
+- Place each tool only in a role whose dates fit the era the tool was in common use; otherwise use the most recent role.
+- Use each technology correctly for how the JD context above uses it. Strong past-tense verb first, 10-28 words, at most one modest believable number.
+- Describe what was done, not the JD's wording: never "such as", "e.g.", "experience with", "a tool like".
+- Do NOT change any company, title, dates or location. Do NOT remove or reword bullets you are not using for a keyword.
+- Return ONLY the JSON array of roles in the same order and shape as given.
+
+EXPERIENCE (JSON):
+{json.dumps(experience, ensure_ascii=False, separators=(',', ':'))}"""
+    result = _call_json_llm(prompt, temperature=0.25, label="Weave")
+    if isinstance(result, dict):
+        result = result.get("experience")
+    if not isinstance(result, list) or len(result) != len(experience):
+        return draft
+    new_exp = []
+    for orig, upd in zip(experience, result):
+        if not isinstance(upd, dict) or not isinstance(upd.get("bullets"), list):
+            new_exp.append(orig)
+            continue
+        merged = dict(orig)
+        bullets = [str(b).strip() for b in upd["bullets"] if str(b).strip()]
+        # Never let the weave shrink a role below its previous bullet count.
+        merged["bullets"] = bullets if len(bullets) >= len(orig.get("bullets") or []) else orig.get("bullets", [])
+        new_exp.append(merged)
+    out = dict(draft)
+    out["experience"] = new_exp
+    return out
+
+
+def _keywords_absent_from_prose(resume: dict, keywords: list[str]) -> list[str]:
+    from ats_scoring import keyword_present, resume_prose_text
+    prose = resume_prose_text(resume)
+    return [k for k in keywords if not keyword_present(k, prose)]
+
+
 def execute_danis_engine_pipeline(
     base_resume: dict,
     jd_text: str,
@@ -591,6 +674,7 @@ def execute_danis_engine_pipeline(
     log_callback: Optional[Callable[[int, str, str, Optional[dict], str], None]] = None,
     keyword_contexts: Optional[dict[str, str]] = None,
     ats_profile: Any = None,
+    target_keywords: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """
     Main Orchestrator for Dani's Multi-Agent Engine.
@@ -614,6 +698,10 @@ def execute_danis_engine_pipeline(
         print(f"[Dani's Engine] [{status.upper()}] Step {step}: {title} — {desc}")
 
     client = get_gemini_client()
+    all_targets = list(dict.fromkeys(
+        [str(k).strip() for k in (target_keywords or []) if str(k).strip()]
+        + [str(k).strip() for k in (missing_keywords or []) if str(k).strip()]
+    ))
 
     # Step 1: Researcher Phase (Deterministic & local - preserves 100% quota for Writer)
     log(4, "Dani's Researcher", f"Extracting 3-tier keyword matrix for {role} at {company}...", status="working")
@@ -635,6 +723,7 @@ def execute_danis_engine_pipeline(
         client=client,
         keyword_contexts=keyword_contexts,
         ats_profile=profile,
+        target_keywords=all_targets,
     )
     log(4, "Dani's Writer", f"Draft created with strict human-voice protocols & {profile.display_name} phrasing rules.", status="success")
 
@@ -683,6 +772,27 @@ def execute_danis_engine_pipeline(
         ats_report = re_ats_audit
         log(5, "Dani's Editor", f"Corrected draft re-audited. Voice: {re_audit['score']}%, ATS: {re_ats_audit['score']}%", data={"voice_audit": re_audit, "ats_audit": re_ats_audit}, status="success")
 
+    # Step 4.5: Keyword coverage loop: every target keyword must sit in a bullet or
+    # the summary, not only in Skills. Up to 2 targeted weave passes.
+    absent = _keywords_absent_from_prose(draft, all_targets)
+    for weave_round in range(2):
+        if not absent:
+            break
+        log(5, "Keyword Coverage", f"{len(absent)} keyword(s) not yet in any bullet: {', '.join(absent[:12])}. Weaving pass {weave_round + 1}...", status="working")
+        woven = run_keyword_weave_phase(draft, absent, keyword_contexts=keyword_contexts, role=role, company=company)
+        woven = deterministic_voice_cleanup(woven)
+        still = _keywords_absent_from_prose(woven, all_targets)
+        if len(still) < len(absent):
+            draft, absent = woven, still
+        else:
+            break
+    if all_targets:
+        log(5, "Keyword Coverage",
+            f"{len(all_targets) - len(absent)}/{len(all_targets)} keywords placed in bullets/summary"
+            + (f"; {len(absent)} only in Skills: {', '.join(absent)}" if absent else ""),
+            data={"in_prose": [k for k in all_targets if k not in absent], "skills_only": absent},
+            status="success" if not absent else "warning")
+
     # Step 5: Post-Processing & Multi-Role Guarantee
     merged = dict(base_resume)
     merged.update(draft)
@@ -709,7 +819,7 @@ def execute_danis_engine_pipeline(
             if not isinstance(rew, dict):
                 continue
             rew_comp = rew.get("company", "").strip().lower()
-            if rew_comp == orig_comp_lower or (orig_comp_lower in rew_comp) or (rew_comp in orig_comp_lower):
+            if rew_comp and orig_comp_lower and (rew_comp == orig_comp_lower or orig_comp_lower in rew_comp or rew_comp in orig_comp_lower):
                 matched_rewrite = rew
                 break
 
@@ -800,16 +910,30 @@ def execute_danis_engine_pipeline(
                 final_skills.append(s_str)
                 final_skills_lower.add(s_str.lower())
 
-    for kw in (missing_keywords or []):
+    # Every target keyword is listed in Skills with the JD's spelling (literal ATS match).
+    from ats_scoring import keyword_present
+    skills_blob = "\n".join(final_skills)
+    for kw in all_targets:
         kw_clean = str(kw).strip()
-        if len(kw_clean.split()) <= 3 and kw_clean.lower() not in final_skills_lower:
+        if kw_clean and len(kw_clean.split()) <= 4 and not keyword_present(kw_clean, skills_blob):
             final_skills.append(kw_clean)
-            final_skills_lower.add(kw_clean.lower())
+            skills_blob += "\n" + kw_clean
 
     merged["skills"] = final_skills
+    merged.pop("_keyword_placement", None)
+
+    # Final audits run on the resume as shipped (after all merges), so the
+    # numbers shown to the user describe this exact resume.
+    final_voice = audit_resume_dict(merged)
+    final_ats = audit_ats_compliance(merged, ats_profile=profile, jd_keywords=all_targets or missing_keywords, jd_title=role)
     merged["_ats_platform"] = profile.platform_id
     merged["_ats_profile"] = profile.to_dict()
-    merged["_ats_audit"] = ats_report
-
+    merged["_ats_audit"] = final_ats
+    merged["_voice_audit"] = final_voice
+    merged["_keyword_coverage"] = {
+        "targets": all_targets,
+        "in_prose": [k for k in all_targets if k not in absent],
+        "skills_only": absent,
+    }
     return merged
 

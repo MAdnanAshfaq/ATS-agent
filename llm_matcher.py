@@ -69,40 +69,57 @@ def _normalize_token(text: str) -> str:
 
 
 def is_keyword_in_resume(kw: str, resume_full_text: str, resume_skills_list: list) -> bool:
-    """Intelligently check if a keyword or tool exists in candidate's resume."""
-    kw_raw = kw.strip()
-    kw_lower = kw_raw.lower()
-    if not kw_lower:
+    """True if the resume contains `kw` as a whole term, literally (case-insensitive,
+    plural tolerant). Literal on purpose: exact-match ATS platforms only credit the
+    term as the job description spells it, so "K8s" does not satisfy "Kubernetes"."""
+    from ats_scoring import keyword_present
+    if not (kw or "").strip():
         return False
-    
-    # Direct substring or word-boundary check
-    if kw_lower in resume_full_text:
-        return True
-    
-    pattern = r'\b' + re.escape(kw_lower) + r'\b'
-    if re.search(pattern, resume_full_text):
-        return True
-        
-    # Check normalized singular form
-    norm_kw = _normalize_token(kw_lower)
-    norm_resume = _normalize_token(resume_full_text)
-    if norm_kw and norm_kw in norm_resume:
-        return True
+    haystack = (resume_full_text or "") + "\n" + "\n".join(str(s) for s in (resume_skills_list or []))
+    return keyword_present(kw, haystack)
 
-    # Check skills list directly
-    for s in resume_skills_list:
-        s_lower = str(s).lower().strip()
-        if s_lower == kw_lower or s_lower in kw_lower or kw_lower in s_lower:
-            return True
-        if _normalize_token(s_lower) == norm_kw:
-            return True
 
-    # Compound skill check (e.g. 'Azure DevOps CI/CD', 'Delta Lake CDC', 'RESTful APIs')
-    sub_parts = [p.strip() for p in re.split(r'[/&+|, ]+', kw_lower) if len(p.strip()) > 1]
-    if sub_parts and len(sub_parts) > 1:
-        match_count = sum(1 for p in sub_parts if p in resume_full_text or _normalize_token(p) in norm_resume)
-        if match_count >= len(sub_parts) * 0.5:
-            return True
+def _estimate_years_experience(resume: dict) -> int:
+    """Sum of role spans in years, from 4-digit years in each role's dates."""
+    import datetime
+    now_year = datetime.date.today().year
+    spans = []
+    for exp in resume.get("experience", []) or []:
+        if not isinstance(exp, dict):
+            continue
+        d = str(exp.get("dates") or exp.get("date") or "")
+        years = [int(y) for y in re.findall(r"(?:19|20)\d{2}", d)]
+        if not years:
+            continue
+        start = min(years)
+        end = now_year if re.search(r"present|current|now", d, re.I) else max(years)
+        spans.append((start, end))
+    if not spans:
+        return 0
+    # Merge overlapping spans so concurrent roles are not double counted.
+    spans.sort()
+    total, cur_s, cur_e = 0, spans[0][0], spans[0][1]
+    for s_, e_ in spans[1:]:
+        if s_ <= cur_e:
+            cur_e = max(cur_e, e_)
+        else:
+            total += cur_e - cur_s
+            cur_s, cur_e = s_, e_
+    total += cur_e - cur_s
+    return max(total, 0)
+
+
+def _deterministic_score(matching: list, missing: list) -> dict:
+    tot = len(matching) + len(missing)
+    score = round(100 * len(matching) / tot) if tot else 0
+    s10 = round(score / 10.0, 1)
+    if s10 < 6.0: rating = "Poor"
+    elif s10 < 7.0: rating = "Fair"
+    elif s10 < 8.0: rating = "Good"
+    elif s10 < 9.0: rating = "Great"
+    else: rating = "Excellent"
+    return {"score": score, "score_scale_10": s10, "score_rating": rating, "total_keywords": tot}
+
 
 def extract_keyword_contexts_from_jd(keywords: list, jd_text: str) -> dict:
     """
@@ -153,73 +170,55 @@ def extract_keyword_contexts_from_jd(keywords: list, jd_text: str) -> dict:
 
 
 def _local_matcher_fallback(jd_text: str, base_resume: dict) -> dict:
-    """Deterministic keyword extraction fallback when Gemini is unavailable, rate-limited, or unconfigured."""
+    """Deterministic keyword extraction when Gemini is unavailable. Only terms found
+    in the JD are used; nothing is assumed about the candidate's field."""
     from keyword_matcher import extract_keywords_from_text
     resume_full = _flatten_resume_text(base_resume)
     resume_skills = [str(s) for s in base_resume.get("skills", [])]
-    local_kws = extract_keywords_from_text(jd_text)
-    final_matching = []
-    final_missing = []
-    seen = set()
+    final_matching, final_missing, seen = [], [], set()
 
-    for kw in local_kws:
-        k_clean = kw.strip()
-        k_title = k_clean.title() if len(k_clean) > 4 and k_clean.islower() else k_clean
+    from ats_scoring import jd_spelling
+    for kw in extract_keywords_from_text(jd_text):
+        k_title = jd_spelling(kw.strip(), jd_text)
         if not k_title or k_title.lower() in seen or k_title.lower() in GENERIC_FILLER_WORDS:
             continue
         seen.add(k_title.lower())
-        if is_keyword_in_resume(k_title, resume_full, resume_skills):
-            final_matching.append(k_title)
-        else:
-            final_missing.append(k_title)
-
-    # If still fewer than 5 keywords, inject standard technical baseline
-    if len(final_matching) + len(final_missing) < 5:
-        baseline_kws = ["Python", "SQL", "ETL Pipelines", "Data Warehousing", "PostgreSQL", "AWS", "Git", "Data Modeling", "Docker", "CI/CD", "REST APIs", "Apache Spark"]
-        for bk in baseline_kws:
-            if bk.lower() not in seen:
-                seen.add(bk.lower())
-                if is_keyword_in_resume(bk, resume_full, resume_skills):
-                    final_matching.append(bk)
-                else:
-                    final_missing.append(bk)
-
-    tot = len(final_matching) + len(final_missing)
-    score = round((len(final_matching) / max(tot, 1)) * 100) if tot > 0 else 65
-    score = max(20, min(95, int(score)))
-    score_10 = round(score / 10.0, 1)
+        (final_matching if is_keyword_in_resume(k_title, resume_full, resume_skills) else final_missing).append(k_title)
 
     cand_name = base_resume.get("name", "Candidate")
-    cand_title = base_resume.get("experience", [{}])[0].get("title", "Data Engineer") if base_resume.get("experience") else "Data Engineer"
-    deterministic_contexts = extract_keyword_contexts_from_jd(final_missing, jd_text)
+    exps = base_resume.get("experience") or []
+    cand_title = (exps[0].get("title") or exps[0].get("role") or "") if exps and isinstance(exps[0], dict) else ""
 
     first_lines = [l.strip() for l in jd_text.splitlines() if l.strip() and len(l.strip()) < 60]
-    job_title_jd = first_lines[0] if first_lines else "Target Role"
-    job_title_jd = re.sub(r'^(?:Title:\s*|Job Application for\s*|Job Openings\s*)+', '', job_title_jd, flags=re.I).strip() or "Target Role"
+    job_title_jd = first_lines[0] if first_lines else ""
+    job_title_jd = re.sub(r'^(?:Title:\s*|Job Application for\s*|Job Openings\s*)+', '', job_title_jd, flags=re.I).strip()
 
     exp_match = re.search(r'(\d+)\+?\s*(?:to\s*\d+\+?)?\s*years?', jd_text, re.I)
-    exp_years_jd = f"{exp_match.group(1)}+ years exp" if exp_match else "3+ years exp"
+    req_years = int(exp_match.group(1)) if exp_match else None
+    cand_years = _estimate_years_experience(base_resume)
 
-    return {
-        "score": score,
-        "score_scale_10": score_10,
-        "score_rating": "Fair" if score_10 < 7.5 else "Good",
+    jd_words = set(re.findall(r'[a-z]{3,}', job_title_jd.lower())) - {"senior", "junior", "lead", "staff", "principal"}
+    cv_words = set(re.findall(r'[a-z]{3,}', cand_title.lower())) - {"senior", "junior", "lead", "staff", "principal"}
+
+    res = {
         "resume_name": f"{cand_name.replace(' ', '_')}_Resume",
-        "job_title_jd": job_title_jd,
-        "job_title_resume": cand_title,
-        "job_title_match": True,
-        "exp_years_jd": exp_years_jd,
-        "exp_years_resume": "8+ years exp",
-        "exp_years_match": True,
-        "industries": ["Information Technology", "Data Engineering", "Cloud Computing"],
-        "industries_match": True,
+        "job_title_jd": job_title_jd or "Not stated",
+        "job_title_resume": cand_title or "Not stated",
+        "job_title_match": bool(jd_words & cv_words),
+        "exp_years_jd": f"{req_years}+ years exp" if req_years else "Not stated",
+        "exp_years_resume": f"{cand_years}+ years exp" if cand_years else "Not stated",
+        "exp_years_match": (cand_years >= req_years) if (req_years and cand_years) else False,
+        "industries": [],
+        "industries_match": False,
         "matching_keywords": final_matching,
         "missing_keywords": final_missing,
-        "missing_keyword_contexts": deterministic_contexts,
-        "total_keywords": tot,
-        "summary_feedback": "Review your summary against the target job requirements.",
+        "missing_keyword_contexts": extract_keyword_contexts_from_jd(final_missing, jd_text),
+        "summary_feedback": "Gemini was unavailable; keywords were extracted locally from the job description.",
         "summary_match": False,
+        "score_source": "keyword_coverage",
     }
+    res.update(_deterministic_score(final_matching, final_missing))
+    return res
 
 
 def analyze_jd_and_resume_with_gemini(jd_text: str, base_resume: dict) -> dict:
@@ -263,14 +262,15 @@ def analyze_jd_and_resume_with_gemini(jd_text: str, base_resume: dict) -> dict:
 Analyze the following Job Description against the Candidate's Master Resume.
 
 YOUR TASK:
-1. Extract 12-25 HIGH-VALUE HARD TECHNICAL SKILLS, programming languages, databases, cloud tools, frameworks, system design concepts, and qualifications for this role.
-2. If the Job Description explicitly names tools (e.g. Python, SQL, React, AWS, Docker, Kubernetes, etc.), extract them.
-3. If the Job Description is brief, conceptual, or uses general language, extract the standard industry tools and technologies essential for this specific job title and domain (e.g. Python, SQL, REST APIs, Git, Testing, Cloud, CI/CD, Data Modeling, System Architecture). NEVER return empty keyword lists.
-4. Categorize all extracted skills into:
+1. Extract 12-30 ATS KEYWORDS from the Job Description: hard technical skills, programming languages, databases, cloud services, frameworks, tools, methodologies, certifications, and domain terms that a recruiter would type into an ATS search for this role.
+2. ONLY extract terms that literally appear in the Job Description text. Copy each keyword EXACTLY as the JD spells it (same casing, punctuation and plural form, e.g. "Node.js", "CI/CD", "PostgreSQL", "REST APIs"), because exact-match ATS platforms only credit the JD's spelling.
+3. Do NOT add tools or skills the JD does not mention, even if they are common for the role. If the JD is short, return fewer keywords rather than guessing.
+4. Prefer specific terms over generic ones ("Apache Airflow" over "orchestration"; "AWS Lambda" over "cloud"). When the JD gives both an acronym and its long form, extract the form used most often.
+5. Categorize all extracted skills into:
    - "matching_keywords": present in the candidate's resume
    - "missing_keywords": missing from the candidate's resume
    - "missing_keyword_contexts": An object mapping EACH missing keyword to the EXACT sentence, requirement bullet, or phrase in the Job Description where that term or concept was specified (e.g. {{"forecasting": "Build scalable time-series feature pipelines and ML models for predictive demand forecasting across 500k daily transactions."}}). This provides critical technical domain context so the AI knows precisely how the technology is applied.
-5. Extract the following comparison data:
+6. Extract the following comparison data:
    - "job_title_jd": Target job title from the JD (e.g. "Software Engineer", "Data Engineer", "Frontend Developer", etc. NEVER return 'Not Specified' or 'None').
    - "job_title_resume": Candidate's current/recent job title from resume (e.g. "Data Engineer II")
    - "job_title_match": true if titles are semantically aligned/equivalent, else false
@@ -287,14 +287,14 @@ YOUR TASK:
 
 CRITICAL RULES:
 - STRICTLY EXCLUDE legal disclaimers, EEOC text, veteran disclosures, disability forms, and soft skill filler words.
-- ALWAYS extract actionable technical skills. Never return empty lists for a technical role.
+- A keyword counts as "matching" ONLY if the resume contains that exact term (or its plural/singular). A synonym or related tool is NOT a match: put the keyword in "missing_keywords".
 - For EVERY missing keyword, find and include the exact context sentence from the JD in "missing_keyword_contexts".
 
 JOB DESCRIPTION:
-{jd_text[:6000]}
+{jd_text[:14000]}
 
 CANDIDATE MASTER RESUME:
-{json.dumps(base_resume, indent=2, ensure_ascii=False)[:6000]}
+{json.dumps({k: v for k, v in base_resume.items() if not str(k).startswith('_')}, ensure_ascii=False, separators=(',', ':'))[:16000]}
 
 OUTPUT FORMAT:
 Return ONLY a valid JSON object matching this schema:
@@ -392,12 +392,17 @@ Return ONLY a valid JSON object matching this schema:
         final_missing  = []
         seen = set()
 
+        # Gemini's "matching" list is re-verified literally: a semantic match the ATS
+        # would not credit (e.g. "K8s" for "Kubernetes") is moved to missing.
         for kw in raw_matching:
-            k_clean = kw.strip()
+            k_clean = str(kw).strip()
             if not k_clean or k_clean.lower() in seen or k_clean.lower() in GENERIC_FILLER_WORDS:
                 continue
             seen.add(k_clean.lower())
-            final_matching.append(k_clean)
+            if is_keyword_in_resume(k_clean, resume_full, resume_skills):
+                final_matching.append(k_clean)
+            else:
+                final_missing.append(k_clean)
 
         for kw in raw_missing:
             k_clean = kw.strip()
@@ -428,71 +433,41 @@ Return ONLY a valid JSON object matching this schema:
             except Exception as fe:
                 print(f"[LLM Matcher] Local keyword fallback error: {fe}")
 
-        # If STILL fewer than 4 keywords, inject baseline role skills
-        if len(final_matching) + len(final_missing) < 4:
-            raw_title = (parsed.get("job_title_jd") or "").lower()
-            if "data" in raw_title:
-                baseline_kws = ["Python", "SQL", "ETL Pipelines", "Data Warehousing", "PostgreSQL", "AWS", "Apache Airflow", "Docker", "Git", "Data Modeling"]
-            elif "frontend" in raw_title or "react" in raw_title or "ui" in raw_title:
-                baseline_kws = ["JavaScript", "TypeScript", "React", "HTML5/CSS3", "REST APIs", "Git", "Responsive Design", "Webpack", "Unit Testing", "CI/CD"]
-            else:
-                baseline_kws = ["Python", "SQL", "Git", "REST APIs", "Docker", "Data Structures", "System Design", "CI/CD", "Agile Methodologies", "Cloud Services"]
-
-            for bk in baseline_kws:
-                if bk.lower() not in seen:
-                    seen.add(bk.lower())
-                    if is_keyword_in_resume(bk, resume_full, resume_skills):
-                        final_matching.append(bk)
-                    else:
-                        final_missing.append(bk)
+        # Drop any keyword Gemini returned that does not occur in the JD at all:
+        # the ATS searches for the employer's terms, not the model's guesses.
+        from ats_scoring import keyword_present as _in_text
+        final_matching = [k for k in final_matching if _in_text(k, jd_text)]
+        final_missing = [k for k in final_missing if _in_text(k, jd_text)]
 
         tot = len(final_matching) + len(final_missing)
 
-        # Smart Job Title fallback
         job_title_jd = (parsed.get("job_title_jd") or "").strip()
         if not job_title_jd or job_title_jd.lower() in ("not specified", "none", "unknown", "n/a", "null", "target role", "role"):
             first_lines = [l.strip() for l in jd_text.splitlines() if l.strip() and len(l.strip()) < 60]
-            job_title_jd = first_lines[0] if first_lines else "Software Engineer"
-            # Remove prefixes like 'Title: ' or 'Job Application for '
+            job_title_jd = first_lines[0] if first_lines else ""
             job_title_jd = re.sub(r'^(?:Title:\s*|Job Application for\s*|Job Openings\s*)+', '', job_title_jd, flags=re.I).strip()
-            if not job_title_jd:
-                job_title_jd = "Software Engineer"
+        job_title_jd = job_title_jd or "Not stated"
 
-        # Smart Experience fallback
         exp_years_jd = (parsed.get("exp_years_jd") or "").strip()
         if not exp_years_jd or exp_years_jd.lower() in ("not specified", "none", "unknown", "n/a", "null"):
             exp_match = re.search(r'(\d+)\+?\s*(?:to\s*\d+\+?)?\s*years?', jd_text, re.I)
-            exp_years_jd = f"{exp_match.group(1)}+ years exp" if exp_match else "3+ years exp"
+            exp_years_jd = f"{exp_match.group(1)}+ years exp" if exp_match else "Not stated"
 
-        # Smart Industries fallback
         industries = parsed.get("industries")
-        if not industries or not isinstance(industries, list) or len(industries) == 0:
-            industries = ["Information Technology", "Software Engineering", "Cloud Computing"]
+        if not isinstance(industries, list):
+            industries = []
 
-        # Accurate score calculation
-        score = parsed.get("score")
-        if not score or not isinstance(score, (int, float)) or score < 10:
-            score = round((len(final_matching) / max(tot, 1)) * 100) if tot > 0 else 60
-        score = max(15, min(99, int(score)))
+        # Score = literal keyword coverage of the master resume: the same measure
+        # the pipeline later applies to the delivered DOCX, so before/after compare.
+        det = _deterministic_score(final_matching, final_missing)
+        score, score_10, rating = det["score"], det["score_scale_10"], det["score_rating"]
+        ai_score = parsed.get("score") if isinstance(parsed.get("score"), (int, float)) else None
 
-        score_10 = parsed.get("score_scale_10")
-        if not score_10 or not isinstance(score_10, (int, float)) or score_10 <= 1.0:
-            score_10 = round(score / 10.0, 1)
-        else:
-            score_10 = round(float(score_10), 1)
-
-        rating = parsed.get("score_rating")
-        if not rating or rating == "Poor" and score_10 >= 6.0:
-            if score_10 < 6.0: rating = "Poor"
-            elif score_10 < 7.0: rating = "Fair"
-            elif score_10 < 8.0: rating = "Good"
-            elif score_10 < 9.0: rating = "Great"
-            else: rating = "Excellent"
-
-        # Candidate name & file representation
         cand_name = base_resume.get("name", "Candidate")
         resume_name_tag = f"{cand_name.replace(' ', '_')}_Resume"
-        cand_title = base_resume.get("experience", [{}])[0].get("title", "Software Engineer") if base_resume.get("experience") else "Software Engineer"
+        exps = base_resume.get("experience") or []
+        cand_title = (exps[0].get("title") or exps[0].get("role") or "") if exps and isinstance(exps[0], dict) else ""
+        cand_years = _estimate_years_experience(base_resume)
 
         # Build exact JD context mapping for every missing keyword
         llm_contexts = parsed.get("missing_keyword_contexts") or {}
@@ -510,11 +485,13 @@ Return ONLY a valid JSON object matching this schema:
             "score_rating": rating,
             "resume_name": resume_name_tag,
             "job_title_jd": job_title_jd,
-            "job_title_resume": parsed.get("job_title_resume") or cand_title,
-            "job_title_match": bool(parsed.get("job_title_match", True)),
+            "job_title_resume": parsed.get("job_title_resume") or cand_title or "Not stated",
+            "job_title_match": bool(parsed.get("job_title_match", False)),
             "exp_years_jd": exp_years_jd,
-            "exp_years_resume": parsed.get("exp_years_resume") or "8+ years exp",
-            "exp_years_match": bool(parsed.get("exp_years_match", True)),
+            "exp_years_resume": parsed.get("exp_years_resume") or (f"{cand_years}+ years exp" if cand_years else "Not stated"),
+            "exp_years_match": bool(parsed.get("exp_years_match", False)),
+            "ai_score": ai_score,
+            "score_source": "keyword_coverage",
             "industries": industries,
             "industries_match": bool(parsed.get("industries_match", False)),
             "matching_keywords": final_matching,
