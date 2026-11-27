@@ -115,16 +115,16 @@
           <i class="fa-solid fa-wand-magic-sparkles"></i> New Application
         </button>
         <button class="nav-tab" data-tab="history">
-          <i class="fa-solid fa-folder-closed"></i> History <span class="tab-badge" id="history-count">0</span>
+          <i class="fa-solid fa-folder-closed"></i> History <span class="tab-badge" id="history-count">…</span>
         </button>
         <button class="nav-tab" data-tab="setup">
           <i class="fa-solid fa-sliders"></i> <span class="nav-tab-label">Setup</span>
         </button>
         <button class="nav-tab" data-tab="resume">
-          <i class="fa-solid fa-file-user"></i> <span class="nav-tab-label">Master Resume</span>
+          <i class="fa-solid fa-id-card"></i> <span class="nav-tab-label">Master Resume</span>
         </button>
-        <a href="/editor/master" class="nav-tab nav-tab-studio" style="background: linear-gradient(135deg, rgba(37,99,235,0.25), rgba(124,58,237,0.25)); border: 1px solid rgba(59,130,246,0.5); color: #93c5fd; text-decoration: none; display: inline-flex; align-items: center; gap: 7px; font-weight: 700; box-shadow: 0 0 12px rgba(37,99,235,0.2);" title="Open Canva-Grade Visual PDF Resume Editor Studio">
-          <i class="fa-solid fa-wand-magic-sparkles" style="color:#60a5fa;"></i> <span class="nav-tab-label">Studio</span>
+        <a href="/editor/master" class="nav-tab nav-tab-studio" title="Open the visual resume editor (separate page)">
+          <i class="fa-solid fa-pen-ruler"></i> <span class="nav-tab-label">Studio</span> <i class="fa-solid fa-arrow-up-right-from-square nav-ext-icon" aria-hidden="true"></i>
         </a>
         <button class="nav-tab" data-tab="ai-lab">
           <i class="fa-solid fa-flask-vial"></i> <span class="nav-tab-label">AI Lab</span> <span class="tab-badge tab-badge-hf">HF</span>
@@ -194,7 +194,7 @@
       <div class="hero-section">
         <h1 class="hero-title">Cross-check ATS keywords and tailor your resume in seconds.</h1>
         <p class="hero-subtitle">
-          Scrapes the live job description, audits keyword gaps, and rewrites bullet points adhering to human-voice rules in under 15 seconds.
+          Reads the job posting, finds the keywords your resume is missing, and rewrites your bullets to include them. Scores are measured on the Word file you'll actually upload.
         </p>
       </div>
 
@@ -302,7 +302,7 @@
               >
             </div>
             <div class="form-hint">
-              Paste the exact missing keywords shown in your Simplify popup to guarantee 100% injection into your tailored resume.
+              Paste the missing keywords from your Simplify popup. Each one is added to your tailored resume, and the final score shows which ones made it into the file.
             </div>
 
             <!-- ── SIMPLIFY EXTENSION STATUS & SYNC TOOLBAR ──────────────────── -->
@@ -366,7 +366,7 @@
                   <option value="standard">Standard Engine (Direct Rewrite + 2-Pass Tone Cleaner)</option>
                 </select>
                 <span class="option-hint" style="margin-top:6px; display:block; color:#64748b;">
-                  <strong>Dani's Engine:</strong> Enforces Rules 0–16 from ResumeHQ (anti-hallucination, burstiness CV ≥ 0.30, front-loaded impact, and zero AI cliché words).
+                  <strong>Dani's Engine:</strong> Keeps your companies, titles and dates fixed, varies sentence length, leads bullets with impact, and removes common AI cliché words.
                 </span>
               </div>
 
@@ -436,9 +436,9 @@
       <div class="workspace-status-dock" id="workspace-features-grid">
         <div class="status-dock-item">
           <div class="dock-item-left">
-            <span class="dock-indicator dot-ready"></span>
+            <span class="dock-indicator dot-warn" id="dock-profile-dot"></span>
             <span class="dock-label">Master Profile:</span>
-            <span class="dock-val">Synced</span>
+            <span class="dock-val" id="dock-profile-val">Loading…</span>
           </div>
           <button type="button" class="dock-action-link" onclick="switchTab('resume')">Edit</button>
         </div>
@@ -447,7 +447,7 @@
           <div class="dock-item-left">
             <span class="dock-indicator dot-ready"></span>
             <span class="dock-label">Engine:</span>
-            <span class="dock-val">Gemini 2.5 Flash</span>
+            <span class="dock-val">Gemini Flash (auto-failover)</span>
           </div>
           <button type="button" class="dock-action-link" onclick="switchTab('setup')">Config</button>
         </div>
@@ -455,8 +455,8 @@
         <div class="status-dock-item">
           <div class="dock-item-left">
             <span class="dock-indicator dot-ready"></span>
-            <span class="dock-label">Verification:</span>
-            <span class="dock-val">Human Voice 0–16 Active</span>
+            <span class="dock-label">Checks:</span>
+            <span class="dock-val">Keyword match + writing-style audit</span>
           </div>
           <button type="button" class="dock-action-link" onclick="switchTab('history')">History</button>
         </div>
@@ -1137,12 +1137,11 @@
       </div>
 
       <div class="history-grid" id="history-grid">
-        <!-- Dynamically filled by JS -->
-        <div class="empty-state glass-card">
-          <i class="fa-solid fa-folder-open empty-icon"></i>
-          <h3>No applications generated yet</h3>
-          <p>Run your first application from the New Application tab!</p>
-        </div>
+        <!-- Skeleton cards until /api/history answers; replaced by JS -->
+        <div class="skeleton-card glass-card" aria-hidden="true"><div class="sk sk-title"></div><div class="sk sk-line"></div><div class="sk sk-block"></div><div class="sk sk-btn"></div><div class="sk sk-btn"></div></div>
+        <div class="skeleton-card glass-card" aria-hidden="true"><div class="sk sk-title"></div><div class="sk sk-line"></div><div class="sk sk-block"></div><div class="sk sk-btn"></div><div class="sk sk-btn"></div></div>
+        <div class="skeleton-card glass-card" aria-hidden="true"><div class="sk sk-title"></div><div class="sk sk-line"></div><div class="sk sk-block"></div><div class="sk sk-btn"></div><div class="sk sk-btn"></div></div>
+        <p class="sr-only" role="status">Loading your applications…</p>
       </div>
 
       <!-- ── FLOATING STICKY ACTION BAR FOR MULTI-SELECT HISTORY ──────────────── -->
@@ -1326,7 +1325,7 @@
           <h2>Master Resume Profile</h2>
           <p>Upload your PDF or DOCX resume. The agent will parse it and always tailor from it.</p>
         </div>
-        <div class="action-btn-group" id="resume-actions-bar">
+        <div class="action-btn-group hidden" id="resume-actions-bar">
           <input type="file" id="master-resume-file-input" accept=".pdf,.docx,.json" style="display:none" onchange="uploadMasterResumeFile(event)">
           <a href="/editor/master" class="btn btn-primary" style="background: linear-gradient(135deg, #2563eb, #7c3aed); color: #fff; font-weight: 700; border: none; box-shadow: 0 4px 14px rgba(37,99,235,0.4); display: inline-flex; align-items: center; gap: 8px; text-decoration: none; padding: 9px 18px; border-radius: 8px;" title="Open Canva-Grade Visual PDF Resume Editor Studio">
             <i class="fa-solid fa-wand-magic-sparkles"></i> Canva Studio Editor
@@ -1382,8 +1381,17 @@
         </div>
       </div>
 
+      <!-- Skeleton shown until /api/resume answers -->
+      <div class="skeleton-card glass-card resume-skeleton" id="resume-loading-skeleton" aria-hidden="true">
+        <div class="sk sk-title"></div>
+        <div class="sk-row"><div class="sk sk-input"></div><div class="sk sk-input"></div></div>
+        <div class="sk-row"><div class="sk sk-input"></div><div class="sk sk-input"></div></div>
+        <div class="sk sk-block tall"></div>
+        <div class="sk sk-line"></div><div class="sk sk-line short"></div>
+      </div>
+
       <!-- Upload Prompt (shown when no resume uploaded yet) -->
-      <div class="upload-prompt-card" id="resume-upload-prompt">
+      <div class="upload-prompt-card hidden" id="resume-upload-prompt">
         <i class="fa-solid fa-cloud-arrow-up"></i>
         <h3>Upload Your Resume to Get Started</h3>
         <p>Upload your PDF or DOCX resume. Gemini AI will parse it into a structured profile that's used for every job application tailoring.</p>
@@ -2517,7 +2525,7 @@
 
   <!-- ── UNIVERSAL LIVE CONSOLE LAUNCHER & DRAWER ────────────────────────── -->
   <!-- Floating Launcher Button on Side/Bottom -->
-  <div id="universal-console-launcher" class="universal-console-launcher" onclick="toggleUniversalConsole(undefined, event)" title="Open Live Render & Backend Terminal">
+  <div id="universal-console-launcher" class="universal-console-launcher" role="button" tabindex="0" aria-label="Open live terminal" onclick="toggleUniversalConsole(undefined, event)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleUniversalConsole(undefined, event);}" title="Open Live Render & Backend Terminal">
     <div class="console-launcher-icon-wrap">
       <i class="fa-solid fa-terminal"></i>
       <span class="console-status-dot"></span>

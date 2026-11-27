@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 _pool = None
 _pool_pid = None
+RECENT_USE_SKIP_PING_SECONDS = 30.0  # a connection returned to the pool this recently is trusted without a ping
 MAX_IDLE_SECONDS = 240.0  # Neon serverless closes connections after 300s; recycle > 4min idle connections proactively
 
 # psycopg2 connection objects are C extension types without __dict__, so we
@@ -104,9 +105,12 @@ def get_conn():
                 _close_and_forget(p, conn)
                 continue
 
-            # Quick liveness ping to detect stale or desynced SSL sockets early
-            with conn.cursor() as test_cur:
-                test_cur.execute("SELECT 1")
+            # Liveness ping to detect stale or desynced SSL sockets early. Skipped when the
+            # connection was used moments ago: the ping is a full network round trip,
+            # and a page load makes several DB calls in a row.
+            if not (last_used and (now - last_used) < RECENT_USE_SKIP_PING_SECONDS):
+                with conn.cursor() as test_cur:
+                    test_cur.execute("SELECT 1")
 
             _conn_last_used[id(conn)] = time.time()
             return conn

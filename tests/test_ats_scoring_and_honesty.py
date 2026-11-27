@@ -178,5 +178,21 @@ class TestVoiceCleanupIsSafe(unittest.TestCase):
         self.assertEqual(b[1], "Ensured idempotency of Airflow DAGs using smooth retries.")
 
 
+class TestSecretsNeverSentToBrowser(unittest.TestCase):
+    def test_mask_and_round_trip(self):
+        import app as app_module
+        key = "AIzaSyD-example-key-1234567890abcd"
+        masked = app_module._mask_secret(key)
+        self.assertNotIn(key[4:-4], masked)
+        self.assertTrue(masked.startswith(key[:4]) and masked.endswith(key[-4:]))
+        # A masked value posted back resolves to the stored key...
+        self.assertEqual(app_module._unmask_secret(masked, [key]), key)
+        # ...a newly pasted key is saved as typed...
+        self.assertEqual(app_module._unmask_secret("AIzaNEWKEY0000000000", [key]), "AIzaNEWKEY0000000000")
+        # ...and mask text that matches nothing is dropped, never saved as a key.
+        self.assertEqual(app_module._unmask_secret("AIza••••zzzz", [key]), "")
+        self.assertEqual(app_module._mask_secret(""), "")
+
+
 if __name__ == "__main__":
     unittest.main()

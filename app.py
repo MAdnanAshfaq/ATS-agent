@@ -254,6 +254,32 @@ def add_no_cache_headers(response):
         response.headers["Expires"] = "0"
     return response
 
+
+@app.after_request
+def gzip_large_json(response):
+    """Gzip big JSON payloads (e.g. /api/history is ~1.6 MB for 96 applications;
+    gzip brings that down several-fold). Streams and files are left alone."""
+    try:
+        if (response.status_code != 200
+                or response.direct_passthrough
+                or response.is_streamed
+                or response.mimetype != "application/json"
+                or "Content-Encoding" in response.headers
+                or "gzip" not in (request.headers.get("Accept-Encoding") or "").lower()):
+            return response
+        body = response.get_data()
+        if len(body) < 8192:
+            return response
+        import gzip as _gzip
+        response.set_data(_gzip.compress(body, compresslevel=5))
+        response.headers["Content-Encoding"] = "gzip"
+        response.headers["Content-Length"] = str(len(response.get_data()))
+        vary = response.headers.get("Vary")
+        response.headers["Vary"] = f"{vary}, Accept-Encoding" if vary else "Accept-Encoding"
+    except Exception:
+        pass
+    return response
+
 # Reverse proxy support (Cloudflare Tunnel, Nginx, Caddy, custom live domains)
 from werkzeug.middleware.proxy_fix import ProxyFix
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
@@ -1239,28 +1265,37 @@ def gemini_key_health():
 def settings():
     if request.method == "POST":
         data = request.json or {}
+        stored_settings = get_user_settings()
+        stored_plain = _stored_gemini_keys(stored_settings)
         raw_keys_list = data.get("GEMINI_API_KEYS") or []
         cleaned_keys = []
         if isinstance(raw_keys_list, list):
             for item in raw_keys_list:
                 if isinstance(item, dict):
-                    k = (item.get("key") or "").strip()
+                    k = _unmask_secret((item.get("key") or "").strip(), stored_plain)
                     lbl = (item.get("label") or "").strip()
                     if k:
                         cleaned_keys.append({"key": k, "label": lbl})
                 elif isinstance(item, str) and item.strip():
-                    cleaned_keys.append({"key": item.strip(), "label": ""})
+                    k = _unmask_secret(item.strip(), stored_plain)
+                    if k:
+                        cleaned_keys.append({"key": k, "label": ""})
 
-        primary_k = cleaned_keys[0]["key"] if cleaned_keys else (data.get("GEMINI_API_KEY") or "").strip()
-        secondary_k = cleaned_keys[1]["key"] if len(cleaned_keys) > 1 else (data.get("GEMINI_API_KEY_2") or "").strip()
+        primary_k = cleaned_keys[0]["key"] if cleaned_keys else _unmask_secret((data.get("GEMINI_API_KEY") or "").strip(), stored_plain)
+        secondary_k = cleaned_keys[1]["key"] if len(cleaned_keys) > 1 else _unmask_secret((data.get("GEMINI_API_KEY_2") or "").strip(), stored_plain)
+
+        # The password is never sent to the browser, so a blank field means "keep the saved one".
+        simplify_pw = data.get("SIMPLIFY_PASSWORD")
+        if not simplify_pw:
+            simplify_pw = None
 
         updates = {
             "GEMINI_API_KEYS": cleaned_keys,
             "GEMINI_API_KEY": primary_k,
             "GEMINI_API_KEY_2": secondary_k,
             "SIMPLIFY_EMAIL": data.get("SIMPLIFY_EMAIL"),
-            "SIMPLIFY_PASSWORD": data.get("SIMPLIFY_PASSWORD"),
-            "HF_API_KEY": data.get("HF_API_KEY"),
+            "SIMPLIFY_PASSWORD": simplify_pw,
+            "HF_API_KEY": _unmask_secret(data.get("HF_API_KEY"), [stored_settings.get("HF_API_KEY") or ""]) if data.get("HF_API_KEY") else data.get("HF_API_KEY"),
             "COLAB_DETECTOR_URL": data.get("COLAB_DETECTOR_URL"),
         }
         current_user.save_settings({k: v for k, v in updates.items() if v is not None})
@@ -1278,22 +1313,65 @@ def settings():
             if val:
                 stored_keys.append({"key": val, "label": dlbl})
 
-    raw_key = env_vars.get("GEMINI_API_KEY", "")
-    masked_key = (raw_key[:6] + "..." + raw_key[-4:]) if len(raw_key) > 10 else raw_key
-
-    raw_key_2 = env_vars.get("GEMINI_API_KEY_2", "")
-    masked_key_2 = (raw_key_2[:6] + "..." + raw_key_2[-4:]) if len(raw_key_2) > 10 else raw_key_2
+    # Secrets never leave the server: the browser only ever sees masked values,
+    # and a masked value posted back is resolved to the stored key above.
+    masked_keys = []
+    for item in stored_keys:
+        if isinstance(item, dict):
+            masked_keys.append({"key": _mask_secret(item.get("key") or ""), "label": item.get("label") or "", "masked": True})
+        elif isinstance(item, str):
+            masked_keys.append({"key": _mask_secret(item), "label": "", "masked": True})
 
     return jsonify({
-        "GEMINI_API_KEYS": stored_keys,
-        "GEMINI_API_KEY": raw_key,
-        "GEMINI_API_KEY_MASKED": masked_key,
-        "GEMINI_API_KEY_2": raw_key_2,
-        "GEMINI_API_KEY_2_MASKED": masked_key_2,
+        "GEMINI_API_KEYS": masked_keys,
+        "GEMINI_API_KEY": _mask_secret(env_vars.get("GEMINI_API_KEY", "")),
+        "GEMINI_API_KEY_2": _mask_secret(env_vars.get("GEMINI_API_KEY_2", "")),
         "SIMPLIFY_EMAIL": env_vars.get("SIMPLIFY_EMAIL", ""),
-        "SIMPLIFY_PASSWORD": env_vars.get("SIMPLIFY_PASSWORD", ""),
+        "SIMPLIFY_PASSWORD": "",
+        "SIMPLIFY_PASSWORD_SET": bool(env_vars.get("SIMPLIFY_PASSWORD")),
         "OUTPUT_DIR": str(get_user_output_dir()),
     })
+
+
+_MASK_MARK = "••••"
+
+
+def _mask_secret(value: str) -> str:
+    """Show only enough of a key to recognise it (first 4 + last 4 characters)."""
+    value = (value or "").strip()
+    if not value:
+        return ""
+    if len(value) <= 12:
+        return _MASK_MARK
+    return f"{value[:4]}{_MASK_MARK}{value[-4:]}"
+
+
+def _stored_gemini_keys(env_vars: dict) -> list:
+    keys = []
+    for item in env_vars.get("GEMINI_API_KEYS") or []:
+        k = item.get("key") if isinstance(item, dict) else item
+        if isinstance(k, str) and k.strip():
+            keys.append(k.strip())
+    for ek in ("GEMINI_API_KEY", "GEMINI_API_KEY_2"):
+        v = (env_vars.get(ek) or "").strip()
+        if v:
+            keys.append(v)
+    return keys
+
+
+def _unmask_secret(value, stored: list) -> str:
+    """Map a masked value posted back by the browser to the stored secret.
+
+    A new (unmasked) value is returned as typed. A masked value that matches no
+    stored secret is dropped rather than saved, so the mask text can never
+    replace a real key."""
+    value = (value or "").strip()
+    if _MASK_MARK not in value:
+        return value
+    for secret in stored:
+        if secret and _mask_secret(secret) == value:
+            return secret
+    return ""
 
 
 @app.route("/api/resume", methods=["GET", "POST"])

@@ -1766,6 +1766,7 @@ async function loadHistory() {
 
   try {
     const res = await fetch("/api/history");
+    if (!res.ok) throw new Error(`server returned ${res.status}`);
     const data = await res.json();
     allHistoryApplications = data.applications || [];
 
@@ -1796,7 +1797,13 @@ async function loadHistory() {
     applyHistoryFilters(currentQuery);
 
   } catch (err) {
-    grid.innerHTML = `<div class="empty-state">Failed to load history: ${err.message}</div>`;
+    grid.innerHTML = `<div class="empty-state glass-card load-error">
+      <i class="fa-solid fa-triangle-exclamation empty-icon"></i>
+      <h3>Couldn't load your applications</h3>
+      <p>${escapeHtml(err.message)}</p>
+      <button class="btn btn-secondary" onclick="loadHistory()">Retry</button></div>`;
+    const badge = document.getElementById("history-count");
+    if (badge && badge.textContent === "…") badge.textContent = "!";
   }
 }
 
@@ -1887,9 +1894,13 @@ function renderHistoryCards(apps, query = "") {
   grid.innerHTML = "";
   apps.forEach(app => {
     const dateStr = formatClientTimestamp(app.timestamp || app.created_at || app.log_file_name);
-    const beforeScore = app.score_before != null ? app.score_before : (app.match_score_before != null ? app.match_score_before : (app.simplify_score_before != null ? app.simplify_score_before : 0));
-    const afterScore = app.score_after != null ? app.score_after : (app.match_score_after != null ? app.match_score_after : 0);
-    const deltaScore = app.score_delta != null ? app.score_delta : (app.match_score_delta != null ? app.match_score_delta : Math.max(0, afterScore - beforeScore));
+    // Show only measured scores; a missing score is "—", never a made-up 0.
+    const pick = (...vals) => { for (const v of vals) { if (v !== null && v !== undefined && v !== "" && !isNaN(Number(v))) return Number(v); } return null; };
+    const beforeScore = pick(app.score_before, app.match_score_before, app.simplify_score_before);
+    const afterScore = pick(app.score_after, app.match_score_after);
+    const deltaScore = pick(app.score_delta, app.match_score_delta, (beforeScore !== null && afterScore !== null) ? afterScore - beforeScore : null);
+    const fmtPct = v => v === null ? "—" : `${Math.round(v)}%`;
+    const fmtDelta = v => v === null ? "—" : `${v > 0 ? "+" : ""}${Math.round(v)}%`;
     const jobUrl = app.url || "";
     const historyDocxRel = (app.relative_file_path || '').replace(/\.(docx|pdf|json)$/i, '.docx');
     const historyPdfRel = (app.relative_file_path || '').replace(/\.(docx|pdf|json)$/i, '.pdf');
@@ -1929,50 +1940,48 @@ function renderHistoryCards(apps, query = "") {
       <div class="history-scores">
         <div class="score-col">
           <span>Before Score</span>
-          <strong>${beforeScore}%</strong>
+          <strong>${fmtPct(beforeScore)}</strong>
         </div>
         <div class="score-col">
           <span>After Score</span>
-          <strong class="text-emerald">${afterScore}%</strong>
+          <strong class="text-emerald">${fmtPct(afterScore)}</strong>
         </div>
         <div class="score-col">
           <span>Delta</span>
-          <strong class="text-emerald">+${deltaScore}%</strong>
+          <strong class="${deltaScore !== null && deltaScore < 0 ? "text-danger" : "text-emerald"}">${fmtDelta(deltaScore)}</strong>
         </div>
       </div>
-        <a href="/editor/${encodeURIComponent(historyDocxRel).replace(/%2F/g, '/')}" class="btn btn-primary btn-sm" style="background: linear-gradient(135deg, #2563eb, #7c3aed); color: #fff; font-weight: 600; border: none; display: inline-flex; align-items: center; gap: 4px; text-decoration: none;" title="Open in Canva-Grade Visual PDF Studio Editor">
-          <i class="fa-solid fa-wand-magic-sparkles"></i> Studio
-        </a>
-        <button class="btn btn-blue btn-sm" onclick="openPreviewModal('${escapeHtml(historyDocxRel)}', '${escapeHtml(app.company)}', '${escapeHtml(app.role)}')" title="Preview resume in browser before downloading">
-          <i class="fa-solid fa-eye"></i> Preview
-        </button>
-        <a href="/api/download/${historyDocxRel}" class="btn btn-emerald btn-sm" download>
-          <i class="fa-solid fa-download"></i> .docx
-        </a>
-        ${historyPdfRel ? `<a href="/api/download/${historyPdfRel}" class="btn btn-cyan btn-sm" download><i class="fa-solid fa-file-pdf"></i> .pdf</a>` : ''}
-        <button class="btn btn-purple-sm" onclick="openRefineFromHistory('${escapeHtml(app.log_file_name)}', '${escapeHtml(app.output_file)}', '${escapeHtml(app.company)}', '${escapeHtml(app.role)}', '${escapeHtml(jobUrl)}')">
-          <i class="fa-solid fa-wand-magic-sparkles"></i> Refine
-        </button>
-        ${jobUrl ? `
-          <a href="${escapeHtml(jobUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" title="Open Job Posting in new tab">
-            <i class="fa-solid fa-arrow-up-right-from-square"></i> Job Link
+      <div class="history-actions">
+        <div class="history-actions-primary">
+          <a href="/api/download/${historyDocxRel}" class="btn btn-primary btn-sm" download title="Download the Word file to upload to the job portal">
+            <i class="fa-solid fa-download"></i> Download .docx
           </a>
-        ` : ''}
-        <button class="btn btn-purple-sm" onclick="generateOrViewHistoryCoverLetter('${escapeHtml(app.company)}', '${escapeHtml(app.role)}', '${escapeHtml(app.relative_file_path)}', '${escapeHtml(jobUrl)}')">
-          <i class="fa-solid fa-envelope"></i> Cover Letter
-        </button>
-        <button class="btn btn-secondary btn-sm" onclick="focusHollaBuddyOnHistory('${escapeHtml(app.company)}', '${escapeHtml(app.role)}', '${escapeHtml(app.relative_file_path)}')" title="Ask questions or adapt achievements from this past application">
-          <i class="fa-solid fa-comments text-cyan"></i> Ask Buddy
-        </button>
-        <button class="btn btn-secondary btn-sm" onclick="openEditHistoryModal('${escapeHtml(app.log_file_name)}', '${escapeHtml(app.company)}', '${escapeHtml(app.role)}', '${escapeHtml(jobUrl)}')" title="Edit company name, role or job link">
-          <i class="fa-solid fa-pen-to-square"></i> Edit
-        </button>
-        <button class="btn btn-secondary btn-sm" onclick="openSpecificFolder('${escapeHtml(app.output_file)}')">
-          <i class="fa-solid fa-folder-open"></i> Folder
-        </button>
-        <button class="btn btn-danger-sm" onclick="deleteHistoryItem('${escapeHtml(app.log_file_name)}')">
-          <i class="fa-solid fa-trash"></i> Delete
-        </button>
+          <button class="btn btn-secondary btn-sm" onclick="openPreviewModal('${escapeHtml(historyDocxRel)}', '${escapeHtml(app.company)}', '${escapeHtml(app.role)}')" title="Preview resume in browser before downloading">
+            <i class="fa-solid fa-eye"></i> Preview
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="openRefineFromHistory('${escapeHtml(app.log_file_name)}', '${escapeHtml(app.output_file)}', '${escapeHtml(app.company)}', '${escapeHtml(app.role)}', '${escapeHtml(jobUrl)}')" title="Ask the AI to change this resume">
+            <i class="fa-solid fa-wand-magic-sparkles"></i> Refine
+          </button>
+        </div>
+        <div class="history-actions-secondary">
+          <a href="/editor/${encodeURIComponent(historyDocxRel).replace(/%2F/g, '/')}" class="history-link-btn" title="Open in the visual Studio editor">
+            <i class="fa-solid fa-pen-ruler"></i> Studio
+          </a>
+          ${historyPdfRel ? `<a href="/api/download/${historyPdfRel}" class="history-link-btn" download title="Download as PDF"><i class="fa-solid fa-file-pdf"></i> PDF</a>` : ''}
+          <button class="history-link-btn" onclick="generateOrViewHistoryCoverLetter('${escapeHtml(app.company)}', '${escapeHtml(app.role)}', '${escapeHtml(app.relative_file_path)}', '${escapeHtml(jobUrl)}')" title="Create or view the cover letter">
+            <i class="fa-solid fa-envelope"></i> Cover letter
+          </button>
+          <button class="history-link-btn" onclick="focusHollaBuddyOnHistory('${escapeHtml(app.company)}', '${escapeHtml(app.role)}', '${escapeHtml(app.relative_file_path)}')" title="Ask questions or adapt achievements from this past application">
+            <i class="fa-solid fa-comments"></i> Ask Buddy
+          </button>
+          <details class="history-more">
+            <summary class="history-link-btn" aria-label="More actions for ${escapeHtml(app.company)}" title="More actions"><i class="fa-solid fa-ellipsis"></i></summary>
+            <div class="history-more-menu" role="menu">
+              <button role="menuitem" onclick="openSpecificFolder('${escapeHtml(app.output_file)}')"><i class="fa-solid fa-folder-open"></i> Open folder</button>
+              <button role="menuitem" class="danger" onclick="deleteHistoryItem('${escapeHtml(app.log_file_name)}')"><i class="fa-solid fa-trash"></i> Delete</button>
+            </div>
+          </details>
+        </div>
       </div>`;
     grid.appendChild(card);
   });
@@ -2264,7 +2273,7 @@ async function loadSettings() {
       <div style="display: grid; grid-template-columns: minmax(140px, 180px) 1fr; gap: 8px;">
         <input type="text" class="form-input key-label-input" placeholder="Account nickname (e.g. Personal Gmail)" value="${safeKeyAttr(labelVal)}" style="font-size: 0.82rem; padding: 6px 10px; background: rgba(0,0,0,0.25);">
         <div style="position: relative; display: flex; align-items: center;">
-          <input type="password" class="form-input key-val-input" placeholder="AIzaSy... paste Gemini API key" value="${safeKeyAttr(keyVal)}" style="font-size: 0.82rem; padding: 6px 36px 6px 10px; font-family: monospace; width: 100%; background: rgba(0,0,0,0.25);">
+          <input type="${kData.masked ? "text" : "password"}" class="form-input key-val-input" placeholder="AIzaSy... paste Gemini API key" value="${safeKeyAttr(keyVal)}" ${kData.masked ? 'title="Saved key (hidden for security). Paste a new key here to replace it." data-masked="1"' : ""} style="font-size: 0.82rem; padding: 6px 36px 6px 10px; font-family: monospace; width: 100%; background: rgba(0,0,0,0.25);">
           <button type="button" class="btn-toggle-key-eye" title="Show / Hide API Key" style="position: absolute; right: 6px; background: none; border: none; color: #94a3b8; cursor: pointer; padding: 4px; font-size: 0.85rem;">
             <i class="fa-solid fa-eye"></i>
           </button>
@@ -2275,6 +2284,11 @@ async function loadSettings() {
     // Toggle password eye button
     const eyeBtn = row.querySelector(".btn-toggle-key-eye");
     const keyInput = row.querySelector(".key-val-input");
+    // A saved key is shown masked; focusing selects it so pasting replaces it in one go.
+    if (kData.masked) {
+      eyeBtn.style.display = "none";
+      keyInput.addEventListener("focus", () => keyInput.select());
+    }
     eyeBtn.addEventListener("click", () => {
       const isPass = keyInput.type === "password";
       keyInput.type = isPass ? "text" : "password";
@@ -2343,7 +2357,10 @@ async function loadSettings() {
     const outDirInput = document.getElementById("custom-output-dir");
 
     if (emailInput) emailInput.value = data.SIMPLIFY_EMAIL || "";
-    if (passInput) passInput.value = data.SIMPLIFY_PASSWORD || "";
+    if (passInput) {
+      passInput.value = "";
+      passInput.placeholder = data.SIMPLIFY_PASSWORD_SET ? "Saved (leave blank to keep)" : "Simplify password";
+    }
     if (outDirInput) outDirInput.value = data.OUTPUT_DIR || "";
 
     // Toggle eye for simplify password
@@ -2416,17 +2433,32 @@ async function loadSettings() {
 
 let currentMasterResumeData = null;
 
+function setDockProfileStatus(state) {
+  const dot = document.getElementById("dock-profile-dot");
+  const val = document.getElementById("dock-profile-val");
+  if (!dot || !val) return;
+  const map = { ok: ["dot-ready", "Loaded"], missing: ["dot-warn", "Not uploaded"], error: ["dot-error", "Couldn't load"] };
+  const [cls, text] = map[state] || map.error;
+  dot.className = `dock-indicator ${cls}`;
+  val.textContent = text;
+}
+
 async function loadMasterResume() {
   const textarea = document.getElementById("resume-json-editor");
   const visualCard = document.getElementById("visual-resume-card");
   const jsonCard = document.getElementById("json-editor-card");
   const uploadPrompt = document.getElementById("resume-upload-prompt");
   const resumeActionsBar = document.getElementById("resume-actions-bar");
+  const skeleton = document.getElementById("resume-loading-skeleton");
 
   try {
     const res = await fetch("/api/resume");
-    const data = await res.json();
+    // 404 means "no resume uploaded yet" (show the upload prompt); other errors are real failures.
+    if (!res.ok && res.status !== 404) throw new Error(`server returned ${res.status}`);
+    const data = res.status === 404 ? { _empty: true } : await res.json();
     currentMasterResumeData = data;
+    if (skeleton) skeleton.classList.add("hidden");
+    setDockProfileStatus(data._empty || (!data.name && (!data.skills || data.skills.length === 0)) ? "missing" : "ok");
 
     const isEmpty = data._empty || (!data.name && (!data.skills || data.skills.length === 0));
 
@@ -2446,6 +2478,15 @@ async function loadMasterResume() {
     }
   } catch (err) {
     textarea.value = "// Error loading base_resume.json";
+    setDockProfileStatus("error");
+    // Never show the "upload your resume" prompt on a failed load: the resume
+    // may well exist, and the prompt would make the user think it was lost.
+    if (skeleton) {
+      skeleton.classList.remove("hidden");
+      skeleton.innerHTML = `<div class="load-error"><i class="fa-solid fa-triangle-exclamation"></i>
+        Couldn't load your resume (${escapeHtml(err.message)}).
+        <button class="btn btn-secondary" onclick="loadMasterResume()">Retry</button></div>`;
+    }
   }
 }
 
@@ -9659,3 +9700,13 @@ window.applyLiveEdits = applyLiveEdits;
 window.appendHollaBuddyActionCard = appendHollaBuddyActionCard;
 window.executeHollaBuddyAction = executeHollaBuddyAction;
 window.executeHollaBuddyControllerShortcut = executeHollaBuddyControllerShortcut;
+
+/* Close any open history "⋯" menu on an outside click, a menu choice, or Escape. */
+document.addEventListener("click", (e) => {
+  document.querySelectorAll("details.history-more[open]").forEach(d => {
+    if (!d.contains(e.target) || e.target.closest(".history-more-menu button")) d.removeAttribute("open");
+  });
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") document.querySelectorAll("details.history-more[open]").forEach(d => d.removeAttribute("open"));
+});
