@@ -119,30 +119,44 @@ STRICT BANNED PHRASES:
 
 Return ONLY the clean cover letter text (including date and recipient header). Do not wrap in markdown fences."""
 
-    from gemini_client import get_candidate_models, get_standard_genai_config, extract_clean_text
+    from gemini_client import get_candidate_models, get_standard_genai_config, extract_clean_text, record_model_failure, record_model_success
 
     def _call_gemini(client):
+        last_err = None
         for model in get_candidate_models():
-            try:
-                cfg = get_standard_genai_config(model_name=model, max_output_tokens=1500, temperature=0.4)
-                response = client.models.generate_content(
-                    model=model,
-                    contents=[
-                        types.Content(
-                            role="user",
-                            parts=[types.Part(text=prompt)],
-                        )
-                    ],
-                    config=cfg,
-                )
-                txt = extract_clean_text(response)
-                if txt and len(txt.strip()) > 100:
-                    print(f"[Cover Letter] Generated successfully with {model} ({len(txt.strip())} chars)")
-                    return txt.strip()
-            except Exception as e:
-                print(f"[Cover Letter] Model {model} note: {e}")
-                if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                    raise e
+            for m_retry in range(2):
+                try:
+                    cfg = get_standard_genai_config(model_name=model, max_output_tokens=1500, temperature=0.4)
+                    response = client.models.generate_content(
+                        model=model,
+                        contents=[
+                            types.Content(
+                                role="user",
+                                parts=[types.Part(text=prompt)],
+                            )
+                        ],
+                        config=cfg,
+                    )
+                    txt = extract_clean_text(response)
+                    if txt and len(txt.strip()) > 100:
+                        record_model_success(model)
+                        print(f"[Cover Letter] Generated successfully with {model} ({len(txt.strip())} chars)")
+                        return txt.strip()
+                    break
+                except Exception as e:
+                    record_model_failure(model, e)
+                    last_err = e
+                    err_str = str(e).upper()
+                    print(f"[Cover Letter] Model {model} (try {m_retry+1}) note: {e}")
+                    if "503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str or "OVERLOADED" in err_str or "504" in err_str or "DEADLINE" in err_str:
+                        if m_retry == 0:
+                            time.sleep(0.8)
+                            continue
+                    elif "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "QUOTA" in err_str:
+                        raise e
+                    break
+        if last_err:
+            raise last_err
         return ""
 
     try:

@@ -159,11 +159,14 @@ def extract_clean_text(response) -> str:
     """Extract model output text cleanly, stripping reasoning/thought tokens."""
     if not response:
         return ""
-    if hasattr(response, "text") and response.text:
-        return response.text
+    try:
+        if hasattr(response, "text") and response.text:
+            return response.text
+    except Exception:
+        pass
     if hasattr(response, "candidates") and response.candidates:
         c = response.candidates[0]
-        if hasattr(c, "content") and hasattr(c.content, "parts"):
+        if hasattr(c, "content") and hasattr(c.content, "parts") and c.content.parts:
             text_parts = [
                 p.text for p in c.content.parts
                 if hasattr(p, "text") and p.text and not getattr(p, "thought", False)
@@ -186,20 +189,15 @@ def get_standard_genai_config(
         "top_p": top_p,
         "max_output_tokens": max_output_tokens,
     }
-    # CRITICAL: Google GenAI throws 503 UNAVAILABLE when thinking_level is paired
-    # with structured JSON (response_mime_type="application/json") or JSON schema tasks.
-    # Only attach thinking_config when NOT generating structured JSON!
-    if not is_json:
-        if "3." in model_name or "flash-lite" in model_name:
-            try:
-                cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_level="low")
-            except Exception:
-                pass
-        elif "2.5" in model_name:
-            try:
-                cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
-            except Exception:
-                pass
+    # Disable thinking overhead on full Flash models (2.5, 3.5, 3.6, 3-flash-preview)
+    # by setting thinking_budget=0. This avoids reasoning timeouts (504) and high-demand
+    # compute spikes (503) while returning structured/text output immediately.
+    # Flash-lite models do not accept thinking_budget=0 (400 INVALID_ARGUMENT), so omit it for them.
+    if model_name and "flash-lite" not in model_name and "gemma" not in model_name:
+        try:
+            cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+        except Exception:
+            pass
     return types.GenerateContentConfig(**cfg_kwargs)
 
 

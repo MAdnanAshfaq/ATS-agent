@@ -487,59 +487,73 @@ def rewrite_resume(
         data = None
         candidate_models = get_candidate_models()
         for model in candidate_models:
-            print(f"[Rewriter] Attempt {attempt}/{max_retries} with {model}...")
-            print(f"[Rewriter] Target: {len(missing_keywords)} keywords to inject")
+            for m_retry in range(2):
+                print(f"[Rewriter] Attempt {attempt}/{max_retries} with {model} (try {m_retry+1})...")
+                print(f"[Rewriter] Target: {len(missing_keywords)} keywords to inject")
 
-            try:
-                from gemini_client import get_standard_genai_config, extract_clean_text
-                cfg = get_standard_genai_config(
-                    model_name=model,
-                    max_output_tokens=8192,
-                    temperature=0.35 if attempt == 1 else 0.25,
-                    top_p=0.9,
-                    is_json=True,
-                )
-                cfg.thinking_config = None  # Ensure thinking_config is disabled for structured JSON
-                response = client.models.generate_content(
-                    model=model,
-                    contents=[
-                        types.Content(
-                            role="user",
-                            parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)],
-                        )
-                    ],
-                    config=cfg,
-                )
+                try:
+                    from gemini_client import get_standard_genai_config, extract_clean_text
+                    cfg = get_standard_genai_config(
+                        model_name=model,
+                        max_output_tokens=8192,
+                        temperature=0.35 if attempt == 1 else 0.25,
+                        top_p=0.9,
+                        is_json=True,
+                    )
+                    response = client.models.generate_content(
+                        model=model,
+                        contents=[
+                            types.Content(
+                                role="user",
+                                parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)],
+                            )
+                        ],
+                        config=cfg,
+                    )
 
-                raw_text = extract_clean_text(response)
-                cleaned = _clean_json_response(raw_text)
-                data = json.loads(cleaned)
-                record_model_success(model)
+                    raw_text = extract_clean_text(response)
+                    if not raw_text:
+                        raise ValueError(f"Model {model} returned empty text")
+                    cleaned = _clean_json_response(raw_text)
+                    data = json.loads(cleaned)
+                    record_model_success(model)
 
-                if not _validate_resume_structure(data):
-                    raise ValueError(f"Missing required keys. Got: {list(data.keys())}")
+                    if not _validate_resume_structure(data):
+                        raise ValueError(f"Missing required keys. Got: {list(data.keys())}")
 
-                model_succeeded = True
+                    model_succeeded = True
+                    break
+                except Exception as e:
+                    record_model_failure(model, e)
+                    err_str = str(e).upper()
+                    print(f"[Rewriter] Model {model} (try {m_retry+1}) note: {e}")
+                    if "503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str or "OVERLOADED" in err_str or "504" in err_str or "DEADLINE" in err_str:
+                        if m_retry == 0:
+                            time.sleep(0.8)
+                            continue
+                        keys = get_all_gemini_keys()
+                        if len(keys) > 1:
+                            rotate_key(reason=f"Rewriter 503/504 Failover ({model})")
+                            client = _get_gemini_client()
+                        break
+                    elif is_quota_error(e):
+                        keys = get_all_gemini_keys()
+                        if len(keys) > 1:
+                            rotate_key(reason=f"Rewriter Failover ({model})")
+                            client = _get_gemini_client()
+                        break
+                    else:
+                        break
+            if model_succeeded:
                 break
-            except Exception as e:
-                record_model_failure(model, e)
-                err_str = str(e).upper()
-                print(f"[Rewriter] Model {model} note: {e}")
-                if "503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str or "OVERLOADED" in err_str:
-                    time.sleep(0.8)
-                    continue
-                elif is_quota_error(e):
-                    keys = get_all_gemini_keys()
-                    if len(keys) > 1:
-                        rotate_key(reason=f"Rewriter Failover ({model})")
-                        client = _get_gemini_client()
-                    continue
-                else:
-                    continue
 
         if not model_succeeded or not data:
-            print(f"[Rewriter] All candidate models busy on attempt {attempt}. Backing off...")
-            time.sleep(1.5)
+            print(f"[Rewriter] All candidate models busy on attempt {attempt}. Rotating key and backing off...")
+            keys = get_all_gemini_keys()
+            if len(keys) > 1:
+                rotate_key(reason=f"Rewriter attempt {attempt} all models busy")
+                client = _get_gemini_client()
+            time.sleep(min(1.5 * attempt, 4.0))
             continue
 
         try:
@@ -767,10 +781,11 @@ def rewrite_resume(
         print(f"[Rewriter] Final coverage: {coverage_pct}% ({len(embedded)}/{len(missing_keywords)} keywords)")
         return last_valid_resume
 
-    raise RuntimeError(
-        f"Gemini rewriter failed after {max_retries} attempts. "
-        "Check your GEMINI_API_KEY and try again."
-    )
+    print("[Rewriter] ⚠️ All Gemini models experienced sustained high demand (503). Applying deterministic keyword injection fallback.")
+    import copy
+    fallback_resume = _manual_keyword_injection(copy.deepcopy(base_resume), missing_keywords or [])
+    fallback_resume.pop("_raw_text", None)
+    return fallback_resume
 
 
 def _manual_keyword_injection(resume: dict, still_missing: list) -> dict:

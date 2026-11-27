@@ -256,26 +256,46 @@ Return strictly a JSON array containing EXACTLY {len(questions)} items:
 
 Generate the human-voiced answers as a JSON array now."""
 
-    from gemini_client import get_candidate_models, extract_clean_text, get_standard_genai_config, record_model_failure, record_model_success
-    models = get_candidate_models()
-    raw_response = None
-    for model_name in models:
-        try:
-            cfg = get_standard_genai_config(model_name=model_name, max_output_tokens=4096, temperature=0.3, top_p=0.88, is_json=True)
-            response = client.models.generate_content(
-                model=model_name,
-                contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
-                config=cfg,
-            )
-            clean_res = extract_clean_text(response)
-            if clean_res:
-                record_model_success(model_name)
-                raw_response = clean_res
-                break
-        except Exception as e:
-            record_model_failure(model_name, e)
-            print(f"[Q&A Copilot] {model_name} error: {e}")
-            time.sleep(0.5)
+    from gemini_client import (
+        get_candidate_models, extract_clean_text, get_standard_genai_config,
+        record_model_failure, record_model_success, execute_with_failover
+    )
+
+    def _call_qa(active_client):
+        last_err = None
+        for model_name in get_candidate_models():
+            for m_retry in range(2):
+                try:
+                    cfg = get_standard_genai_config(model_name=model_name, max_output_tokens=4096, temperature=0.3, top_p=0.88, is_json=True)
+                    response = active_client.models.generate_content(
+                        model=model_name,
+                        contents=[types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)])],
+                        config=cfg,
+                    )
+                    clean_res = extract_clean_text(response)
+                    if clean_res:
+                        record_model_success(model_name)
+                        return clean_res
+                    break
+                except Exception as e:
+                    record_model_failure(model_name, e)
+                    last_err = e
+                    err_str = str(e).upper()
+                    print(f"[Q&A Copilot] {model_name} (try {m_retry+1}) error: {e}")
+                    if "503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str or "OVERLOADED" in err_str or "504" in err_str or "DEADLINE" in err_str:
+                        if m_retry == 0:
+                            time.sleep(0.8)
+                            continue
+                    break
+        if last_err:
+            raise last_err
+        return ""
+
+    try:
+        raw_response = execute_with_failover(_call_qa)
+    except Exception as e:
+        print(f"[Q&A Copilot] All failover attempts failed: {e}")
+        raw_response = ""
 
     if not raw_response:
         return []

@@ -3770,22 +3770,31 @@ def api_editor_ai_polish():
 
     try:
         def call_gemini(client):
-            from gemini_client import get_candidate_models, extract_clean_text, record_model_failure, record_model_success
+            from gemini_client import get_candidate_models, extract_clean_text, get_standard_genai_config, record_model_failure, record_model_success
             last_err = None
             for m in get_candidate_models():
-                try:
-                    response = client.models.generate_content(
-                        model=m,
-                        contents=full_prompt,
-                    )
-                    txt = extract_clean_text(response)
-                    if txt:
-                        record_model_success(m)
-                        return txt
-                except Exception as me:
-                    record_model_failure(m, me)
-                    last_err = me
-                    continue
+                for m_retry in range(2):
+                    try:
+                        cfg = get_standard_genai_config(model_name=m, max_output_tokens=2048, temperature=0.4)
+                        response = client.models.generate_content(
+                            model=m,
+                            contents=full_prompt,
+                            config=cfg,
+                        )
+                        txt = extract_clean_text(response)
+                        if txt:
+                            record_model_success(m)
+                            return txt
+                        break
+                    except Exception as me:
+                        record_model_failure(m, me)
+                        last_err = me
+                        me_str = str(me).upper()
+                        if "503" in me_str or "UNAVAILABLE" in me_str or "504" in me_str or "DEADLINE" in me_str:
+                            if m_retry == 0:
+                                time.sleep(0.8)
+                                continue
+                        break
             if last_err:
                 raise last_err
             return ""

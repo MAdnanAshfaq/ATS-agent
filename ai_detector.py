@@ -126,71 +126,82 @@ RESUME TO CLEAN:
 Check EVERY word against the rules. Rewrite any sentence matching an AI pattern.
 Return the full cleaned resume as valid JSON."""
 
-    from gemini_client import get_candidate_models, extract_clean_text, get_standard_genai_config, record_model_failure, record_model_success
+    from gemini_client import (
+        get_candidate_models, extract_clean_text, get_standard_genai_config,
+        record_model_failure, record_model_success, get_all_gemini_keys, rotate_key, get_gemini_client
+    )
     models = get_candidate_models()
     print(f"[Detector] Pass {pass_number}: Sending to Gemini...")
 
     for attempt in range(1, max_retries + 1):
-        model_name = models[(attempt - 1) % len(models)]
-        try:
-            cfg = get_standard_genai_config(model_name=model_name, max_output_tokens=8192, temperature=0.3, top_p=0.85)
-            response = client.models.generate_content(
-                model=model_name,
-                contents=[
-                    types.Content(
-                        role="user",
-                        parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)]
+        for model_name in models:
+            for m_retry in range(2):
+                try:
+                    cfg = get_standard_genai_config(model_name=model_name, max_output_tokens=8192, temperature=0.3, top_p=0.85, is_json=True)
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=[
+                            types.Content(
+                                role="user",
+                                parts=[types.Part(text=system_prompt + "\n\n" + user_prompt)]
+                            )
+                        ],
+                        config=cfg,
                     )
-                ],
-                config=cfg,
-            )
-            
-            raw_text = extract_clean_text(response)
-            cleaned_text = _clean_json_response(raw_text)
-            cleaned = json.loads(cleaned_text)
-            record_model_success(model_name)
-            
-            # Merge with original input resume to guarantee non-rewritten sections (education, certs, contact, etc.) are 100% preserved
-            merged = dict(resume)
-            merged.update(cleaned)
-            for k in ("education", "certifications", "contact", "name", "projects"):
-                if k in resume and (k not in merged or not merged[k]):
-                    merged[k] = resume[k]
 
-            # Preserve all skills from rewritten resume
-            merged["skills"] = resume.get("skills", [])
+                    raw_text = extract_clean_text(response)
+                    if not raw_text:
+                        raise ValueError("Empty response from model")
+                    cleaned_text = _clean_json_response(raw_text)
+                    cleaned = json.loads(cleaned_text)
+                    record_model_success(model_name)
 
-            # Guarantee all experiences from rewritten resume are preserved
-            orig_exp = resume.get("experience", [])
-            clean_exp = merged.get("experience", [])
-            existing_companies = {e.get("company", "").lower().strip() for e in clean_exp if isinstance(e, dict)}
-            for orig_e in orig_exp:
-                orig_comp = orig_e.get("company", "").lower().strip()
-                if orig_comp not in existing_companies:
-                    clean_exp.append(orig_e)
-            merged["experience"] = clean_exp
+                    # Merge with original input resume to guarantee non-rewritten sections (education, certs, contact, etc.) are 100% preserved
+                    merged = dict(resume)
+                    merged.update(cleaned)
+                    for k in ("education", "certifications", "contact", "name", "projects"):
+                        if k in resume and (k not in merged or not merged[k]):
+                            merged[k] = resume[k]
 
-            print(f"[Detector] Pass {pass_number}: [OK] Clean JSON received (attempt {attempt})")
-            return merged
-        
-        except json.JSONDecodeError as e:
-            print(f"[Detector] Pass {pass_number}, attempt {attempt}/{max_retries} — JSON error: {e}")
-            if attempt < max_retries:
-                time.sleep(2)
-        
-        except ValueError as e:
-            print(f"[Detector] Pass {pass_number}, attempt {attempt}/{max_retries} — {e}")
-            if attempt < max_retries:
-                time.sleep(2)
-        
-        except Exception as e:
-            err_str = str(e)
-            print(f"[Detector] Pass {pass_number}, attempt {attempt}/{max_retries} — Error: {err_str}")
-            if "RESOURCE_EXHAUSTED" in err_str or "429" in err_str or "503" in err_str:
-                print(f"[Detector] Rate limit/high demand hit — waiting 12s before retry...")
-                time.sleep(12)
-            elif attempt < max_retries:
-                time.sleep(2)
+                    # Preserve all skills from rewritten resume
+                    merged["skills"] = resume.get("skills", [])
+
+                    # Guarantee all experiences from rewritten resume are preserved
+                    orig_exp = resume.get("experience", [])
+                    clean_exp = merged.get("experience", [])
+                    existing_companies = {e.get("company", "").lower().strip() for e in clean_exp if isinstance(e, dict)}
+                    for orig_e in orig_exp:
+                        orig_comp = orig_e.get("company", "").lower().strip()
+                        if orig_comp not in existing_companies:
+                            clean_exp.append(orig_e)
+                    merged["experience"] = clean_exp
+
+                    print(f"[Detector] Pass {pass_number}: [OK] Clean JSON received ({model_name}, attempt {attempt})")
+                    return merged
+
+                except Exception as e:
+                    record_model_failure(model_name, e)
+                    err_str = str(e).upper()
+                    print(f"[Detector] Pass {pass_number}, {model_name} (try {m_retry+1}) note: {e}")
+                    if "503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str or "OVERLOADED" in err_str or "504" in err_str or "DEADLINE" in err_str:
+                        if m_retry == 0:
+                            time.sleep(0.8)
+                            continue
+                        keys = get_all_gemini_keys()
+                        if len(keys) > 1:
+                            rotate_key(reason=f"Detector 503/504 Failover ({model_name})")
+                            client = get_gemini_client()
+                        break
+                    elif "RESOURCE_EXHAUSTED" in err_str or "429" in err_str or "QUOTA" in err_str:
+                        keys = get_all_gemini_keys()
+                        if len(keys) > 1:
+                            rotate_key(reason=f"Detector Quota Failover ({model_name})")
+                            client = get_gemini_client()
+                        break
+                    else:
+                        break
+        if attempt < max_retries:
+            time.sleep(1.0)
     
     print(f"[Detector] [WARN] Pass {pass_number} failed after {max_retries} attempts. Using previous version.")
     return resume  # Return unchanged if all retries fail

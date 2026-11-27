@@ -397,7 +397,20 @@ Draft the optimized resume now as valid JSON."""
     except Exception as fallback_err:
         print(f"[Dani's Engine - Writer] Fallback rewriter error: {fallback_err}")
 
-    raise RuntimeError(f"Writer failed across all models: {last_err}")
+    print(f"[Dani's Engine - Writer] ⚠️ Sustained API overload across all keys/models ({last_err}). Falling back to base resume with keyword injection.")
+    import copy
+    safe_fallback = copy.deepcopy(base_resume)
+    safe_fallback.pop("_raw_text", None)
+    if missing_keywords:
+        existing_skills = list(safe_fallback.get("skills", [])) if isinstance(safe_fallback.get("skills"), list) else []
+        existing_lower = {str(s).lower() for s in existing_skills}
+        for kw in missing_keywords:
+            kw_s = str(kw).strip()
+            if kw_s and len(kw_s.split()) <= 3 and kw_s.lower() not in existing_lower:
+                existing_skills.append(kw_s)
+                existing_lower.add(kw_s.lower())
+        safe_fallback["skills"] = existing_skills
+    return deterministic_voice_cleanup(safe_fallback)
 
 
 def reduce_keyword_density_to_ceiling(
@@ -548,11 +561,14 @@ Return the corrected JSON now."""
                 record_model_failure(model_name, e)
                 err_str = str(e).upper()
                 print(f"[Dani's Engine - Editor] {model_name} (try {m_retry+1}) note: {e}")
-                if "503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str or "OVERLOADED" in err_str:
+                if "503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str or "OVERLOADED" in err_str or "504" in err_str or "DEADLINE" in err_str:
                     if m_retry == 0:
                         time.sleep(0.8)
                         continue
                     else:
+                        keys = get_all_gemini_keys()
+                        if len(keys) > 1:
+                            rotate_key(reason=f"Editor 503/504 Failover ({model_name})")
                         break
                 elif is_quota_error(e):
                     keys = get_all_gemini_keys()

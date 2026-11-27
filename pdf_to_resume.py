@@ -45,40 +45,52 @@ RESUME TEXT:
 {raw_text}
 """
 
-    from gemini_client import get_candidate_models, extract_clean_text, get_standard_genai_config, record_model_failure, record_model_success
-    models = get_candidate_models()
-    for model_name in models:
-        try:
-            cfg = get_standard_genai_config(model_name=model_name, max_output_tokens=8192, temperature=0.1, is_json=True)
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=cfg,
-            )
-            raw_text = extract_clean_text(response)
-            if not raw_text:
-                continue
-            text = raw_text.strip()
-            # Strip markdown fences if present
-            text = re.sub(r'^```(?:json)?\s*', '', text)
-            text = re.sub(r'\s*```$', '', text)
-            parsed = json.loads(text)
-            record_model_success(model_name)
-            print(f"[PDF Parser] ✅ Gemini parsed resume with model {model_name}")
-            return parsed
-        except json.JSONDecodeError as e:
-            print(f"[PDF Parser] JSON parse error from {model_name}: {e}")
-            continue
-        except Exception as e:
-            record_model_failure(model_name, e)
-            err = str(e)
-            if "429" in err or "quota" in err.lower() or "rate" in err.lower():
-                print(f"[PDF Parser] Rate limit on {model_name}, trying next...")
-                continue
-            print(f"[PDF Parser] Error with {model_name}: {e}")
-            continue
+    from gemini_client import (
+        get_candidate_models, extract_clean_text, get_standard_genai_config,
+        record_model_failure, record_model_success, execute_with_failover
+    )
 
-    raise RuntimeError("All Gemini models failed or quota exceeded")
+    def _call_parser(active_client):
+        last_err = None
+        for model_name in get_candidate_models():
+            for m_retry in range(2):
+                try:
+                    cfg = get_standard_genai_config(model_name=model_name, max_output_tokens=8192, temperature=0.1, is_json=True)
+                    response = active_client.models.generate_content(
+                        model=model_name,
+                        contents=prompt,
+                        config=cfg,
+                    )
+                    raw_res = extract_clean_text(response)
+                    if not raw_res:
+                        break
+                    text = raw_res.strip()
+                    text = re.sub(r'^```(?:json)?\s*', '', text)
+                    text = re.sub(r'\s*```$', '', text)
+                    parsed = json.loads(text)
+                    record_model_success(model_name)
+                    print(f"[PDF Parser] ✅ Gemini parsed resume with model {model_name}")
+                    return parsed
+                except json.JSONDecodeError as e:
+                    print(f"[PDF Parser] JSON parse error from {model_name}: {e}")
+                    last_err = e
+                    break
+                except Exception as e:
+                    record_model_failure(model_name, e)
+                    last_err = e
+                    err_str = str(e).upper()
+                    print(f"[PDF Parser] Error with {model_name} (try {m_retry+1}): {e}")
+                    if "503" in err_str or "UNAVAILABLE" in err_str or "HIGH DEMAND" in err_str or "OVERLOADED" in err_str or "504" in err_str or "DEADLINE" in err_str:
+                        if m_retry == 0:
+                            import time
+                            time.sleep(0.8)
+                            continue
+                    break
+        if last_err:
+            raise last_err
+        raise RuntimeError("All Gemini models failed or quota exceeded")
+
+    return execute_with_failover(_call_parser)
 
 
 # ─── PDF / DOCX Text Extraction ───────────────────────────────────────────────

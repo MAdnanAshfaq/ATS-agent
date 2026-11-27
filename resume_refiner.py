@@ -342,7 +342,6 @@ Return ONLY valid JSON now.
             for m_retry in range(2):
                 try:
                     cfg = get_standard_genai_config(model_name=m, max_output_tokens=8192, temperature=0.2, is_json=True)
-                    cfg.thinking_config = None  # Ensure thinking_config is disabled for structured JSON (prevents 503)
                     cfg.system_instruction = REFINEMENT_SYSTEM_PROMPT
                     if "gemma" not in m:
                         cfg.response_mime_type = "application/json"

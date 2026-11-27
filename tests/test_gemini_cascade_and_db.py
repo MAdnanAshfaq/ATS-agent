@@ -78,6 +78,48 @@ class TestGeminiCascadeAndDB(unittest.TestCase):
             # Verify old conn was returned to pool with close=True
             mock_pool.putconn.assert_any_call(mock_conn, close=True)
 
+    def test_standard_genai_config_disables_thinking_for_full_flash(self):
+        """Full Flash models must receive thinking_budget=0 to avoid 503/504 spikes; flash-lite must omit it."""
+        for m in ("gemini-3.5-flash", "gemini-3.6-flash", "gemini-3-flash-preview", "gemini-2.5-flash"):
+            for is_json in (True, False):
+                cfg = gemini_client.get_standard_genai_config(model_name=m, is_json=is_json)
+                self.assertIsNotNone(cfg.thinking_config, f"{m} (is_json={is_json}) missing thinking_config")
+                self.assertEqual(cfg.thinking_config.thinking_budget, 0)
+
+        for m in ("gemini-3.5-flash-lite", "gemini-flash-lite-latest"):
+            cfg = gemini_client.get_standard_genai_config(model_name=m, is_json=True)
+            self.assertIsNone(cfg.thinking_config, f"{m} should omit thinking_config")
+
+    @patch("time.sleep", return_value=None)
+    @patch("rewriter.get_all_gemini_keys", return_value=["k1", "k2"])
+    @patch("rewriter.rotate_key")
+    @patch("rewriter._get_gemini_client")
+    def test_rewriter_fails_over_on_503_and_falls_back_gracefully(self, mock_get_client, mock_rotate, mock_keys, mock_sleep):
+        """Verify rewriter rotates keys / fails over on 503 and never crashes with RuntimeError if all fail."""
+        import rewriter
+
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        def mock_gen_fail_first(model, contents, config):
+            if "flash-lite" in model:
+                raise Exception("503 UNAVAILABLE. This model is currently experiencing high demand.")
+            resp = MagicMock()
+            resp.text = '{"summary": "Experienced Engineer.", "skills": ["Python", "SQL", "Airflow"], "experience": [{"title": "Data Engineer", "company": "Acme", "dates": "2022 - Present", "bullets": ["Built Airflow pipelines."]}]}'
+            resp.candidates = [MagicMock()]
+            return resp
+
+        mock_client.models.generate_content.side_effect = mock_gen_fail_first
+        base_res = {"name": "Alex", "skills": ["Python", "SQL"], "experience": [{"title": "Data Engineer", "company": "Acme", "dates": "2022 - Present", "bullets": ["Built pipelines."]}]}
+        res = rewriter.rewrite_resume(base_res, "JD needs Airflow", ["Airflow"], "Acme", "Data Engineer")
+        self.assertIn("Airflow", res.get("skills", []))
+        self.assertTrue(mock_rotate.called)
+
+        # Now verify that even if EVERY model throws 503, rewrite_resume falls back gracefully instead of crashing
+        mock_client.models.generate_content.side_effect = Exception("503 UNAVAILABLE. High demand.")
+        res_fallback = rewriter.rewrite_resume(base_res, "JD needs Airflow", ["Airflow"], "Acme", "Data Engineer")
+        self.assertTrue(any("airflow" in s.lower() for s in res_fallback.get("skills", [])))
+
 
 if __name__ == "__main__":
     unittest.main()
